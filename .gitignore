@@ -1,0 +1,19 @@
+/target
+.env
+.env.*
+*.pem
+*.key
+
+# AI agent working files -- not part of the source
+.ai/
+
+# Editor and OS artifacts
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Config files that may contain secrets
+config.toml
