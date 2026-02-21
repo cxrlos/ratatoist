@@ -11,7 +11,7 @@ name = "ratatoist"
 path = "src/main.rs"
 
 [dependencies]
-ratatoist-core = { path = "../ratatoist-core" }
+ratatoist-core = { path = "../ratatoist-core", version = "0.2.0" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
