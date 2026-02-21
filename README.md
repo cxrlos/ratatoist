@@ -7,15 +7,19 @@
 <h1 align="center">ratatoist</h1>
 
 <p align="center">
-  <em>A keyboard-driven terminal UI for <a href="https://todoist.com">Todoist</a>, built with Rust and <a href="https://ratatui.rs">ratatui</a>.</em>
+  <em>Your Todoist inbox, without leaving the terminal.</em>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/crates/v/ratatoist-tui?style=flat-square&color=9ccfd8&label=tui" alt="crates.io tui">
-  <img src="https://img.shields.io/crates/v/ratatoist-core?style=flat-square&color=c4a7e7&label=core" alt="crates.io core">
+  <a href="https://github.com/cxrlos/ratatoist/releases">
+    <img src="https://img.shields.io/github/v/release/cxrlos/ratatoist?style=flat-square&color=9ccfd8&label=release" alt="latest release">
+  </a>
   <img src="https://img.shields.io/github/license/cxrlos/ratatoist?style=flat-square&color=ebbcba" alt="license">
   <img src="https://img.shields.io/github/actions/workflow/status/cxrlos/ratatoist/ci.yml?style=flat-square&label=CI" alt="CI">
-  <img src="https://img.shields.io/badge/edition-2024-eb6f92?style=flat-square" alt="Rust Edition 2024">
+</p>
+
+<p align="center">
+  <a href="https://github.com/cxrlos/ratatoist">github.com/cxrlos/ratatoist</a>
 </p>
 
 ---
@@ -32,13 +36,20 @@
  j/k navigate  Enter open  x complete  a add  o sort  q quit
 ```
 
+Todoist is great. But switching to a browser tab breaks flow. ratatoist keeps your tasks in the terminal where you already live — vim motions, instant navigation, zero mouse required.
+
+- **Fast** — project sync at startup, cached navigation, async background refresh
+- **Vim-native** — `j`/`k`/`h`/`l`, folds, modal editing. Standard mode with arrows also available.
+- **Polished** — threaded comments, priority indicators, human-readable dates
+- **Secure** — token never logged, config permissions validated
+
 ## Packages
 
-| Crate | Description | Version |
-|-------|-------------|---------|
-| [`ratatoist-core`](crates/ratatoist-core/) | Todoist API v1 client, config, logging | ![core](https://img.shields.io/crates/v/ratatoist-core?style=flat-square&color=c4a7e7&label=) |
-| [`ratatoist-tui`](crates/ratatoist-tui/) | Terminal UI binary (installs as `ratatoist`) | ![tui](https://img.shields.io/crates/v/ratatoist-tui?style=flat-square&color=9ccfd8&label=) |
-| [`ratatoist-nvim`](crates/ratatoist-nvim/) | Neovim plugin | 🔜 Coming soon |
+| Crate | Description |
+|-------|-------------|
+| [`ratatoist-core`](crates/ratatoist-core/) | Todoist API v1 client, config, logging |
+| [`ratatoist-tui`](crates/ratatoist-tui/) | Terminal UI binary (installs as `ratatoist`) |
+| [`ratatoist-nvim`](crates/ratatoist-nvim/) | Neovim plugin — coming soon |
 
 ## Quick start
 
@@ -61,15 +72,6 @@ Run:
 ```sh
 ratatoist
 ```
-
-## Why ratatoist?
-
-Todoist is great. But switching to a browser tab to check a task breaks flow. ratatoist brings your tasks into the terminal where you already live -- with vim motions, instant navigation, and zero mouse required.
-
-- **Fast**: Full project sync at startup, cached navigation, async background refresh.
-- **Vim-native**: `j`/`k`/`h`/`l`, folds with `za`/`zR`/`zM`, modal editing with `i`/`Esc`. Or use Standard mode with arrows.
-- **Polished**: Threaded comments, priority-colored indicators, human-readable dates, attachment display.
-- **Secure**: Token never logged, config permissions validated, structured error handling.
 
 ## Features
 
