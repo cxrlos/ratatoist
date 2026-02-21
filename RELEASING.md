@@ -4,7 +4,7 @@ This document describes how releases are created and published for ratatoist.
 
 ## Version scheme
 
-Each crate follows [Semantic Versioning](https://semver.org/):
+Each crate is versioned independently following [Semantic Versioning](https://semver.org/):
 
 | Bump | When | Example |
 |------|------|---------|
@@ -12,54 +12,54 @@ Each crate follows [Semantic Versioning](https://semver.org/):
 | `minor` (0.**2**.0) | New features, backward compatible | Add search, delete task |
 | `major` (**1**.0.0) | Breaking changes | Config format change, API redesign |
 
-## Automated release flow
+## Tag format
+
+Tags are per-crate:
+
+| Tag | Meaning |
+|-----|---------|
+| `ratatoist-core-v0.1.0` | Core library release |
+| `ratatoist-tui-v0.2.0` | TUI binary release |
+| `ratatoist-nvim-v0.1.0` | Neovim plugin release (future) |
+
+## Automated release flow (PR merge)
 
 ```
-PR with label ──► merge to main ──► bot bumps version + tags ──► release builds ──► crates.io publish
+PR with label ──► merge ──► detect changed crates ──► bump + tag each ──► CI ──► build ──► release ──► publish
 ```
 
-### How it works
+1. Open a PR to `main` and add a label: `major`, `minor`, or `patch`.
+2. Merge the PR.
+3. The workflow automatically:
+   - Detects which crates were modified in the PR
+   - Calculates the next version for each changed crate from its latest tag (defaults to `0.1.0` if no prior tags)
+   - Updates each crate's `Cargo.toml` version
+   - Commits and creates per-crate tags
+   - Runs full CI validation (fmt, clippy, build, test)
+   - Builds TUI binaries for macOS + Linux (only if TUI changed)
+   - Creates a GitHub Release per changed crate
+   - Publishes changed crates to crates.io
 
-1. Open a PR to `main`.
-2. Add a label: `major`, `minor`, or `patch`.
-3. Merge the PR.
-4. The **version-bump** workflow automatically:
-   - Reads the PR label to determine bump type
-   - Calculates the next version from the latest git tag (defaults to `v0.1.0` if no tags exist)
-   - Updates `Cargo.toml` workspace version
-   - Commits and creates a git tag
-5. The **release** workflow triggers on the new tag and:
-   - Builds release binaries for 4 targets (macOS aarch64/x86_64, Linux x86_64/aarch64)
-   - Creates a GitHub Release with binaries and SHA256 checksums
-   - Publishes `ratatoist-core` and `ratatoist-tui` to crates.io
+No label = no release. Use this for docs-only or CI-only PRs.
 
-### No label = no release
+## Manual release
 
-If a PR has no `major`/`minor`/`patch` label, no version bump or release happens. Use this for PRs that shouldn't trigger a release (docs-only, CI changes, etc).
+Go to **Actions > Release (manual) > Run workflow**:
 
-## Required GitHub secrets
-
-Add in **Settings > Secrets and variables > Actions**:
-
-| Secret | Purpose | How to get it |
-|--------|---------|---------------|
-| `CARGO_REGISTRY_TOKEN` | Publish crates to crates.io | [crates.io/settings/tokens](https://crates.io/settings/tokens) -- scopes: `publish-new`, `publish-update` |
-
-`GITHUB_TOKEN` is provided automatically by GitHub Actions.
+- Select a crate from the dropdown: `ratatoist-core`, `ratatoist-tui`, or `ratatoist-nvim`
+- Select bump type: `patch`, `minor`, or `major`
+- The version is calculated automatically from the latest tag -- no manual version input
+- Defaults to `0.1.0` if no prior release exists for that crate
+- Binaries are only built for `ratatoist-tui` releases
 
 ## Rolling back a release
 
-If a release needs to be reverted:
+Go to **Actions > Rollback Release > Run workflow**:
 
-1. Go to **Actions > Rollback Release > Run workflow**
-2. Enter the version to rollback (e.g. `v0.2.0`) and a reason
-3. The workflow will:
-   - Delete the git tag (local + remote)
-   - Delete the GitHub Release and its artifacts
-   - Restore the previous version in `Cargo.toml`
-   - Commit the rollback
+- Enter the full tag to rollback (e.g. `ratatoist-tui-v0.2.0`) and a reason
+- The workflow deletes the tag, GitHub Release, and restores the previous version in `Cargo.toml`
 
-> **crates.io**: Published crate versions cannot be deleted, only yanked. To yank:
+> **crates.io**: Published versions cannot be deleted, only yanked:
 > ```sh
 > cargo yank --version 0.2.0 ratatoist-core
 > cargo yank --version 0.2.0 ratatoist-tui
@@ -67,30 +67,35 @@ If a release needs to be reverted:
 
 ## Manual release (fallback)
 
-If the automation fails or you need a manual release:
+If automation fails:
 
 ```sh
-# 1. Bump version in Cargo.toml
+# 1. Bump version in the crate's Cargo.toml
 # 2. Update CHANGELOG.md
 # 3. Commit, tag, push
 git add -A
-git commit -m "release: v0.2.0"
-git tag v0.2.0
+git commit -m "release: ratatoist-tui-v0.2.0"
+git tag ratatoist-tui-v0.2.0
 git push origin main --tags
 
 # 4. Publish to crates.io
-cargo publish -p ratatoist-core
-sleep 30
 cargo publish -p ratatoist-tui
 ```
 
-## Tagging conventions
+## Required GitHub secrets
 
-| Tag format | What it releases |
-|------------|-----------------|
-| `v0.1.0` | All crates at that version |
-| `core-v0.2.0` | Only ratatoist-core (future, when versions diverge) |
-| `tui-v0.2.0` | Only ratatoist-tui (future, when versions diverge) |
+| Secret | Purpose | How to get it |
+|--------|---------|---------------|
+| `CARGO_REGISTRY_TOKEN` | Publish to crates.io | [crates.io/settings/tokens](https://crates.io/settings/tokens) -- scopes: `publish-new`, `publish-update` |
+
+## Pre-release checklist
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo build --workspace --release
+cargo test --workspace
+```
 
 ## Installing from a release
 
@@ -104,13 +109,4 @@ cargo install --path crates/ratatoist-tui
 
 # From crates.io
 cargo install ratatoist-tui
-```
-
-## Pre-release checklist
-
-```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo build --workspace --release
-cargo test --workspace
 ```
