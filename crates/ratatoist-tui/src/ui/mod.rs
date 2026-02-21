@@ -1,0 +1,32 @@
+pub mod components;
+pub mod dates;
+pub mod keyhints;
+pub mod layout;
+pub mod splash;
+pub mod statusbar;
+pub mod theme;
+pub mod views;
+
+use ratatui::Frame;
+
+use crate::app::App;
+
+pub fn draw(frame: &mut Frame, app: &App) {
+    layout::render(frame, app);
+
+    if app.show_priority_picker {
+        components::priority_picker::render(frame, app.priority_selection);
+    } else if let Some(form) = &app.task_form {
+        components::task_form::render(frame, app, form);
+    } else if app.show_input {
+        components::input_popup::render(frame, app);
+    }
+
+    if app.show_help {
+        components::cheatsheet::render(frame, &app.input_mode);
+    }
+
+    if let Some(error) = &app.error {
+        components::error_popup::render(frame, error);
+    }
+}
