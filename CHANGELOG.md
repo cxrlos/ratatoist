@@ -28,3 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keybinding cheatsheet popup (?)
 - Settings pane for mode toggle
 - GitHub Actions CI (format, clippy, build, test) and release workflow
+
+### Fixed
+
+- Switched `reqwest` from `native-tls` to `rustls-tls` to remove OpenSSL system dependency (fixes Linux CI builds) -- PR #4
+- Independent per-crate versioning with per-crate tags (`ratatoist-core-v0.1.0`, `ratatoist-tui-v0.1.0`) -- PR #3
+- Unified release workflow: version bump, CI validation, build, GitHub Release, and crates.io publish in a single pipeline -- PR #2, #3
+- Removed test examples and `.ai/` references from tracked files -- PR #2
+
+### References
+
+- PR #1: Initial scaffold, workspace restructure, release infrastructure
+- PR #2: Workflow fixes, independent versioning
+- PR #3: Switch to rustls-tls, retrigger v0.1.0 release
