@@ -1,0 +1,87 @@
+name: Rollback Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to rollback (e.g. v0.2.0)"
+        required: true
+        type: string
+      reason:
+        description: "Reason for rollback"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.version }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate tag exists
+        run: |
+          if ! git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "Error: Tag ${{ inputs.version }} does not exist"
+            exit 1
+          fi
+
+      - name: Find previous version
+        id: prev
+        run: |
+          TAGS=$(git tag --sort=-v:refname | grep '^v')
+          CURRENT="${{ inputs.version }}"
+          PREV=$(echo "$TAGS" | grep -A1 "^${CURRENT}$" | tail -1)
+          if [ "$PREV" = "$CURRENT" ] || [ -z "$PREV" ]; then
+            PREV="v0.0.0"
+            PREV_VERSION="0.1.0"
+          else
+            PREV_VERSION="${PREV#v}"
+          fi
+          echo "tag=$PREV" >> $GITHUB_OUTPUT
+          echo "version=$PREV_VERSION" >> $GITHUB_OUTPUT
+          echo "Rolling back from $CURRENT to $PREV"
+
+      - name: Delete tag (local and remote)
+        run: |
+          git tag -d "${{ inputs.version }}" || true
+          git push origin ":refs/tags/${{ inputs.version }}" || true
+          echo "Deleted tag ${{ inputs.version }}"
+
+      - name: Delete GitHub Release
+        run: |
+          gh release delete "${{ inputs.version }}" --yes --cleanup-tag || true
+          echo "Deleted GitHub Release ${{ inputs.version }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore previous version in Cargo.toml
+        run: |
+          VERSION="${{ steps.prev.outputs.version }}"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          echo "Restored workspace version to $VERSION"
+
+      - name: Commit rollback
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml
+          git commit -m "rollback: revert ${{ inputs.version }} (${{ inputs.reason }})"
+          git push origin main
+
+      - name: Summary
+        run: |
+          echo "## Rollback complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Removed tag: \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Removed GitHub Release: \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Restored version: \`${{ steps.prev.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Reason: ${{ inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> **Note**: crates.io versions cannot be deleted, only yanked. Run \`cargo yank --version ${{ inputs.version }} ratatoist-core\` and \`cargo yank --version ${{ inputs.version }} ratatoist-tui\` manually if needed." >> $GITHUB_STEP_SUMMARY
