@@ -6,6 +6,10 @@
 
 # AI agent working files -- not part of the source
 .ai/
+*.plan.md
+
+# Test examples with real API calls
+crates/ratatoist-core/examples/
 
 # Editor and OS artifacts
 .DS_Store
