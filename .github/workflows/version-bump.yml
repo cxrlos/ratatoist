@@ -1,4 +1,4 @@
-name: Version Bump
+name: Version Bump and Release
 
 on:
   pull_request:
@@ -8,25 +8,32 @@ on:
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  bump:
-    name: Bump version and tag
+  detect:
+    name: Detect changes and bump type
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
-      bumped: ${{ steps.bump.outputs.type != 'none' }}
-      tag: ${{ steps.version.outputs.tag }}
+      bump_type: ${{ steps.bump.outputs.type }}
+      core_changed: ${{ steps.changes.outputs.core }}
+      tui_changed: ${{ steps.changes.outputs.tui }}
+      core_tag: ${{ steps.versions.outputs.core_tag }}
+      core_version: ${{ steps.versions.outputs.core_version }}
+      tui_tag: ${{ steps.versions.outputs.tui_tag }}
+      tui_version: ${{ steps.versions.outputs.tui_version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine bump type from PR labels
+      - name: Determine bump type
         id: bump
         run: |
           LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
-
           if echo "$LABELS" | grep -q '"major"'; then
             echo "type=major" >> $GITHUB_OUTPUT
           elif echo "$LABELS" | grep -q '"minor"'; then
@@ -35,51 +42,226 @@ jobs:
             echo "type=patch" >> $GITHUB_OUTPUT
           else
             echo "type=none" >> $GITHUB_OUTPUT
-            echo "No version label found, skipping bump."
           fi
 
-      - name: Calculate next version
+      - name: Detect changed crates
+        id: changes
         if: steps.bump.outputs.type != 'none'
-        id: version
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          CURRENT="${LATEST_TAG#v}"
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.merge_commit_sha }}"
+          FILES=$(git diff --name-only "$BASE" "$HEAD" 2>/dev/null || git diff --name-only HEAD~1)
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-          MAJOR=${MAJOR:-0}
-          MINOR=${MINOR:-0}
-          PATCH=${PATCH:-0}
+          CORE=false
+          TUI=false
 
-          case "${{ steps.bump.outputs.type }}" in
-            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-            patch) PATCH=$((PATCH + 1)) ;;
-          esac
-
-          # Default to v0.1.0 if this would be v0.0.1 (first release)
-          if [ "$MAJOR" = "0" ] && [ "$MINOR" = "0" ] && [ "$PATCH" = "1" ]; then
-            MINOR=1
-            PATCH=0
+          if echo "$FILES" | grep -q "crates/ratatoist-core/"; then
+            CORE=true
+          fi
+          if echo "$FILES" | grep -q "crates/ratatoist-tui/"; then
+            TUI=true
           fi
 
-          NEXT="$MAJOR.$MINOR.$PATCH"
-          echo "version=$NEXT" >> $GITHUB_OUTPUT
-          echo "tag=v$NEXT" >> $GITHUB_OUTPUT
-          echo "Bumping $LATEST_TAG -> v$NEXT (${{ steps.bump.outputs.type }})"
+          # Root changes (Cargo.toml, README, CI) bump both
+          if echo "$FILES" | grep -qE "^(Cargo\.|README|\.github/|scripts/)"; then
+            CORE=true
+            TUI=true
+          fi
 
-      - name: Update Cargo.toml version
+          echo "core=$CORE" >> $GITHUB_OUTPUT
+          echo "tui=$TUI" >> $GITHUB_OUTPUT
+          echo "Core changed: $CORE, TUI changed: $TUI"
+
+      - name: Calculate versions
+        id: versions
         if: steps.bump.outputs.type != 'none'
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-          echo "Updated workspace version to $VERSION"
+          bump_version() {
+            local PREFIX="$1"
+            local BUMP="$2"
+
+            LATEST=$(git tag --sort=-v:refname | grep "^${PREFIX}" | head -1 || echo "")
+            if [ -z "$LATEST" ]; then
+              CUR="0.0.0"
+            else
+              CUR="${LATEST#$PREFIX}"
+            fi
+
+            IFS='.' read -r MAJ MIN PAT <<< "$CUR"
+
+            case "$BUMP" in
+              major) MAJ=$((MAJ + 1)); MIN=0; PAT=0 ;;
+              minor) MIN=$((MIN + 1)); PAT=0 ;;
+              patch) PAT=$((PAT + 1)) ;;
+            esac
+
+            if [ "$MAJ" -eq 0 ] && [ "$MIN" -eq 0 ] && [ "$PAT" -eq 1 ]; then
+              MIN=1; PAT=0
+            fi
+
+            echo "$MAJ.$MIN.$PAT"
+          }
+
+          BUMP="${{ steps.bump.outputs.type }}"
+
+          if [ "${{ steps.changes.outputs.core }}" = "true" ]; then
+            CORE_V=$(bump_version "ratatoist-core-v" "$BUMP")
+            echo "core_version=$CORE_V" >> $GITHUB_OUTPUT
+            echo "core_tag=ratatoist-core-v$CORE_V" >> $GITHUB_OUTPUT
+            echo "Core: -> $CORE_V"
+          fi
+
+          if [ "${{ steps.changes.outputs.tui }}" = "true" ]; then
+            TUI_V=$(bump_version "ratatoist-tui-v" "$BUMP")
+            echo "tui_version=$TUI_V" >> $GITHUB_OUTPUT
+            echo "tui_tag=ratatoist-tui-v$TUI_V" >> $GITHUB_OUTPUT
+            echo "TUI: -> $TUI_V"
+          fi
+
+      - name: Update Cargo.toml versions
+        if: steps.bump.outputs.type != 'none'
+        run: |
+          if [ "${{ steps.changes.outputs.core }}" = "true" ]; then
+            sed -i "s/^version = \".*\"/version = \"${{ steps.versions.outputs.core_version }}\"/" crates/ratatoist-core/Cargo.toml
+          fi
+          if [ "${{ steps.changes.outputs.tui }}" = "true" ]; then
+            sed -i "s/^version = \".*\"/version = \"${{ steps.versions.outputs.tui_version }}\"/" crates/ratatoist-tui/Cargo.toml
+          fi
 
       - name: Commit and tag
         if: steps.bump.outputs.type != 'none'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
-          git commit -m "release: ${{ steps.version.outputs.tag }}" || echo "No changes to commit"
-          git tag "${{ steps.version.outputs.tag }}"
+          git add -A
+          git commit -m "release: ${{ steps.versions.outputs.core_tag }} ${{ steps.versions.outputs.tui_tag }}" || echo "No changes"
+
+          if [ -n "${{ steps.versions.outputs.core_tag }}" ]; then
+            git tag "${{ steps.versions.outputs.core_tag }}"
+          fi
+          if [ -n "${{ steps.versions.outputs.tui_tag }}" ]; then
+            git tag "${{ steps.versions.outputs.tui_tag }}"
+          fi
+
           git push origin main --tags
+
+  validate:
+    name: Validate
+    needs: detect
+    if: needs.detect.outputs.bump_type != 'none'
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [detect, validate]
+    if: needs.detect.outputs.tui_changed == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.detect.outputs.tui_tag }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} -p ratatoist-tui
+
+      - name: Package
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../ratatoist-${{ matrix.target }}.tar.gz ratatoist
+          cd ../../..
+          shasum -a 256 ratatoist-${{ matrix.target }}.tar.gz > ratatoist-${{ matrix.target }}.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ratatoist-${{ matrix.target }}
+          path: |
+            ratatoist-${{ matrix.target }}.tar.gz
+            ratatoist-${{ matrix.target }}.tar.gz.sha256
+
+  release-tui:
+    name: Release TUI
+    needs: [detect, build]
+    if: needs.detect.outputs.tui_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.detect.outputs.tui_tag }}
+          name: "ratatoist-tui ${{ needs.detect.outputs.tui_version }}"
+          generate_release_notes: true
+          files: artifacts/*
+
+  release-core:
+    name: Release Core
+    needs: [detect, validate]
+    if: needs.detect.outputs.core_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.detect.outputs.core_tag }}
+          name: "ratatoist-core ${{ needs.detect.outputs.core_version }}"
+          generate_release_notes: true
+
+  publish-core:
+    name: Publish core to crates.io
+    needs: [detect, release-core]
+    if: needs.detect.outputs.core_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.detect.outputs.core_tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo publish -p ratatoist-core --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-tui:
+    name: Publish TUI to crates.io
+    needs: [detect, release-tui, publish-core]
+    if: needs.detect.outputs.tui_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.detect.outputs.tui_tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          sleep 30
+          cargo publish -p ratatoist-tui --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
