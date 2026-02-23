@@ -5,12 +5,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
 use crate::app::App;
-use crate::ui::theme::Theme;
 
 use super::popup::{centered_rect, render_dim_overlay};
 
 pub fn render(frame: &mut Frame, app: &App) {
-    render_dim_overlay(frame);
+    let theme = app.theme();
+    render_dim_overlay(frame, theme);
 
     let area = frame.area();
     let popup_area = centered_rect(50, 20, area);
@@ -30,13 +30,13 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     let block = Block::default()
         .title(title)
-        .title_style(Theme::mode_insert())
+        .title_style(theme.mode_insert())
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
-        .border_style(Theme::due_upcoming())
+        .border_style(theme.due_upcoming())
         .padding(Padding::new(2, 2, 1, 1))
-        .style(Theme::base_bg());
+        .style(theme.base_bg());
 
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
@@ -53,22 +53,22 @@ pub fn render(frame: &mut Frame, app: &App) {
         };
         lines.push(Line::from(Span::styled(
             placeholder,
-            Theme::muted_text().add_modifier(Modifier::ITALIC),
+            theme.muted_text().add_modifier(Modifier::ITALIC),
         )));
     } else {
         lines.push(Line::from(vec![
-            Span::styled(&app.input_buffer, Theme::normal_text()),
-            Span::styled("▎", Theme::due_upcoming()),
+            Span::styled(&app.input_buffer, theme.normal_text()),
+            Span::styled("▎", theme.due_upcoming()),
         ]));
     }
 
     lines.push(Line::default());
     lines.push(
         Line::from(vec![
-            Span::styled("Enter", Theme::key_hint()),
-            Span::styled(" submit  ", Theme::muted_text()),
-            Span::styled("Esc", Theme::key_hint()),
-            Span::styled(" cancel", Theme::muted_text()),
+            Span::styled("Enter", theme.key_hint()),
+            Span::styled(" submit  ", theme.muted_text()),
+            Span::styled("Esc", theme.key_hint()),
+            Span::styled(" cancel", theme.muted_text()),
         ])
         .alignment(Alignment::Center),
     );

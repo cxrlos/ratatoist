@@ -33,6 +33,9 @@ pub enum KeyAction {
     CancelInput,
     DetailFieldUp,
     DetailFieldDown,
+    OpenThemePicker,
+    SelectTheme,
+    CloseThemePicker,
     Consumed,
     None,
 }
@@ -71,6 +74,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
 
     if app.show_input {
         return handle_input(app, key);
+    }
+
+    if app.show_theme_picker {
+        return handle_theme_picker(app, key);
     }
 
     if matches!(app.active_pane, Pane::Settings) {
@@ -148,6 +155,27 @@ fn handle_form_nav(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('k') | KeyCode::Up => KeyAction::FormFieldUp,
         KeyCode::Enter | KeyCode::Char('i') | KeyCode::Char(' ') => KeyAction::FormEditField,
         KeyCode::Tab => KeyAction::SubmitForm,
+        _ => KeyAction::Consumed,
+    }
+}
+
+fn handle_theme_picker(app: &mut App, key: KeyEvent) -> KeyAction {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => KeyAction::CloseThemePicker,
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.theme_selection = (app.theme_selection + 1) % app.themes.len().max(1);
+            KeyAction::Consumed
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if app.themes.is_empty() {
+                return KeyAction::Consumed;
+            }
+            app.theme_selection = app.theme_selection
+                .checked_sub(1)
+                .unwrap_or(app.themes.len() - 1);
+            KeyAction::Consumed
+        }
+        KeyCode::Enter | KeyCode::Char(' ') => KeyAction::SelectTheme,
         _ => KeyAction::Consumed,
     }
 }
@@ -231,8 +259,10 @@ fn handle_settings(app: &mut App, key: KeyEvent) -> KeyAction {
         }
 
         KeyCode::Enter | KeyCode::Char(' ') => {
-            if app.settings_selection == 0 {
-                return KeyAction::ToggleMode;
+            match app.settings_selection {
+                0 => return KeyAction::ToggleMode,
+                1 => return KeyAction::OpenThemePicker,
+                _ => {}
             }
             KeyAction::Consumed
         }
@@ -242,7 +272,7 @@ fn handle_settings(app: &mut App, key: KeyEvent) -> KeyAction {
 }
 
 fn settings_item_count() -> usize {
-    1
+    2
 }
 
 fn handle_vim(app: &mut App, key: KeyEvent, state: VimState) -> KeyAction {

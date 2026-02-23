@@ -1509,7 +1509,7 @@ dependencies = [
 
 [[package]]
 name = "ratatoist-core"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "dirs",
@@ -1532,13 +1532,14 @@ dependencies = [
 
 [[package]]
 name = "ratatoist-tui"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
  "crossterm",
  "ratatoist-core",
  "ratatui",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",

@@ -1,6 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
@@ -13,17 +13,6 @@ use crate::app::UserRecord;
 use crate::ui::dates;
 use crate::ui::theme::Theme;
 
-use ratatui::style::{Color, Style};
-
-const USER_COLORS: &[Color] = &[
-    Color::Rgb(156, 207, 216), // foam
-    Color::Rgb(196, 167, 231), // iris
-    Color::Rgb(235, 188, 186), // rose
-    Color::Rgb(246, 193, 119), // gold
-    Color::Rgb(49, 116, 143),  // pine
-    Color::Rgb(235, 111, 146), // love
-];
-
 #[allow(clippy::too_many_arguments)]
 pub fn render(
     frame: &mut Frame,
@@ -34,15 +23,16 @@ pub fn render(
     area: Rect,
     scroll: u16,
     selected_field: usize,
+    theme: &Theme,
 ) {
     let block = Block::default()
         .title(" Task Detail ")
-        .title_style(Theme::active_title())
+        .title_style(theme.active_title())
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
-        .border_style(Theme::active_border())
+        .border_style(theme.active_border())
         .padding(Padding::new(2, 2, 1, 1))
-        .style(Theme::base_bg());
+        .style(theme.base_bg());
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -50,13 +40,13 @@ pub fn render(
     let mut lines: Vec<Line> = Vec::new();
 
     let content_style = if selected_field == 0 {
-        Theme::active_title().add_modifier(Modifier::UNDERLINED)
+        theme.active_title().add_modifier(Modifier::UNDERLINED)
     } else {
-        Theme::active_title()
+        theme.active_title()
     };
     lines.push(Line::from(vec![
         Span::styled(&task.content, content_style),
-        field_hint(selected_field == 0),
+        field_hint(selected_field == 0, theme),
     ]));
     lines.push(Line::default());
 
@@ -71,66 +61,66 @@ pub fn render(
         Span::styled(
             "Priority  ",
             if priority_active {
-                Theme::active_title()
+                theme.active_title()
             } else {
-                Theme::muted_text()
+                theme.muted_text()
             },
         ),
         Span::styled(
             format!("● {priority_label}"),
-            Theme::priority_style(task.priority),
+            theme.priority_style(task.priority),
         ),
-        field_hint(priority_active),
+        field_hint(priority_active, theme),
     ]));
 
     let due_style = if selected_field == 2 {
-        Theme::due_upcoming().add_modifier(Modifier::UNDERLINED)
+        theme.due_upcoming().add_modifier(Modifier::UNDERLINED)
     } else {
-        Theme::muted_text()
+        theme.muted_text()
     };
     if let Some(due) = &task.due {
-        let formatted = dates::format_due(&due.date);
+        let formatted = dates::format_due(&due.date, theme);
         let due_display = format!("{}  ({})", formatted.text, due.date);
         lines.push(Line::from(vec![
             Span::styled("Due       ", due_style),
             Span::styled(due_display, formatted.style),
-            field_hint(selected_field == 2),
+            field_hint(selected_field == 2, theme),
         ]));
     } else {
         lines.push(Line::from(vec![
             Span::styled("Due       ", due_style),
-            Span::styled("not set", Theme::muted_text()),
-            field_hint(selected_field == 2),
+            Span::styled("not set", theme.muted_text()),
+            field_hint(selected_field == 2, theme),
         ]));
     }
 
     if task.checked {
         lines.push(Line::from(vec![
-            Span::styled("Status    ", Theme::muted_text()),
-            Span::styled("✓ completed", Theme::success()),
+            Span::styled("Status    ", theme.muted_text()),
+            Span::styled("✓ completed", theme.success()),
         ]));
     }
 
     if !task.labels.is_empty() {
         let labels = task.labels.join("  ");
         lines.push(Line::from(vec![
-            Span::styled("Labels    ", Theme::muted_text()),
-            Span::styled(labels, Theme::label_tag()),
+            Span::styled("Labels    ", theme.muted_text()),
+            Span::styled(labels, theme.label_tag()),
         ]));
     }
 
     let desc_style = if selected_field == 3 {
-        Theme::normal_text().add_modifier(Modifier::UNDERLINED)
+        theme.normal_text().add_modifier(Modifier::UNDERLINED)
     } else {
-        Theme::normal_text()
+        theme.normal_text()
     };
     lines.push(Line::default());
     lines.push(Line::from(vec![
-        Span::styled("Description", Theme::subtle_text()),
-        field_hint(selected_field == 3),
+        Span::styled("Description", theme.subtle_text()),
+        field_hint(selected_field == 3, theme),
     ]));
     if task.description.is_empty() {
-        lines.push(Line::from(Span::styled("(empty)", Theme::muted_text())));
+        lines.push(Line::from(Span::styled("(empty)", theme.muted_text())));
     } else {
         for desc_line in task.description.lines() {
             lines.push(Line::from(Span::styled(desc_line.to_string(), desc_style)));
@@ -140,16 +130,17 @@ pub fn render(
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(
         "─── Comments ───",
-        Theme::subtle_text(),
+        theme.subtle_text(),
     )));
     lines.push(Line::default());
 
     if comments.is_empty() {
         lines.push(Line::from(Span::styled(
             "no comments yet",
-            Theme::muted_text(),
+            theme.muted_text(),
         )));
     } else {
+        let user_colors = theme.user_colors();
         let mut seen_users: Vec<String> = Vec::new();
         let mut prev_user: Option<String> = None;
 
@@ -164,8 +155,8 @@ pub fn render(
                 seen_users.push(user_id.clone());
             }
             let color_idx =
-                seen_users.iter().position(|u| u == &user_id).unwrap_or(0) % USER_COLORS.len();
-            let user_color = USER_COLORS[color_idx];
+                seen_users.iter().position(|u| u == &user_id).unwrap_or(0) % user_colors.len();
+            let user_color = user_colors[color_idx];
 
             let same_user = prev_user.as_deref() == Some(&user_id);
             let timestamp = comment
@@ -204,7 +195,7 @@ pub fn render(
                 for content_line in comment.content.lines() {
                     lines.push(Line::from(vec![
                         Span::styled("│ ", Style::default().fg(user_color)),
-                        Span::styled(content_line.to_string(), Theme::normal_text()),
+                        Span::styled(content_line.to_string(), theme.normal_text()),
                     ]));
                 }
             }
@@ -232,7 +223,7 @@ pub fn render(
                     Span::styled("│ ", Style::default().fg(user_color)),
                     Span::styled(
                         display,
-                        Theme::due_upcoming().add_modifier(Modifier::UNDERLINED),
+                        theme.due_upcoming().add_modifier(Modifier::UNDERLINED),
                     ),
                 ]));
             }
@@ -240,14 +231,14 @@ pub fn render(
             if comment.content.is_empty() && !has_attachment {
                 lines.push(Line::from(vec![
                     Span::styled("│ ", Style::default().fg(user_color)),
-                    Span::styled("(empty)", Theme::muted_text()),
+                    Span::styled("(empty)", theme.muted_text()),
                 ]));
             }
 
             if let Some(last_line) = lines.last_mut() {
                 last_line.spans.push(Span::styled(
                     format!("  {timestamp}"),
-                    Theme::muted_text().add_modifier(Modifier::ITALIC),
+                    theme.muted_text().add_modifier(Modifier::ITALIC),
                 ));
             }
 
@@ -258,14 +249,14 @@ pub fn render(
 
     lines.push(Line::default());
     lines.push(Line::from(vec![
-        Span::styled("i", Theme::key_hint()),
-        Span::styled(" edit  ", Theme::muted_text()),
-        Span::styled("c", Theme::key_hint()),
-        Span::styled(" comment  ", Theme::muted_text()),
-        Span::styled("x", Theme::key_hint()),
-        Span::styled(" complete  ", Theme::muted_text()),
-        Span::styled("Esc", Theme::key_hint()),
-        Span::styled(" back", Theme::muted_text()),
+        Span::styled("i", theme.key_hint()),
+        Span::styled(" edit  ", theme.muted_text()),
+        Span::styled("c", theme.key_hint()),
+        Span::styled(" comment  ", theme.muted_text()),
+        Span::styled("x", theme.key_hint()),
+        Span::styled(" complete  ", theme.muted_text()),
+        Span::styled("Esc", theme.key_hint()),
+        Span::styled(" back", theme.muted_text()),
     ]));
 
     let paragraph = Paragraph::new(lines)
@@ -275,9 +266,9 @@ pub fn render(
     frame.render_widget(paragraph, inner);
 }
 
-fn field_hint(active: bool) -> Span<'static> {
+fn field_hint(active: bool, theme: &Theme) -> Span<'static> {
     if active {
-        Span::styled("  ◂", Theme::key_hint())
+        Span::styled("  ◂", theme.key_hint())
     } else {
         Span::raw("")
     }
