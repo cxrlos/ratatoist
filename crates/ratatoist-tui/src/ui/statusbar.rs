@@ -5,14 +5,14 @@ use ratatui::widgets::Paragraph;
 
 use crate::app::{App, InputMode, Pane, VimState};
 
-use super::theme::Theme;
-
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = app.theme();
+
     let mode_style = match app.input_mode {
-        InputMode::Vim(VimState::Normal) => Theme::mode_normal(),
-        InputMode::Vim(VimState::Visual) => Theme::mode_visual(),
-        InputMode::Vim(VimState::Insert) => Theme::mode_insert(),
-        InputMode::Standard => Theme::mode_standard(),
+        InputMode::Vim(VimState::Normal) => theme.mode_normal(),
+        InputMode::Vim(VimState::Visual) => theme.mode_visual(),
+        InputMode::Vim(VimState::Insert) => theme.mode_insert(),
+        InputMode::Standard => theme.mode_standard(),
     };
 
     let mode_label = format!(" {} ", app.input_mode.label());
@@ -35,9 +35,9 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
     let spans = vec![
         Span::styled(mode_label, mode_style),
-        Span::styled(breadcrumb, Theme::subtle_text()),
+        Span::styled(breadcrumb, theme.subtle_text()),
     ];
 
-    let bar = Paragraph::new(Line::from(spans)).style(Theme::surface_bg());
+    let bar = Paragraph::new(Line::from(spans)).style(theme.surface_bg());
     frame.render_widget(bar, area);
 }

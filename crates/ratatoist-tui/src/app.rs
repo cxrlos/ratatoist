@@ -433,15 +433,50 @@ pub struct App {
     pub task_form: Option<TaskForm>,
     pub current_user_id: Option<String>,
     pub user_names: HashMap<String, UserRecord>,
+    pub themes: Vec<crate::ui::theme::Theme>,
+    pub theme_idx: usize,
+    pub show_theme_picker: bool,
+    pub theme_selection: usize,
     task_cache: HashMap<String, Vec<Task>>,
     bg_tx: mpsc::Sender<BgResult>,
     bg_rx: mpsc::Receiver<BgResult>,
     client: Arc<TodoistClient>,
 }
 
+fn load_theme_idx(themes: &[crate::ui::theme::Theme]) -> usize {
+    let path = ratatoist_core::config::Config::config_dir().join("ui_settings.json");
+    if let Ok(src) = std::fs::read_to_string(&path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&src) {
+            if let Some(name) = val["theme"].as_str() {
+                if let Some(idx) = themes.iter().position(|t| t.name == name) {
+                    return idx;
+                }
+            }
+        }
+    }
+    0
+}
+
 impl App {
+    pub fn theme(&self) -> &crate::ui::theme::Theme {
+        &self.themes[self.theme_idx]
+    }
+
+    pub fn save_theme_preference(&self) {
+        let dir = ratatoist_core::config::Config::config_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("ui_settings.json");
+        let name = &self.themes[self.theme_idx].name;
+        let json = serde_json::json!({ "theme": name });
+        let _ = std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap_or_default());
+    }
+
     pub fn new(client: TodoistClient) -> Self {
         let (bg_tx, bg_rx) = mpsc::channel(32);
+        let mut themes = crate::ui::theme::Theme::builtin();
+        let user_themes_dir = ratatoist_core::config::Config::config_dir().join("themes");
+        themes.extend(crate::ui::theme::Theme::load_user_themes(&user_themes_dir));
+        let theme_idx = load_theme_idx(&themes);
         Self {
             projects: Vec::new(),
             tasks: Vec::new(),
@@ -470,6 +505,10 @@ impl App {
             task_form: None,
             current_user_id: None,
             user_names: HashMap::new(),
+            themes,
+            theme_idx,
+            show_theme_picker: false,
+            theme_selection: theme_idx,
             task_cache: HashMap::new(),
             bg_tx,
             bg_rx,
@@ -481,7 +520,7 @@ impl App {
         info!("full sync starting");
 
         terminal
-            .draw(|f| ui::splash::render(f, 0.0, "connecting to todoist..."))
+            .draw(|f| ui::splash::render(f, 0.0, "connecting to todoist...", self.theme()))
             .ok();
 
         if let Ok(user) = self.client.get_user().await {
@@ -508,6 +547,7 @@ impl App {
                     f,
                     0.05,
                     &format!("found {total} projects, loading tasks..."),
+                    self.theme(),
                 )
             })
             .ok();
@@ -517,7 +557,7 @@ impl App {
             let status = format!("syncing {} ({}/{})", project.name, i + 1, total);
 
             terminal
-                .draw(|f| ui::splash::render(f, progress, &status))
+                .draw(|f| ui::splash::render(f, progress, &status, self.theme()))
                 .ok();
 
             match self.client.get_tasks(Some(&project.id)).await {
@@ -642,6 +682,18 @@ impl App {
                     KeyAction::CancelInput => self.cancel_input(),
                     KeyAction::DetailFieldUp => self.move_detail_field(-1),
                     KeyAction::DetailFieldDown => self.move_detail_field(1),
+                    KeyAction::OpenThemePicker => {
+                        self.theme_selection = self.theme_idx;
+                        self.show_theme_picker = true;
+                    }
+                    KeyAction::SelectTheme => {
+                        self.theme_idx = self.theme_selection;
+                        self.show_theme_picker = false;
+                        self.save_theme_preference();
+                    }
+                    KeyAction::CloseThemePicker => {
+                        self.show_theme_picker = false;
+                    }
                     KeyAction::Consumed | KeyAction::None => {}
                 }
             }
@@ -1031,18 +1083,18 @@ impl App {
             match result {
                 BgResult::Tasks { project_id, tasks } => match tasks {
                     Ok(fresh) => {
-                        self.task_cache.insert(project_id.clone(), fresh.clone());
-                        let current_pid = self
+                        let is_current = self
                             .projects
                             .get(self.selected_project)
-                            .map(|p| p.id.as_str());
-                        if current_pid == Some(project_id.as_str()) {
-                            self.tasks = fresh;
+                            .is_some_and(|p| p.id == project_id);
+                        if is_current {
+                            self.tasks = fresh.clone();
                             let visible_len = self.visible_tasks().len();
                             if self.selected_task >= visible_len {
                                 self.selected_task = visible_len.saturating_sub(1);
                             }
                         }
+                        self.task_cache.insert(project_id, fresh);
                     }
                     Err(e) => self.set_error(&e, "Sync tasks"),
                 },
@@ -1282,21 +1334,33 @@ impl App {
             return;
         };
         let task_id = task.id.clone();
+        let parent_id = task.parent_id.clone();
 
-        if !self.has_children(&task_id) {
+        if self.has_children(&task_id) {
+            if self.collapsed.contains(&task_id) {
+                self.collapsed.remove(&task_id);
+            } else {
+                self.collapsed.insert(task_id);
+            }
             return;
         }
 
-        if self.collapsed.contains(&task_id) {
-            self.collapsed.remove(&task_id);
-        } else {
-            self.collapsed.insert(task_id);
+        if let Some(pid) = parent_id {
+            self.collapsed.insert(pid.clone());
+            if let Some(pos) = self.visible_tasks().iter().position(|t| t.id == pid) {
+                self.selected_task = pos;
+            }
         }
     }
 
     fn close_all_folds(&mut self) {
+        let parent_ids: HashSet<String> = self
+            .tasks
+            .iter()
+            .filter_map(|t| t.parent_id.clone())
+            .collect();
         for task in &self.tasks {
-            if self.has_children(&task.id) {
+            if parent_ids.contains(&task.id) {
                 self.collapsed.insert(task.id.clone());
             }
         }

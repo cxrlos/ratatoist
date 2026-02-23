@@ -6,10 +6,10 @@ use crate::app::{App, Pane};
 
 use super::keyhints;
 use super::statusbar;
-use super::theme::Theme;
 use super::views;
 
 pub fn render(frame: &mut Frame, app: &App) {
+    let theme = app.theme();
     let area = frame.area();
 
     let [main_area, status_area, hints_area] = Layout::vertical([
@@ -49,6 +49,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                 right_area,
                 app.detail_scroll,
                 app.detail_field,
+                theme,
             );
         }
     } else {
@@ -66,22 +67,24 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 fn render_projects_block(frame: &mut Frame, app: &App, area: Rect, active: bool) {
+    let theme = app.theme();
+
     let block = Block::default()
         .title(" Projects ")
         .title_style(if active {
-            Theme::active_title()
+            theme.active_title()
         } else {
-            Theme::title()
+            theme.title()
         })
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(if active {
-            Theme::active_border()
+            theme.active_border()
         } else {
-            Theme::inactive_border()
+            theme.inactive_border()
         })
         .padding(Padding::horizontal(1))
-        .style(Theme::base_bg());
+        .style(theme.base_bg());
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -89,23 +92,25 @@ fn render_projects_block(frame: &mut Frame, app: &App, area: Rect, active: bool)
 }
 
 fn render_tasks_block(frame: &mut Frame, app: &App, area: Rect, active: bool) {
+    let theme = app.theme();
+
     let tasks_title = format!(" {} ", app.selected_project_name());
     let block = Block::default()
         .title(tasks_title)
         .title_style(if active {
-            Theme::active_title()
+            theme.active_title()
         } else {
-            Theme::title()
+            theme.title()
         })
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(if active {
-            Theme::active_border()
+            theme.active_border()
         } else {
-            Theme::inactive_border()
+            theme.inactive_border()
         })
         .padding(Padding::horizontal(1))
-        .style(Theme::base_bg());
+        .style(theme.base_bg());
 
     let inner = block.inner(area);
     frame.render_widget(block, area);

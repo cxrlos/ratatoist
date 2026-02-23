@@ -7,6 +7,7 @@
 # AI agent working files -- not part of the source
 .ai/
 *.plan.md
+*.claude/
 
 # Test examples with real API calls
 crates/ratatoist-core/examples/

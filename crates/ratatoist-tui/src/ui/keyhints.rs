@@ -5,9 +5,9 @@ use ratatui::widgets::Paragraph;
 
 use crate::app::{App, InputMode, Pane};
 
-use super::theme::Theme;
-
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = app.theme();
+
     let hints = match (&app.input_mode, &app.active_pane) {
         (_, Pane::Settings) => vec![
             ("j/k", "navigate"),
@@ -57,15 +57,15 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let mut spans: Vec<Span> = Vec::new();
-    spans.push(Span::styled(" ", Theme::muted_text()));
+    spans.push(Span::styled(" ", theme.muted_text()));
     for (i, (key, desc)) in hints.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled("  ", Theme::muted_text()));
+            spans.push(Span::styled("  ", theme.muted_text()));
         }
-        spans.push(Span::styled(*key, Theme::key_hint()));
-        spans.push(Span::styled(format!(" {desc}"), Theme::muted_text()));
+        spans.push(Span::styled(*key, theme.key_hint()));
+        spans.push(Span::styled(format!(" {desc}"), theme.muted_text()));
     }
 
-    let bar = Paragraph::new(Line::from(spans)).style(Theme::base_bg());
+    let bar = Paragraph::new(Line::from(spans)).style(theme.base_bg());
     frame.render_widget(bar, area);
 }

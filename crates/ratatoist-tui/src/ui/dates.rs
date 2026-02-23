@@ -7,7 +7,7 @@ pub struct FormattedDue {
     pub style: Style,
 }
 
-pub fn format_due(date_str: &str) -> FormattedDue {
+pub fn format_due(date_str: &str, theme: &Theme) -> FormattedDue {
     let today = today_str();
     let tomorrow = offset_days_str(1);
     let yesterday = offset_days_str(-1);
@@ -15,28 +15,28 @@ pub fn format_due(date_str: &str) -> FormattedDue {
     if date_str == today {
         return FormattedDue {
             text: "today".to_string(),
-            style: Theme::due_today(),
+            style: theme.due_today(),
         };
     }
 
     if date_str == tomorrow {
         return FormattedDue {
             text: "tomorrow".to_string(),
-            style: Theme::due_upcoming(),
+            style: theme.due_upcoming(),
         };
     }
 
     if date_str == yesterday {
         return FormattedDue {
             text: "yesterday".to_string(),
-            style: Theme::due_overdue(),
+            style: theme.due_overdue(),
         };
     }
 
     if date_str < today.as_str() {
         return FormattedDue {
             text: format_short_date(date_str),
-            style: Theme::due_overdue(),
+            style: theme.due_overdue(),
         };
     }
 
@@ -44,13 +44,13 @@ pub fn format_due(date_str: &str) -> FormattedDue {
     if days_away <= 6 {
         return FormattedDue {
             text: weekday_name(date_str),
-            style: Theme::due_upcoming(),
+            style: theme.due_upcoming(),
         };
     }
 
     FormattedDue {
         text: format_short_date(date_str),
-        style: Theme::due_future(),
+        style: theme.due_future(),
     }
 }
 
