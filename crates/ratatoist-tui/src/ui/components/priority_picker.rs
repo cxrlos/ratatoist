@@ -5,13 +5,13 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
 use crate::ui::theme::Theme;
 
-use super::popup::{centered_rect, render_dim_overlay};
+use super::popup::{centered_fixed_rect, render_dim_overlay};
 
 pub fn render(frame: &mut Frame, selected: u8, theme: &Theme) {
     render_dim_overlay(frame, theme);
 
     let area = frame.area();
-    let popup = centered_rect(30, 20, area);
+    let popup = centered_fixed_rect(30, 10, area);
 
     let block = Block::default()
         .title(" Priority ")
@@ -50,11 +50,8 @@ pub fn render(frame: &mut Frame, selected: u8, theme: &Theme) {
 
     lines.push(Line::default());
     lines.push(
-        Line::from(Span::styled(
-            "Enter select  Esc cancel",
-            theme.muted_text(),
-        ))
-        .alignment(Alignment::Center),
+        Line::from(Span::styled("Enter select  Esc cancel", theme.muted_text()))
+            .alignment(Alignment::Center),
     );
 
     frame.render_widget(Paragraph::new(lines), inner);

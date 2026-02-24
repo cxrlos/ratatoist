@@ -32,7 +32,7 @@ impl Project {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Task {
     pub id: String,
     pub content: String,
@@ -56,7 +56,7 @@ pub struct Task {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Due {
     pub date: String,
     #[serde(default)]

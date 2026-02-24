@@ -36,12 +36,7 @@ pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
 
     let logo_text: Vec<Line> = logo_lines
         .iter()
-        .map(|line| {
-            Line::from(Span::styled(
-                (*line).to_string(),
-                theme.subtle_text(),
-            ))
-        })
+        .map(|line| Line::from(Span::styled((*line).to_string(), theme.subtle_text())))
         .collect();
 
     let logo = Paragraph::new(logo_text).alignment(Alignment::Center);
@@ -79,8 +74,7 @@ fn render_progress_bar(frame: &mut Frame, area: Rect, progress: f64, theme: &The
     }
 
     for i in 0..bar_width {
-        let gradient_pos =
-            (i as f64 / bar_width as f64 * (gradient.len() - 1) as f64) as usize;
+        let gradient_pos = (i as f64 / bar_width as f64 * (gradient.len() - 1) as f64) as usize;
         let color: Color = gradient[gradient_pos.min(gradient.len() - 1)];
 
         if i < filled {
