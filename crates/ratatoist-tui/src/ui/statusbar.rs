@@ -31,6 +31,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
             format!("  {project_name} ▸ {task_name}")
         }
         Pane::Settings => "  Settings".to_string(),
+        Pane::StatsDock => format!("  {project_name} ▸ weekly progress"),
     };
 
     let spans = vec![

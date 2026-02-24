@@ -22,6 +22,7 @@ pub enum Pane {
     Tasks,
     Detail,
     Settings,
+    StatsDock,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +59,57 @@ pub struct OverviewStats {
     pub due_today: u32,
     pub due_week: u32,
     pub overdue: u32,
-    #[allow(dead_code)]
     pub by_priority: [u32; 5],
-    pub week_progress: u32,
-    pub week_done: u32,
-    pub week_total: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskFilter {
+    Active,
+    Done,
+    Both,
+}
+
+impl TaskFilter {
+    pub fn next(self) -> Self {
+        match self {
+            TaskFilter::Active => TaskFilter::Done,
+            TaskFilter::Done => TaskFilter::Both,
+            TaskFilter::Both => TaskFilter::Active,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DockItem {
+    DueOverdue,
+    DueToday,
+    DueWeek,
+    Priority(u8),
+}
+
+pub const DOCK_ITEMS: [DockItem; 7] = [
+    DockItem::DueOverdue,
+    DockItem::DueToday,
+    DockItem::DueWeek,
+    DockItem::Priority(4),
+    DockItem::Priority(3),
+    DockItem::Priority(2),
+    DockItem::Priority(1),
+];
+
+impl DockItem {
+    pub fn hint(self) -> &'static str {
+        match self {
+            DockItem::DueOverdue => "overdue",
+            DockItem::DueToday => "due today",
+            DockItem::DueWeek => "due this week",
+            DockItem::Priority(4) => "urgent (P1)",
+            DockItem::Priority(3) => "high (P2)",
+            DockItem::Priority(2) => "medium (P3)",
+            DockItem::Priority(1) => "no priority",
+            DockItem::Priority(_) => "by priority",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -380,6 +427,7 @@ enum BgResult {
     },
     TaskClosed {
         task_id: String,
+        project_id: String,
         result: Result<()>,
     },
     TaskCreated {
@@ -433,6 +481,11 @@ pub struct App {
     pub task_form: Option<TaskForm>,
     pub current_user_id: Option<String>,
     pub user_names: HashMap<String, UserRecord>,
+    pub task_filter: TaskFilter,
+    pub dock_focus: Option<usize>,
+    pub dock_filter: Option<DockItem>,
+    pub pending_done: HashSet<String>,
+    pub completed_tasks: HashMap<String, Task>,
     pub themes: Vec<crate::ui::theme::Theme>,
     pub theme_idx: usize,
     pub show_theme_picker: bool,
@@ -445,14 +498,12 @@ pub struct App {
 
 fn load_theme_idx(themes: &[crate::ui::theme::Theme]) -> usize {
     let path = ratatoist_core::config::Config::config_dir().join("ui_settings.json");
-    if let Ok(src) = std::fs::read_to_string(&path) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&src) {
-            if let Some(name) = val["theme"].as_str() {
-                if let Some(idx) = themes.iter().position(|t| t.name == name) {
-                    return idx;
-                }
-            }
-        }
+    if let Ok(src) = std::fs::read_to_string(&path)
+        && let Ok(val) = serde_json::from_str::<serde_json::Value>(&src)
+        && let Some(name) = val["theme"].as_str()
+        && let Some(idx) = themes.iter().position(|t| t.name == name)
+    {
+        return idx;
     }
     0
 }
@@ -462,13 +513,48 @@ impl App {
         &self.themes[self.theme_idx]
     }
 
+    pub fn cycle_task_filter(&mut self) {
+        self.task_filter = self.task_filter.next();
+        self.pending_done.clear();
+        let visible_len = self.visible_tasks().len();
+        if visible_len == 0 {
+            self.selected_task = 0;
+        } else if self.selected_task >= visible_len {
+            self.selected_task = visible_len - 1;
+        }
+    }
+
+    fn completed_path() -> std::path::PathBuf {
+        ratatoist_core::config::Config::config_dir().join("completed.json")
+    }
+
+    fn load_completed_tasks() -> HashMap<String, Task> {
+        let path = Self::completed_path();
+        let tasks: Vec<Task> = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|src| serde_json::from_str(&src).ok())
+            .unwrap_or_default();
+        tasks.into_iter().map(|t| (t.id.clone(), t)).collect()
+    }
+
+    fn save_completed_tasks(&self) {
+        let path = Self::completed_path();
+        let tasks: Vec<&Task> = self.completed_tasks.values().collect();
+        if let Ok(json) = serde_json::to_string(&tasks) {
+            let _ = std::fs::write(path, json);
+        }
+    }
+
     pub fn save_theme_preference(&self) {
         let dir = ratatoist_core::config::Config::config_dir();
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("ui_settings.json");
         let name = &self.themes[self.theme_idx].name;
         let json = serde_json::json!({ "theme": name });
-        let _ = std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap_or_default());
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&json).unwrap_or_default(),
+        );
     }
 
     pub fn new(client: TodoistClient) -> Self {
@@ -503,6 +589,11 @@ impl App {
             editing_field: false,
             edit_buffer: String::new(),
             task_form: None,
+            task_filter: TaskFilter::Active,
+            dock_focus: None,
+            dock_filter: None,
+            pending_done: HashSet::new(),
+            completed_tasks: Self::load_completed_tasks(),
             current_user_id: None,
             user_names: HashMap::new(),
             themes,
@@ -664,6 +755,7 @@ impl App {
                         }
                     }
                     KeyAction::StarProject => self.star_selected_project(),
+                    KeyAction::CycleFilter => self.cycle_task_filter(),
                     KeyAction::CycleSort => {
                         self.sort_mode = self.sort_mode.next();
                         info!(sort = self.sort_mode.label(), "sort mode changed");
@@ -707,6 +799,17 @@ impl App {
         let visible = self.visible_tasks();
         if let Some(task) = visible.get(self.selected_task) {
             let task_id = task.id.clone();
+            let task_project_id = task.project_id.clone();
+
+            if self.dock_filter.is_some()
+                && let Some(pos) = self.projects.iter().position(|p| p.id == task_project_id)
+            {
+                self.selected_project = pos;
+                if let Some(cached) = self.task_cache.get(&task_project_id) {
+                    self.tasks = cached.clone();
+                }
+            }
+
             self.active_pane = Pane::Detail;
             self.detail_scroll = 0;
             self.detail_field = 0;
@@ -736,6 +839,8 @@ impl App {
             return;
         };
         let pid = project.id.clone();
+
+        self.pending_done.clear();
 
         if let Some(cached) = self.task_cache.get(&pid) {
             self.tasks = cached.clone();
@@ -771,14 +876,39 @@ impl App {
         };
         let task_id = task.id.clone();
         let was_checked = task.checked;
+        let task_project_id = task.project_id.clone();
+        let task_snapshot = (**task).clone();
 
+        // Optimistic update: task may be in self.tasks (current project) or task_cache (cross-project)
         if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
             t.checked = !was_checked;
+        } else if let Some(cached) = self.task_cache.get_mut(&task_project_id) {
+            if let Some(t) = cached.iter_mut().find(|t| t.id == task_id) {
+                t.checked = !was_checked;
+            }
+        }
+
+        if !was_checked {
+            self.pending_done.insert(task_id.clone());
+            let mut snapshot = task_snapshot;
+            snapshot.checked = true;
+            self.completed_tasks.insert(task_id.clone(), snapshot);
+            self.save_completed_tasks();
+        } else {
+            self.pending_done.remove(&task_id);
+            self.completed_tasks.remove(&task_id);
+            self.save_completed_tasks();
+        }
+
+        let new_len = self.visible_tasks().len();
+        if new_len > 0 && self.selected_task >= new_len {
+            self.selected_task = new_len - 1;
         }
 
         let client = Arc::clone(&self.client);
         let tx = self.bg_tx.clone();
         let tid = task_id.clone();
+        let pid = task_project_id;
 
         tokio::spawn(async move {
             let result = if was_checked {
@@ -789,6 +919,7 @@ impl App {
             let _ = tx
                 .send(BgResult::TaskClosed {
                     task_id: tid,
+                    project_id: pid,
                     result,
                 })
                 .await;
@@ -1088,7 +1219,15 @@ impl App {
                             .get(self.selected_project)
                             .is_some_and(|p| p.id == project_id);
                         if is_current {
+                            let preserved: Vec<Task> = self
+                                .tasks
+                                .iter()
+                                .filter(|t| self.pending_done.contains(&t.id))
+                                .filter(|t| !fresh.iter().any(|f| f.id == t.id))
+                                .cloned()
+                                .collect();
                             self.tasks = fresh.clone();
+                            self.tasks.extend(preserved);
                             let visible_len = self.visible_tasks().len();
                             if self.selected_task >= visible_len {
                                 self.selected_task = visible_len.saturating_sub(1);
@@ -1098,14 +1237,25 @@ impl App {
                     }
                     Err(e) => self.set_error(&e, "Sync tasks"),
                 },
-                BgResult::TaskClosed { task_id, result } => {
+                BgResult::TaskClosed {
+                    task_id,
+                    project_id,
+                    result,
+                } => {
                     if let Err(e) = result {
                         if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
                             t.checked = !t.checked;
+                        } else if let Some(cached) = self.task_cache.get_mut(&project_id) {
+                            if let Some(t) = cached.iter_mut().find(|t| t.id == task_id) {
+                                t.checked = !t.checked;
+                            }
                         }
+                        self.completed_tasks.remove(&task_id);
+                        self.pending_done.remove(&task_id);
+                        self.save_completed_tasks();
                         self.set_error(&e, "Complete task");
                     } else {
-                        self.invalidate_current_project_cache();
+                        self.task_cache.remove(&project_id);
                     }
                 }
                 BgResult::TaskCreated { project_id, result } => match *result {
@@ -1425,8 +1575,6 @@ impl App {
         let mut due_week = 0u32;
         let mut overdue = 0u32;
         let mut by_priority = [0u32; 5];
-        let mut week_total = 0u32;
-        let mut week_done = 0u32;
 
         for tasks in self.task_cache.values() {
             for task in tasks {
@@ -1439,31 +1587,20 @@ impl App {
                     }
                     if due.date >= today && due.date <= week_end {
                         due_week += 1;
-                        week_total += 1;
-                        if task.checked {
-                            week_done += 1;
-                        }
                     }
                 }
-                let p = (task.priority as usize).min(4);
-                by_priority[p] += 1;
+                if !task.checked {
+                    let p = (task.priority as usize).min(4);
+                    by_priority[p] += 1;
+                }
             }
         }
-
-        let week_progress = if week_total > 0 {
-            (week_done as f64 / week_total as f64 * 100.0) as u32
-        } else {
-            0
-        };
 
         OverviewStats {
             due_today,
             due_week,
             overdue,
             by_priority,
-            week_progress,
-            week_done,
-            week_total,
         }
     }
 
@@ -1478,11 +1615,61 @@ impl App {
     }
 
     pub fn visible_tasks(&self) -> Vec<&Task> {
-        let mut top_level: Vec<&Task> = self
-            .tasks
-            .iter()
+        let today = crate::ui::dates::today_str();
+        let week_end = crate::ui::dates::offset_days_str(7);
+
+        let source: Vec<&Task> = if self.dock_filter.is_some() {
+            self.task_cache
+                .values()
+                .flat_map(|tasks| tasks.iter())
+                .collect()
+        } else {
+            self.tasks.iter().collect()
+        };
+
+        let mut top_level: Vec<&Task> = source
+            .into_iter()
             .filter(|t| t.parent_id.is_none())
+            .filter(|t| {
+                self.pending_done.contains(&t.id)
+                    || match self.task_filter {
+                        TaskFilter::Active => !t.checked,
+                        TaskFilter::Done => t.checked,
+                        TaskFilter::Both => true,
+                    }
+            })
+            .filter(|t| match self.dock_filter {
+                None => true,
+                Some(DockItem::DueOverdue) => {
+                    t.due.as_ref().is_some_and(|d| d.date < today) && !t.checked
+                }
+                Some(DockItem::DueToday) => t.due.as_ref().is_some_and(|d| d.date == today),
+                Some(DockItem::DueWeek) => t
+                    .due
+                    .as_ref()
+                    .is_some_and(|d| d.date >= today && d.date <= week_end),
+                Some(DockItem::Priority(p)) => t.priority == p && !t.checked,
+            })
             .collect();
+
+        // Include persisted completed tasks for current project in Done/Both view
+        if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both)
+            && self.dock_filter.is_none()
+        {
+            let current_pid = self
+                .projects
+                .get(self.selected_project)
+                .map(|p| p.id.as_str());
+            let existing_ids: HashSet<&str> = top_level.iter().map(|t| t.id.as_str()).collect();
+            for task in self.completed_tasks.values() {
+                if task.parent_id.is_none()
+                    && current_pid == Some(task.project_id.as_str())
+                    && !existing_ids.contains(task.id.as_str())
+                {
+                    top_level.push(task);
+                }
+            }
+        }
 
         match self.sort_mode {
             SortMode::Default => top_level.sort_by_key(|t| t.child_order),
@@ -1497,6 +1684,10 @@ impl App {
                 let b_at = b.added_at.as_deref().unwrap_or("");
                 b_at.cmp(a_at)
             }),
+        }
+
+        if self.dock_filter.is_some() {
+            return top_level;
         }
 
         let mut result = Vec::with_capacity(self.tasks.len());
