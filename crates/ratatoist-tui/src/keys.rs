@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::{App, InputMode, Pane, VimState};
+use crate::app::{App, DOCK_ITEMS, InputMode, Pane, VimState};
 
 pub enum KeyAction {
     Quit,
@@ -20,6 +20,7 @@ pub enum KeyAction {
     OpenPriorityPicker,
     SelectPriority,
     StarProject,
+    CycleFilter,
     CycleSort,
     StartInput,
     StartCommentInput,
@@ -65,6 +66,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         };
     }
 
+    if app.show_priority_picker {
+        return handle_priority_picker(app, key);
+    }
+
     if let Some(form) = &app.task_form {
         if form.editing {
             return handle_input(app, key);
@@ -84,17 +89,60 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return handle_settings(app, key);
     }
 
-    if app.show_priority_picker {
-        return handle_priority_picker(app, key);
-    }
-
     if matches!(app.active_pane, Pane::Detail) {
         return handle_detail(app, key);
+    }
+
+    if app.dock_focus.is_some() {
+        return handle_dock_nav(app, key);
     }
 
     match app.input_mode {
         InputMode::Vim(state) => handle_vim(app, key, state),
         InputMode::Standard => handle_standard(app, key),
+    }
+}
+
+fn handle_dock_nav(app: &mut App, key: KeyEvent) -> KeyAction {
+    let focus = app.dock_focus.unwrap_or(0);
+
+    match key.code {
+        KeyCode::Char('l') | KeyCode::Right | KeyCode::Char('j') | KeyCode::Down => {
+            app.dock_focus = Some((focus + 1) % DOCK_ITEMS.len());
+            KeyAction::Consumed
+        }
+        KeyCode::Char('h') | KeyCode::Left | KeyCode::Char('k') | KeyCode::Up => {
+            if focus == 0 {
+                app.dock_focus = None;
+                app.active_pane = Pane::Projects;
+                app.selected_project = app.projects.len().saturating_sub(1);
+            } else {
+                app.dock_focus = Some(focus - 1);
+            }
+            KeyAction::Consumed
+        }
+        KeyCode::Enter | KeyCode::Char(' ') => {
+            let item = DOCK_ITEMS[focus];
+            app.dock_filter = if app.dock_filter == Some(item) {
+                None
+            } else {
+                Some(item)
+            };
+            app.dock_focus = None;
+            app.active_pane = Pane::Tasks;
+            let visible_len = app.visible_tasks().len();
+            app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+            KeyAction::Consumed
+        }
+        KeyCode::Esc => {
+            app.dock_focus = None;
+            app.dock_filter = None;
+            app.active_pane = Pane::Projects;
+            let visible_len = app.visible_tasks().len();
+            app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+            KeyAction::Consumed
+        }
+        _ => KeyAction::Consumed,
     }
 }
 
@@ -170,7 +218,8 @@ fn handle_theme_picker(app: &mut App, key: KeyEvent) -> KeyAction {
             if app.themes.is_empty() {
                 return KeyAction::Consumed;
             }
-            app.theme_selection = app.theme_selection
+            app.theme_selection = app
+                .theme_selection
                 .checked_sub(1)
                 .unwrap_or(app.themes.len() - 1);
             KeyAction::Consumed
@@ -307,6 +356,7 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
 
         KeyCode::Char('x') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CompleteTask,
         KeyCode::Char('a') if matches!(app.active_pane, Pane::Tasks) => KeyAction::StartInput,
+        KeyCode::Char('f') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
         KeyCode::Char('o') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleSort,
         KeyCode::Char('s') if matches!(app.active_pane, Pane::Projects) => KeyAction::StarProject,
 
@@ -342,7 +392,13 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
 
         KeyCode::Esc => {
             if matches!(app.active_pane, Pane::Tasks) {
-                app.active_pane = Pane::Projects;
+                if app.dock_filter.is_some() {
+                    app.dock_filter = None;
+                    let visible_len = app.visible_tasks().len();
+                    app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+                } else {
+                    app.active_pane = Pane::Projects;
+                }
                 KeyAction::Consumed
             } else {
                 KeyAction::None
@@ -381,6 +437,7 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('q') => KeyAction::Quit,
         KeyCode::Char('?') => KeyAction::ToggleHelp,
         KeyCode::Char(',') => KeyAction::ToggleSettings,
+        KeyCode::Char('f') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
 
         KeyCode::Down => move_in_pane(app, 1),
         KeyCode::Up => move_in_pane(app, -1),
@@ -412,7 +469,13 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
 
         KeyCode::Esc => {
             if matches!(app.active_pane, Pane::Tasks) {
-                app.active_pane = Pane::Projects;
+                if app.dock_filter.is_some() {
+                    app.dock_filter = None;
+                    let visible_len = app.visible_tasks().len();
+                    app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+                } else {
+                    app.active_pane = Pane::Projects;
+                }
                 KeyAction::Consumed
             } else {
                 KeyAction::None
@@ -431,8 +494,13 @@ fn move_in_pane(app: &mut App, delta: i32) -> KeyAction {
                 return KeyAction::Consumed;
             }
             let current = app.selected_project as i32;
-            let next = (current + delta).rem_euclid(len as i32) as usize;
-            app.selected_project = next;
+            let next = current + delta;
+            if next >= len as i32 {
+                app.dock_focus = Some(0);
+                app.active_pane = Pane::StatsDock;
+                return KeyAction::Consumed;
+            }
+            app.selected_project = next.rem_euclid(len as i32) as usize;
             KeyAction::ProjectChanged
         }
         Pane::Tasks => {

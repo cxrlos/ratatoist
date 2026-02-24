@@ -35,19 +35,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let line = Line::from(vec![
-        Span::styled(
-            format!("▲ {}", stats.overdue),
-            if stats.overdue > 0 {
-                theme.due_overdue()
-            } else {
-                theme.muted_text()
-            },
-        ),
-        Span::styled("  ", theme.muted_text()),
-        Span::styled(format!("◆ {}", stats.due_today), theme.due_today()),
-        Span::styled("  ", theme.muted_text()),
-        Span::styled(format!("◇ {}", stats.due_week), theme.due_upcoming()),
-        Span::styled("  │  ", theme.muted_text()),
         Span::styled(progress_bar, theme.success()),
         Span::styled(format!(" {}%", stats.week_progress), theme.muted_text()),
         Span::styled(sort_indicator, theme.due_upcoming()),

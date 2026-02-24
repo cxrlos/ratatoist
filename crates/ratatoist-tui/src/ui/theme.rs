@@ -116,12 +116,11 @@ impl Theme {
         let mut themes = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                if let Ok(src) = std::fs::read_to_string(&path) {
-                    if let Ok(scheme) = serde_json::from_str::<Base16Scheme>(&src) {
-                        themes.push(Self::from_scheme(&scheme));
-                    }
-                }
+            if path.extension().and_then(|e| e.to_str()) == Some("json")
+                && let Ok(src) = std::fs::read_to_string(&path)
+                && let Ok(scheme) = serde_json::from_str::<Base16Scheme>(&src)
+            {
+                themes.push(Self::from_scheme(&scheme));
             }
         }
         themes.sort_by(|a, b| a.name.cmp(&b.name));
@@ -148,6 +147,13 @@ impl Theme {
         Style::default().fg(self.cyan).bg(self.surface)
     }
 
+    pub fn dock_focused_item(&self) -> Style {
+        Style::default()
+            .fg(self.base)
+            .bg(self.cyan)
+            .add_modifier(Modifier::BOLD)
+    }
+
     pub fn normal_text(&self) -> Style {
         Style::default().fg(self.text)
     }
@@ -167,9 +173,7 @@ impl Theme {
     }
 
     pub fn active_title(&self) -> Style {
-        Style::default()
-            .fg(self.cyan)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(self.cyan).add_modifier(Modifier::BOLD)
     }
 
     pub fn key_hint(&self) -> Style {
@@ -193,9 +197,7 @@ impl Theme {
     }
 
     pub fn error_title(&self) -> Style {
-        Style::default()
-            .fg(self.red)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(self.red).add_modifier(Modifier::BOLD)
     }
 
     pub fn error_border(&self) -> Style {
@@ -258,7 +260,7 @@ impl Theme {
 
     pub fn priority_dot(priority: u8) -> &'static str {
         match priority {
-            4 | 3 | 2 => "● ",
+            2..=4 => "● ",
             _ => "  ",
         }
     }
