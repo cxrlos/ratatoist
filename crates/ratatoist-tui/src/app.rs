@@ -19,8 +19,6 @@ use ratatoist_core::sync_state::SyncState;
 use crate::keys::{self, KeyAction};
 use crate::ui;
 
-// --- ID generation ----------------------------------------------------------
-
 static CMD_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn new_uuid() -> String {
@@ -35,8 +33,6 @@ fn new_uuid() -> String {
 fn new_temp_id() -> String {
     format!("tmp_{}", CMD_COUNTER.fetch_add(1, Ordering::Relaxed))
 }
-
-// --- App enums & types ------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
@@ -315,8 +311,6 @@ enum BgResult {
         fetch_seq: u64,
     },
 }
-
-// --- App state --------------------------------------------------------------
 
 pub struct App {
     pub projects: Vec<Project>,
@@ -714,8 +708,6 @@ impl App {
         Ok(())
     }
 
-    // --- Sync machinery -----------------------------------------------------
-
     fn apply_sync_delta(&mut self, resp: SyncResponse) {
         if resp.full_sync {
             if let Some(projects) = resp.projects {
@@ -989,8 +981,6 @@ impl App {
         });
     }
 
-    // --- Background result draining -----------------------------------------
-
     fn drain_bg_results(&mut self) {
         while let Ok(result) = self.bg_rx.try_recv() {
             match result {
@@ -1088,8 +1078,6 @@ impl App {
         }
     }
 
-    // --- User actions -------------------------------------------------------
-
     fn open_detail(&mut self) {
         let visible = self.visible_tasks();
         if let Some(task) = visible.get(self.selected_task) {
@@ -1169,7 +1157,6 @@ impl App {
             )
         };
 
-        // Optimistic flip.
         let before = self.tasks.iter().find(|t| t.id == task_id).cloned();
         if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
             t.checked = !was_checked;
@@ -1287,7 +1274,6 @@ impl App {
         let temp_id = new_temp_id();
         let uuid = new_uuid();
 
-        // Optimistic task — appears immediately with a temp id.
         let optimistic = Task {
             id: temp_id.clone(),
             content: form.content.clone(),
@@ -1826,8 +1812,6 @@ impl App {
         }
     }
 
-    // --- Queries ------------------------------------------------------------
-
     pub fn selected_project_name(&self) -> &str {
         self.projects
             .get(self.selected_project)
@@ -2150,8 +2134,6 @@ impl App {
     }
 }
 
-// --- Project tree helpers ---------------------------------------------------
-
 fn collect_project_subtree(parent_id: Option<&str>, all: &[Project], out: &mut Vec<Project>) {
     let mut children: Vec<&Project> = all
         .iter()
@@ -2167,8 +2149,6 @@ fn collect_project_subtree(parent_id: Option<&str>, all: &[Project], out: &mut V
         collect_project_subtree(Some(&child.id), all, out);
     }
 }
-
-// --- WebSocket background task ----------------------------------------------
 
 async fn run_websocket(url: String, tx: mpsc::Sender<BgResult>) {
     use futures_util::StreamExt;
