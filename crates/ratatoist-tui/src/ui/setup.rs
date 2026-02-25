@@ -98,7 +98,11 @@ pub fn render_alias(
 }
 
 fn render_logo(frame: &mut Frame, logo_lines: &[&str], theme: &Theme, area: Rect) {
-    let max_width = logo_lines.iter().map(|l| l.len()).max().unwrap_or(0);
+    let max_width = logo_lines
+        .iter()
+        .map(|l| l.chars().count())
+        .max()
+        .unwrap_or(0);
 
     let logo_text: Vec<Line> = logo_lines
         .iter()

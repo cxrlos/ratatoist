@@ -1,56 +1,51 @@
+<div align="center"><pre>
+░█▀▄░█▀█░▀█▀░█▀█░▀█▀░█▀█░▀█▀░█▀▀░▀█▀
+░█▀▄░█▀█░░█░░█▀█░░█░░█░█░░█░░▀▀█░░█░
+░▀░▀░▀░▀░░▀░░▀░▀░░▀░░▀▀▀░▀▀▀░▀▀▀░░▀░
+</pre></div>
+
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust">
   <img src="https://img.shields.io/badge/Todoist-E44332?style=for-the-badge&logo=todoist&logoColor=white" alt="Todoist">
   <img src="https://img.shields.io/badge/Terminal-4D4D4D?style=for-the-badge&logo=gnometerminal&logoColor=white" alt="Terminal">
 </p>
 
-<h1 align="center">ratatoist</h1>
-
 <p align="center">
   <em>Your Todoist inbox, without leaving the terminal.</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/cxrlos/ratatoist/releases">
-    <img src="https://img.shields.io/github/v/release/cxrlos/ratatoist?style=flat-square&color=9ccfd8&label=release" alt="latest release">
+  <a href="https://crates.io/crates/ratatoist-core">
+    <img src="https://img.shields.io/crates/v/ratatoist-core?style=for-the-badge&label=core&color=9ccfd8" alt="core on crates.io">
   </a>
-  <img src="https://img.shields.io/github/license/cxrlos/ratatoist?style=flat-square&color=ebbcba" alt="license">
-  <img src="https://img.shields.io/github/actions/workflow/status/cxrlos/ratatoist/ci.yml?style=flat-square&label=CI" alt="CI">
-</p>
-
-<p align="center">
-  <a href="https://github.com/cxrlos/ratatoist">github.com/cxrlos/ratatoist</a>
+  <a href="https://crates.io/crates/ratatoist-tui">
+    <img src="https://img.shields.io/crates/v/ratatoist-tui?style=for-the-badge&label=tui&color=9ccfd8" alt="tui on crates.io">
+  </a>
+  <a href="https://crates.io/crates/ratatoist-tui">
+    <img src="https://img.shields.io/crates/d/ratatoist-tui?style=for-the-badge&label=downloads&color=c4a7e7" alt="crates.io downloads">
+  </a>
+  <img src="https://img.shields.io/badge/MSRV-1.85-orange?style=for-the-badge&logo=rust&logoColor=white" alt="MSRV 1.85">
+  <a href="https://github.com/cxrlos/ratatoist/stargazers">
+    <img src="https://img.shields.io/github/stars/cxrlos/ratatoist?style=for-the-badge&color=eb6f92" alt="GitHub stars">
+  </a>
 </p>
 
 ---
 
-```
-╭── Projects ──────╮╭── Work ──────────────────────────────╮
-│   Inbox           ││ ◇ ● API migration           Fri     │
-│ ★ Work            ││   ▾ ● Auth middleware       tmrw    │
-│   Personal        ││     ◦   Database schema     today   │
-│   Side project    ││   ▸ ● Data pipeline         Mon     │
-├── Stats ──────────╯│ ◇   Update documentation            │
-│ ▲3 overdue  ●5 P1 │╰──────────────────────────────────────╯
-╰──────────────────╯
- NORMAL  Work ▸ 5 tasks  ◈ due today
- j/k navigate  Enter open  x complete  a add  f filter  o sort
-```
+<!-- video later -->
 
-Todoist is great. But switching to a browser tab breaks flow. ratatoist keeps your tasks in the terminal where you already live — vim motions, instant navigation, zero mouse required.
-
-- **Fast** — Sync API with incremental delta, real-time WebSocket updates, exponential-backoff retries
-- **Vim-native** — `j`/`k`/`h`/`l`, folds, modal editing. Standard mode with arrows also available.
+- **Fast** — incremental delta sync, real-time WebSocket updates, exponential-backoff retries
+- **Vim-native** — `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
 - **Polished** — threaded comments, priority indicators, human-readable dates, 10 built-in themes
-- **Secure** — token never logged, config permissions validated
+- **Secure** — token never logged, config file permissions validated
 
 ## Packages
 
-| Crate | Description |
-|-------|-------------|
-| [`ratatoist-core`](crates/ratatoist-core/) | Todoist Sync API client, config, logging |
-| [`ratatoist-tui`](crates/ratatoist-tui/) | Terminal UI binary (installs as `ratatoist`) |
-| [`ratatoist-nvim`](crates/ratatoist-nvim/) | Neovim plugin — coming soon |
+| Crate                                      | Description                                  |
+| ------------------------------------------ | -------------------------------------------- |
+| [`ratatoist-core`](crates/ratatoist-core/) | Todoist Sync API client, config, logging     |
+| [`ratatoist-tui`](crates/ratatoist-tui/)   | Terminal UI binary (installs as `ratatoist`) |
+| [`ratatoist-nvim`](crates/ratatoist-nvim/) | Neovim plugin — coming soon                  |
 
 ## Quick start
 
@@ -145,11 +140,11 @@ ratatoist
 
 ## Documentation
 
-| | |
-|---|---|
+|                                                             |                                                    |
+| ----------------------------------------------------------- | -------------------------------------------------- |
 | [TUI keybindings and usage](crates/ratatoist-tui/README.md) | Full key reference for both Vim and Standard modes |
-| [Core library API](crates/ratatoist-core/README.md) | Using the Todoist client in your own Rust projects |
-| [Changelog](CHANGELOG.md) | Version history |
+| [Core library API](crates/ratatoist-core/README.md)         | Using the Todoist client in your own Rust projects |
+| [Changelog](CHANGELOG.md)                                   | Version history                                    |
 
 ## Development
 
@@ -181,9 +176,3 @@ cargo test --workspace                  # test
 ## License
 
 MIT
-
----
-
-<p align="center">
-  <sub>Built with <a href="https://ratatui.rs">ratatui</a> · Powered by <a href="https://developer.todoist.com/api/v1">Todoist API v1</a></sub>
-</p>
