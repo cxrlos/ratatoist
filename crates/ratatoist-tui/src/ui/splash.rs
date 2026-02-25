@@ -14,7 +14,7 @@ pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
         .lines()
         .filter(|l| !l.trim().is_empty())
         .collect();
-    let max_width = logo_lines.iter().map(|l| l.len()).max().unwrap_or(0);
+    let max_width = logo_lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
     let logo_height = logo_lines.len() as u16;
 
     let [_, logo_area, _, bar_area, status_area, _] = Layout::vertical([
