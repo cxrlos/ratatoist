@@ -1,9 +1,9 @@
 [package]
-name        = "ratatoist-tui"
+name = "ratatoist-tui"
 description = "Terminal user interface for Todoist"
-version     = "0.2.1"
-edition.workspace    = true
-license.workspace    = true
+version = "0.2.1"
+edition.workspace = true
+license.workspace = true
 repository.workspace = true
 
 [[bin]]
@@ -12,16 +12,15 @@ path = "src/main.rs"
 
 [dependencies]
 ratatoist-core.workspace = true
-anyhow.workspace         = true
-serde.workspace          = true
-serde_json.workspace     = true
-tokio.workspace          = true
-tracing.workspace        = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
-# TUI-specific deps (not shared with core)
-chrono           = { version = "0.4", features = ["clock", "serde"] }
-clap             = { version = "4", features = ["derive"] }
-crossterm        = "0.29"
-futures-util     = "0.3"
-ratatui          = "0.30"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.29"
+futures-util = "0.3"
+ratatui = "0.30"
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
