@@ -57,22 +57,39 @@ async fn main() -> Result<()> {
             }
         }
     } else {
-        let config = match Config::load() {
-            Ok(c) => c,
-            Err(e) => {
-                ratatui::restore();
-                eprintln!("{e:#}");
-                std::process::exit(1);
-            }
+        let (client, ephemeral) = match Config::load() {
+            Ok(c) => match TodoistClient::new(c.token()) {
+                Ok(client) => (client, false),
+                Err(e) => {
+                    ratatui::restore();
+                    eprintln!("Failed to initialize API client: {e:#}");
+                    std::process::exit(1);
+                }
+            },
+            Err(_) => match run_new_user_setup(&mut terminal).await {
+                Ok(token) => {
+                    if let Err(e) = Config::save_token(&token) {
+                        ratatui::restore();
+                        eprintln!("Failed to save config: {e:#}");
+                        std::process::exit(1);
+                    }
+                    run_alias_setup(&mut terminal).await;
+                    match TodoistClient::new(&token) {
+                        Ok(c) => (c, false),
+                        Err(e) => {
+                            ratatui::restore();
+                            eprintln!("Failed to initialize API client: {e:#}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(_) => {
+                    ratatui::restore();
+                    return Ok(());
+                }
+            },
         };
-        match TodoistClient::new(config.token()) {
-            Ok(c) => (c, false),
-            Err(e) => {
-                ratatui::restore();
-                eprintln!("Failed to initialize API client: {e:#}");
-                std::process::exit(1);
-            }
-        }
+        (client, ephemeral)
     };
 
     let mut app = App::new(client, cli.idle_forcer, ephemeral);

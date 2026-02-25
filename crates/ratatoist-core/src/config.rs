@@ -2,12 +2,17 @@ use std::fmt;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 #[derive(Deserialize)]
 struct ConfigFile {
     api_token: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ConfigFileWrite {
+    api_token: String,
 }
 
 pub struct Config {
@@ -53,6 +58,20 @@ impl Config {
         &self.api_token
     }
 
+    pub fn save_token(token: &str) -> Result<()> {
+        let dir = Self::config_dir();
+        std::fs::create_dir_all(&dir).context("failed to create config directory")?;
+        let path = Self::config_path();
+        let content = toml::to_string(&ConfigFileWrite {
+            api_token: token.to_string(),
+        })
+        .context("failed to serialize config")?;
+        std::fs::write(&path, content).context("failed to write config file")?;
+        Self::set_secure_permissions(&path)?;
+        info!(path = %path.display(), "config saved");
+        Ok(())
+    }
+
     pub fn config_dir() -> PathBuf {
         if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
             return PathBuf::from(xdg).join("ratatoist");
@@ -91,6 +110,22 @@ impl Config {
                 path.display()
             );
         }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn set_secure_permissions(path: &std::path::Path) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path)
+            .context("failed to read config file metadata")?
+            .permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(path, perms).context("failed to set config file permissions")?;
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    fn set_secure_permissions(_path: &std::path::Path) -> Result<()> {
         Ok(())
     }
 
