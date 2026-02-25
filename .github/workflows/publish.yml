@@ -265,12 +265,12 @@ jobs:
 
   # ── 7. Cleanup on failure ───────────────────────────────────────────────────
   # Runs only when something after the bump commit fails (CI, build, release,
-  # or publish).  Deletes the GitHub Release and its auto-created tag so the
-  # repo doesn't accumulate orphaned releases.
+  # or publish).
+  # 1. Reverts the version bump commit on main (so the next publish run retries
+  #    the same version rather than incrementing from a never-published one).
+  # 2. Deletes the GitHub Release and its auto-created tag.
   #
-  # Note: the version bump commit on main is NOT reverted automatically — it
-  # stays so the next publish run correctly increments from the new version.
-  # If you need to undo the bump itself, revert the commit manually and re-run.
+  # Uses `git revert` (not reset) — safe for a shared branch, no force-push.
   cleanup-on-failure:
     name: Cleanup on failure
     needs: [bump, ci, github-release, publish]
@@ -280,6 +280,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Revert version bump commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git revert ${{ needs.bump.outputs.sha }} --no-edit
+          git push origin main
+          echo "Reverted bump commit ${{ needs.bump.outputs.sha }}"
 
       - name: Delete GitHub Release and tag
         run: |
@@ -295,13 +306,13 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## Publish failed — partial cleanup done" >> $GITHUB_STEP_SUMMARY
-          echo ""                                         >> $GITHUB_STEP_SUMMARY
-          echo "| | |"                                    >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|"                                >> $GITHUB_STEP_SUMMARY
-          echo "| Crate   | \`${{ inputs.crate }}\` |"  >> $GITHUB_STEP_SUMMARY
-          echo "| Version | \`${{ needs.bump.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| GitHub Release | deleted ✓ |"          >> $GITHUB_STEP_SUMMARY
-          echo ""                                         >> $GITHUB_STEP_SUMMARY
-          echo "> The version bump commit on \`main\` was **not** reverted." >> $GITHUB_STEP_SUMMARY
-          echo "> Fix the issue and re-run **Publish** — it will attempt the same version again." >> $GITHUB_STEP_SUMMARY
+          echo "## Publish failed — fully rolled back" >> $GITHUB_STEP_SUMMARY
+          echo ""                                       >> $GITHUB_STEP_SUMMARY
+          echo "| | |"                                  >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|"                              >> $GITHUB_STEP_SUMMARY
+          echo "| Crate          | \`${{ inputs.crate }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version        | \`${{ needs.bump.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Bump commit    | reverted ✓ |"        >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Release | deleted ✓ |"         >> $GITHUB_STEP_SUMMARY
+          echo ""                                       >> $GITHUB_STEP_SUMMARY
+          echo "> Fix the issue and re-run **Publish** — it will recalculate and retry \`${{ needs.bump.outputs.version }}\` from scratch." >> $GITHUB_STEP_SUMMARY
