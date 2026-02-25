@@ -183,6 +183,7 @@ fn render_token_form(
     frame.render_widget(Paragraph::new(status_line), status_area);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_alias_form(
     frame: &mut Frame,
     selected_idx: usize,
