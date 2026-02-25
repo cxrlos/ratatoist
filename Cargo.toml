@@ -12,7 +12,7 @@ repository = "https://github.com/cxrlos/ratatoist"
 # Cargo.toml) in one commit. Consumers (ratatoist-tui, ratatoist-nvim, …) inherit
 # it via `ratatoist-core.workspace = true` — no per-crate sync required.
 [workspace.dependencies]
-ratatoist-core = { path = "crates/ratatoist-core", version = "0.3.0" }
+ratatoist-core = { path = "crates/ratatoist-core", version = "0.2.1" }
 
 # Shared deps — both crates use the same version; add features here if a consumer
 # needs them and they are safe to enable globally (additive Cargo feature model).
