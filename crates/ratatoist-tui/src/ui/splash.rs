@@ -6,22 +6,15 @@ use ratatui::widgets::{Block, Paragraph};
 
 use crate::ui::theme::Theme;
 
-const LOGO: &str = r#"
-                $$\                $$\               $$\             $$\
-                $$ |               $$ |              \__|            $$ |
- $$$$$$\  $$$$$$\ $$$$$$\    $$$$$$\ $$$$$$\    $$$$$$\  $$\  $$$$$$$\ $$$$$$\
-$$  __$$\ \____$$\\_$$  _|   \____$$\\_$$  _|  $$  __$$\ $$ |$$  _____|\_$$  _|
-$$ |  \__|$$$$$$$ | $$ |     $$$$$$$ | $$ |    $$ /  $$ |$$ |\$$$$$$\    $$ |
-$$ |     $$  __$$ | $$ |$$\ $$  __$$ | $$ |$$\ $$ |  $$ |$$ | \____$$\   $$ |$$\
-$$ |     \$$$$$$$ | \$$$$  |\$$$$$$$ | \$$$$  |\$$$$$$  |$$ |$$$$$$$  |  \$$$$  |
-\__|      \_______|  \____/  \_______|  \____/  \______/ \__|\_______/    \____/
-"#;
-
 pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
     let area = frame.area();
     frame.render_widget(Block::default().style(theme.base_bg()), area);
 
-    let logo_lines: Vec<&str> = LOGO.lines().filter(|l| !l.is_empty()).collect();
+    let logo_lines: Vec<&str> = super::LOGO
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    let max_width = logo_lines.iter().map(|l| l.len()).max().unwrap_or(0);
     let logo_height = logo_lines.len() as u16;
 
     let [_, logo_area, _, bar_area, status_area, _] = Layout::vertical([
@@ -36,7 +29,10 @@ pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
 
     let logo_text: Vec<Line> = logo_lines
         .iter()
-        .map(|line| Line::from(Span::styled((*line).to_string(), theme.subtle_text())))
+        .map(|line| {
+            let padded = format!("{:width$}", line, width = max_width);
+            Line::from(Span::styled(padded, theme.subtle_text()))
+        })
         .collect();
 
     let logo = Paragraph::new(logo_text).alignment(Alignment::Center);
