@@ -1,15 +1,15 @@
+use std::collections::HashMap;
+
+use chrono::DateTime;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
-use std::collections::HashMap;
-
 use ratatoist_core::api::models::{Comment, Task};
 
 use crate::app::UserRecord;
-
 use crate::ui::dates;
 use crate::ui::theme::Theme;
 
@@ -79,8 +79,9 @@ pub fn render(
         theme.muted_text()
     };
     if let Some(due) = &task.due {
-        let formatted = dates::format_due(&due.date, theme);
-        let due_display = format!("{}  ({})", formatted.text, due.date);
+        let formatted = dates::format_due(due, theme);
+        let recurring_marker = if due.is_recurring { " ↻" } else { "" };
+        let due_display = format!("{}{}  ({})", formatted.text, recurring_marker, due.date);
         lines.push(Line::from(vec![
             Span::styled("Due       ", due_style),
             Span::styled(due_display, formatted.style),
@@ -275,10 +276,12 @@ fn field_hint(active: bool, theme: &Theme) -> Span<'static> {
 }
 
 fn format_comment_time(timestamp: &str) -> String {
-    if timestamp.len() < 16 {
-        return timestamp.to_string();
+    if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
+        return dt.format("%Y-%m-%d %H:%M").to_string();
     }
-    let date_part = &timestamp[..10];
-    let time_part = &timestamp[11..16];
-    format!("{date_part} {time_part}")
+    // Fallback: ISO strings that aren't full RFC 3339 (e.g. "2024-01-15T14:30:00")
+    if timestamp.len() >= 16 {
+        return format!("{} {}", &timestamp[..10], &timestamp[11..16]);
+    }
+    timestamp.to_string()
 }

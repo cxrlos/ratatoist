@@ -67,6 +67,20 @@ fn parse_hex(hex: &str) -> Color {
     Color::Rgb(r, g, b)
 }
 
+/// Maps a Todoist color name to a semantic slot in the active theme.
+pub fn color_scheme(name: &str) -> &'static str {
+    match name {
+        "berry_red" | "red" | "salmon" => "red",
+        "orange" | "yellow" => "orange",
+        "olive_green" | "lime_green" | "green" | "mint_green" => "green",
+        "teal" | "sky_blue" | "light_blue" => "cyan",
+        "blue" => "blue",
+        "grape" | "violet" | "lavender" | "magenta" => "purple",
+        "charcoal" | "grey" | "taupe" => "muted",
+        _ => "subtle",
+    }
+}
+
 impl Theme {
     pub fn from_scheme(s: &Base16Scheme) -> Self {
         Self {
@@ -125,6 +139,20 @@ impl Theme {
         }
         themes.sort_by(|a, b| a.name.cmp(&b.name));
         themes
+    }
+
+    /// Map a Todoist color name to the closest `Color` in this theme.
+    pub fn color_for(&self, todoist_color: &str) -> Color {
+        match color_scheme(todoist_color) {
+            "red" => self.red,
+            "orange" => self.orange,
+            "green" => self.green,
+            "cyan" => self.cyan,
+            "blue" => self.blue,
+            "purple" => self.purple,
+            "muted" => self.muted,
+            _ => self.subtle,
+        }
     }
 
     pub fn base_bg(&self) -> Style {
