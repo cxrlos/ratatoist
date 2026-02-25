@@ -28,7 +28,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
             }
 
             ProjectEntry::WorkspaceHeader(wi) => {
-                let name = app.workspaces.get(*wi).map(|w| w.name.as_str()).unwrap_or("");
+                let name = app
+                    .workspaces
+                    .get(*wi)
+                    .map(|w| w.name.as_str())
+                    .unwrap_or("");
                 ListItem::new(Line::from(Span::styled(
                     format!("  {name}"),
                     theme.label_tag().add_modifier(Modifier::BOLD),

@@ -44,11 +44,9 @@ pub fn render(frame: &mut Frame, app: &App) {
         render_stats_block(frame, app, stats_area, stats_active);
         views::settings::render(frame, app, settings_area, settings_active);
     } else {
-        let [projects_area, stats_area] = Layout::vertical([
-            Constraint::Min(1),
-            Constraint::Length(STATS_HEIGHT),
-        ])
-        .areas(left_area);
+        let [projects_area, stats_area] =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(STATS_HEIGHT)])
+                .areas(left_area);
 
         render_projects_block(frame, app, projects_area, projects_active);
         render_stats_block(frame, app, stats_area, stats_active);
