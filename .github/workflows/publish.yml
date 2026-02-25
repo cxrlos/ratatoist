@@ -77,7 +77,7 @@ jobs:
         id: semver
         run: |
           TOML="crates/${{ inputs.crate }}/Cargo.toml"
-          CURRENT=$(grep '^version = ' "$TOML" | head -1 | sed 's/version = "//;s/"//')
+          CURRENT=$(grep -oP '^version\s*=\s*"\K[^"]+' "$TOML" | head -1)
           IFS='.' read -r MAJ MIN PAT <<< "$CURRENT"
 
           case "${{ inputs.bump }}" in
@@ -86,8 +86,13 @@ jobs:
             patch) PAT=$((PAT + 1)) ;;
           esac
 
+          if [ -z "$CURRENT" ]; then
+            echo "::error::Could not read current version from $TOML — check the file format"
+            exit 1
+          fi
+
           NEXT="$MAJ.$MIN.$PAT"
-          echo "version=$NEXT"       >> $GITHUB_OUTPUT
+          echo "version=$NEXT"        >> $GITHUB_OUTPUT
           echo "prev_version=$CURRENT" >> $GITHUB_OUTPUT
           echo "${{ inputs.crate }}: $CURRENT → $NEXT"
 
@@ -96,7 +101,7 @@ jobs:
           VERSION="${{ steps.semver.outputs.version }}"
 
           # 1. Bump the crate's own version.
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "crates/${{ inputs.crate }}/Cargo.toml"
+          sed -i -E "s/^version\s*=\s*\"[^\"]+\"/version = \"$VERSION\"/" "crates/${{ inputs.crate }}/Cargo.toml"
 
           # 2. When bumping core, also update the workspace-level version declaration
           #    in the root Cargo.toml.  All consumers inherit it via `workspace = true`
@@ -257,3 +262,46 @@ jobs:
           echo "| crates.io        | https://crates.io/crates/${{ inputs.crate }}/${{ needs.bump.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
           echo ""                                                                      >> $GITHUB_STEP_SUMMARY
           echo "> To rollback: run **Rollback** with crate \`${{ inputs.crate }}\` and version \`${{ needs.bump.outputs.version }}\`." >> $GITHUB_STEP_SUMMARY
+
+  # ── 7. Cleanup on failure ───────────────────────────────────────────────────
+  # Runs only when something after the bump commit fails (CI, build, release,
+  # or publish).  Deletes the GitHub Release and its auto-created tag so the
+  # repo doesn't accumulate orphaned releases.
+  #
+  # Note: the version bump commit on main is NOT reverted automatically — it
+  # stays so the next publish run correctly increments from the new version.
+  # If you need to undo the bump itself, revert the commit manually and re-run.
+  cleanup-on-failure:
+    name: Cleanup on failure
+    needs: [bump, ci, github-release, publish]
+    if: |
+      failure() &&
+      needs.bump.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Delete GitHub Release and tag
+        run: |
+          TAG="${{ inputs.crate }}-v${{ needs.bump.outputs.version }}"
+          if gh release view "$TAG" &>/dev/null; then
+            gh release delete "$TAG" --yes --cleanup-tag
+            echo "Deleted release and tag: $TAG"
+          else
+            echo "No release found for $TAG — nothing to clean up"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Publish failed — partial cleanup done" >> $GITHUB_STEP_SUMMARY
+          echo ""                                         >> $GITHUB_STEP_SUMMARY
+          echo "| | |"                                    >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|"                                >> $GITHUB_STEP_SUMMARY
+          echo "| Crate   | \`${{ inputs.crate }}\` |"  >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ needs.bump.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Release | deleted ✓ |"          >> $GITHUB_STEP_SUMMARY
+          echo ""                                         >> $GITHUB_STEP_SUMMARY
+          echo "> The version bump commit on \`main\` was **not** reverted." >> $GITHUB_STEP_SUMMARY
+          echo "> Fix the issue and re-run **Publish** — it will attempt the same version again." >> $GITHUB_STEP_SUMMARY
