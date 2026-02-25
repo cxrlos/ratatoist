@@ -1,0 +1,85 @@
+name: Rollback
+
+# Yanks a published version from crates.io and deletes the corresponding
+# GitHub Release (which also removes the auto-created tag).
+#
+# crates.io does not allow version deletion — only yanking. Yanked versions
+# remain downloadable by projects that already pin them, but are hidden from
+# version resolution for new dependents.
+#
+# This workflow does NOT revert the Cargo.toml bump commit. If you need a
+# fix release, run the Publish workflow after addressing the issue.
+#
+# To add ratatoist-nvim: add it to the `crate` options list below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: "Crate to rollback"
+        required: true
+        type: choice
+        options:
+          - ratatoist-core
+          - ratatoist-tui
+      version:
+        description: "Version to yank (e.g. 0.2.0)"
+        required: true
+        type: string
+      reason:
+        description: "Reason for rollback"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.crate }} v${{ inputs.version }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Invalid version '$VERSION' — expected X.Y.Z (e.g. 0.2.0)"
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Yank from crates.io
+        run: cargo yank ${{ inputs.crate }} --version ${{ inputs.version }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Delete GitHub Release and tag
+        run: |
+          TAG="${{ inputs.crate }}-v${{ inputs.version }}"
+          if gh release view "$TAG" &>/dev/null; then
+            gh release delete "$TAG" --yes --cleanup-tag
+            echo "Deleted GitHub release and tag: $TAG"
+          else
+            echo "No GitHub release found for $TAG — skipping"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Rollback: ${{ inputs.crate }} v${{ inputs.version }}"          >> $GITHUB_STEP_SUMMARY
+          echo ""                                                                   >> $GITHUB_STEP_SUMMARY
+          echo "| | |"                                                              >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|"                                                          >> $GITHUB_STEP_SUMMARY
+          echo "| Yanked from crates.io | \`${{ inputs.crate }} v${{ inputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| GitHub Release        | deleted (tag removed) |"                 >> $GITHUB_STEP_SUMMARY
+          echo "| Reason                | ${{ inputs.reason }} |"                  >> $GITHUB_STEP_SUMMARY
+          echo ""                                                                   >> $GITHUB_STEP_SUMMARY
+          echo "> **Cargo.toml was not changed.** The yanked version is still in the repo history." >> $GITHUB_STEP_SUMMARY
+          echo "> Existing dependents that pin this version can still download it from crates.io."  >> $GITHUB_STEP_SUMMARY
+          echo "> To ship a fix, run the **Publish** workflow."                    >> $GITHUB_STEP_SUMMARY
