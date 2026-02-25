@@ -4,26 +4,28 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
+use ratatoist_core::api::models::priority_label;
+
 use crate::app::{App, TaskForm};
-use crate::ui::theme::Theme;
 
 use super::popup::{centered_rect, render_dim_overlay};
 
 pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
-    render_dim_overlay(frame);
+    let theme = app.theme();
+    render_dim_overlay(frame, theme);
 
     let area = frame.area();
     let popup = centered_rect(55, 45, area);
 
     let block = Block::default()
         .title(" New Task ")
-        .title_style(Theme::mode_insert())
+        .title_style(theme.mode_insert())
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
-        .border_style(Theme::due_upcoming())
+        .border_style(theme.due_upcoming())
         .padding(Padding::new(2, 2, 1, 1))
-        .style(Theme::base_bg());
+        .style(theme.base_bg());
 
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
@@ -39,7 +41,7 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
                 form.content.clone()
             },
         ),
-        ("Priority", format_priority(form.priority)),
+        ("Priority", priority_label(form.priority).to_string()),
         (
             "Due date",
             if form.due_string.is_empty() {
@@ -51,7 +53,8 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
         (
             "Project",
             app.projects
-                .get(form.project_idx)
+                .iter()
+                .find(|p| p.id == form.project_id)
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| "Inbox".to_string()),
         ),
@@ -60,16 +63,16 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
     for (idx, (label, value)) in fields.iter().enumerate() {
         let active = idx == form.active_field;
         let label_style = if active {
-            Theme::active_title()
+            theme.active_title()
         } else {
-            Theme::muted_text()
+            theme.muted_text()
         };
         let value_style = if active && !form.editing {
-            Theme::normal_text().add_modifier(Modifier::UNDERLINED)
+            theme.normal_text().add_modifier(Modifier::UNDERLINED)
         } else if idx == 1 {
-            Theme::priority_style(form.priority)
+            theme.priority_style(form.priority)
         } else {
-            Theme::normal_text()
+            theme.normal_text()
         };
 
         let cursor = if active && !form.editing { " <" } else { "" };
@@ -77,26 +80,22 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
         lines.push(Line::from(vec![
             Span::styled(format!("{label:<10}"), label_style),
             Span::styled(value, value_style),
-            Span::styled(cursor, Theme::key_hint()),
+            Span::styled(cursor, theme.key_hint()),
         ]));
     }
 
     if form.editing {
         lines.push(Line::default());
         lines.push(Line::from(vec![
-            Span::styled(&app.input_buffer, Theme::normal_text()),
-            Span::styled("_", Theme::due_upcoming()),
+            Span::styled(&app.input_buffer, theme.normal_text()),
+            Span::styled("_", theme.due_upcoming()),
         ]));
     }
 
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(
-        "Parses: p1-p4, today, tomorrow, next monday",
-        Theme::muted_text().add_modifier(Modifier::ITALIC),
-    )));
-    lines.push(Line::from(Span::styled(
-        "Dates: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY",
-        Theme::muted_text().add_modifier(Modifier::ITALIC),
+        "API parses due dates: 'tomorrow', 'next friday', 'every monday', '3pm today'",
+        theme.muted_text().add_modifier(Modifier::ITALIC),
     )));
     lines.push(Line::default());
 
@@ -106,18 +105,9 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
         "j/k navigate  Enter/i edit  Tab submit  Esc cancel"
     };
     lines.push(
-        Line::from(Span::styled(submit_hint, Theme::muted_text())).alignment(Alignment::Center),
+        Line::from(Span::styled(submit_hint, theme.muted_text())).alignment(Alignment::Center),
     );
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
-}
-
-fn format_priority(p: u8) -> String {
-    match p {
-        4 => "P1 urgent".to_string(),
-        3 => "P2 high".to_string(),
-        2 => "P3 medium".to_string(),
-        _ => "P4 normal".to_string(),
-    }
 }
