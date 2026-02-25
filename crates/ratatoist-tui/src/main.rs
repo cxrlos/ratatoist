@@ -209,8 +209,6 @@ fn detect_shell_rc() -> Option<PathBuf> {
         } else {
             Some(home.join(".bashrc"))
         }
-    } else if shell.contains("fish") {
-        None
     } else {
         None
     }

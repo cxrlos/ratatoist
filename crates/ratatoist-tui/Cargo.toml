@@ -11,7 +11,7 @@ name = "ratatoist"
 path = "src/main.rs"
 
 [dependencies]
-ratatoist-core = { path = "../ratatoist-core", version = "0.3.0" }
+ratatoist-core = { path = "../ratatoist-core", version = "0.2.1" }
 anyhow = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"] }

@@ -405,16 +405,14 @@ impl App {
 
     pub fn cycle_task_filter(&mut self) {
         self.task_filter = self.task_filter.next();
-        if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both) {
-            if let Some(pid) = self
+        if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both)
+            && let Some(pid) = self
                 .projects
                 .get(self.selected_project)
                 .map(|p| p.id.clone())
-            {
-                if !self.completed_cache.contains_key(&pid) {
-                    self.spawn_completed_tasks_fetch(pid);
-                }
-            }
+            && !self.completed_cache.contains_key(&pid)
+        {
+            self.spawn_completed_tasks_fetch(pid);
         }
         let visible_len = self.visible_tasks().len();
         if visible_len == 0 {
@@ -840,10 +838,10 @@ impl App {
                         affected_task = Some(tid);
                     }
                 }
-                if let Some(tid) = affected_task {
-                    if let Some(updated) = self.comments_by_task.get(&tid) {
-                        self.comments = updated.clone();
-                    }
+                if let Some(tid) = affected_task
+                    && let Some(updated) = self.comments_by_task.get(&tid)
+                {
+                    self.comments = updated.clone();
                 }
             }
         }
@@ -1958,14 +1956,13 @@ impl App {
             }
         }
 
-        if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both) {
-            if let Some(pid) = self
+        if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both)
+            && let Some(pid) = self
                 .projects
                 .get(self.selected_project)
                 .map(|p| p.id.clone())
-            {
-                self.append_cached_completed(&pid, &mut result);
-            }
+        {
+            self.append_cached_completed(&pid, &mut result);
         }
 
         result
@@ -2023,12 +2020,11 @@ impl App {
             .projects
             .get(self.selected_project)
             .map(|p| p.id.as_str())
+            && let Some(cached) = self.completed_cache.get(pid)
         {
-            if let Some(cached) = self.completed_cache.get(pid) {
-                return cached
-                    .iter()
-                    .any(|t| self.is_cached_descendant_of(t, &task.id, cached));
-            }
+            return cached
+                .iter()
+                .any(|t| self.is_cached_descendant_of(t, &task.id, cached));
         }
         false
     }
@@ -2081,20 +2077,18 @@ impl App {
             .filter(|t| {
                 t.parent_id
                     .as_ref()
-                    .map_or(true, |pid| !cached_ids.contains(pid.as_str()))
+                    .is_none_or(|pid| !cached_ids.contains(pid.as_str()))
             })
             .collect();
         roots.sort_by_key(|t| t.child_order);
 
         for root in roots {
             // If this cached root has an active parent not yet shown, add it as a context row.
-            if let Some(ref pid) = root.parent_id {
-                if !already_shown.contains(pid.as_str()) {
-                    if let Some(parent) = self.tasks.iter().find(|t| t.id == *pid && !t.is_deleted)
-                    {
-                        result.push(parent);
-                    }
-                }
+            if let Some(ref pid) = root.parent_id
+                && !already_shown.contains(pid.as_str())
+                && let Some(parent) = self.tasks.iter().find(|t| t.id == *pid && !t.is_deleted)
+            {
+                result.push(parent);
             }
             result.push(root);
             self.collect_cached_children(&root.id, cached, &mut *result);
@@ -2157,12 +2151,12 @@ async fn run_websocket(url: String, tx: mpsc::Sender<BgResult>) {
 
     let mut backoff_secs = 5u64;
     loop {
-        let connect_result = (|| async {
+        let connect_result = async {
             let mut req = url.as_str().into_client_request()?;
             req.headers_mut()
                 .insert("Origin", "https://app.todoist.com".parse()?);
             connect_async_tls_with_config(req, None, false, None).await
-        })()
+        }
         .await;
 
         match connect_result {
