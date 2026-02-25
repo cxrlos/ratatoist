@@ -4,6 +4,8 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
+use ratatoist_core::api::models::priority_label;
+
 use crate::app::{App, TaskForm};
 
 use super::popup::{centered_rect, render_dim_overlay};
@@ -39,7 +41,7 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
                 form.content.clone()
             },
         ),
-        ("Priority", format_priority(form.priority)),
+        ("Priority", priority_label(form.priority).to_string()),
         (
             "Due date",
             if form.due_string.is_empty() {
@@ -51,7 +53,8 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
         (
             "Project",
             app.projects
-                .get(form.project_idx)
+                .iter()
+                .find(|p| p.id == form.project_id)
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| "Inbox".to_string()),
         ),
@@ -91,11 +94,7 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
 
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(
-        "Parses: p1-p4, today, tomorrow, next monday",
-        theme.muted_text().add_modifier(Modifier::ITALIC),
-    )));
-    lines.push(Line::from(Span::styled(
-        "Dates: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY",
+        "API parses due dates: 'tomorrow', 'next friday', 'every monday', '3pm today'",
         theme.muted_text().add_modifier(Modifier::ITALIC),
     )));
     lines.push(Line::default());
@@ -111,13 +110,4 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
-}
-
-fn format_priority(p: u8) -> String {
-    match p {
-        4 => "P1 urgent".to_string(),
-        3 => "P2 high".to_string(),
-        2 => "P3 medium".to_string(),
-        _ => "P4 normal".to_string(),
-    }
 }

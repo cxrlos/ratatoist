@@ -40,7 +40,17 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
         Span::styled(theme_name, theme.key_hint()),
     ]));
 
-    let items = vec![mode_item, theme_item];
+    let idle_label = if app.idle_timeout_secs < 60 {
+        format!("{}s", app.idle_timeout_secs)
+    } else {
+        format!("{}m", app.idle_timeout_secs / 60)
+    };
+    let idle_item = ListItem::new(Line::from(vec![
+        Span::styled("Idle  ", theme.muted_text()),
+        Span::styled(idle_label, theme.key_hint()),
+    ]));
+
+    let items = vec![mode_item, theme_item, idle_item];
 
     let highlight_style = if is_active {
         theme.selected_item()
