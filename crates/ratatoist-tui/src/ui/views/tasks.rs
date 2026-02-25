@@ -1,7 +1,7 @@
 use ratatoist_core::api::models::Task;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -47,6 +47,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     let mut items: Vec<ListItem> = Vec::new();
     let mut visual_selected: Option<usize> = None;
     let mut current_project_id: Option<String> = None;
+    let mut last_section_id: Option<String> = None;
 
     for (task_idx, task) in visible.iter().enumerate() {
         if cross_project && current_project_id.as_deref() != Some(&task.project_id) {
@@ -61,6 +62,26 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
                 theme.muted_text().add_modifier(Modifier::BOLD),
             ))));
             current_project_id = Some(task.project_id.clone());
+            last_section_id = None;
+        }
+
+        if !cross_project && task.parent_id.is_none() && task.section_id != last_section_id {
+            last_section_id = task.section_id.clone();
+            if let Some(sid) = &task.section_id {
+                let name = app
+                    .sections
+                    .iter()
+                    .find(|s| &s.id == sid)
+                    .map(|s| s.name.as_str())
+                    .unwrap_or("Section");
+                if !items.is_empty() {
+                    items.push(ListItem::new(Line::default()));
+                }
+                items.push(ListItem::new(Line::from(Span::styled(
+                    format!("  {name}"),
+                    theme.muted_text().add_modifier(Modifier::BOLD),
+                ))));
+            }
         }
 
         if task_idx == app.selected_task {
@@ -103,12 +124,17 @@ fn build_task_item<'a>(
         if collapsed { "▸ " } else { "▾ " }
     } else {
         match depth {
-            0 => "◇ ",
+            0 => "○ ",
             1 => "◦ ",
             _ => "· ",
         }
     };
     spans.push(Span::styled(tree_icon, theme.muted_text()));
+
+    if app.is_context_task(task) {
+        spans.push(Span::styled(&task.content, theme.muted_text()));
+        return ListItem::new(Line::from(spans));
+    }
 
     if task.checked {
         spans.push(Span::styled("✓ ", theme.success()));
@@ -125,8 +151,18 @@ fn build_task_item<'a>(
     }
 
     if !task.labels.is_empty() && !task.checked {
-        let label_str = format!("  {}", task.labels.join(" "));
-        spans.push(Span::styled(label_str, theme.label_tag()));
+        for label_name in &task.labels {
+            let color = app
+                .labels
+                .iter()
+                .find(|l| &l.name == label_name)
+                .map(|l| theme.color_for(&l.color))
+                .unwrap_or(theme.purple);
+            spans.push(Span::styled(
+                format!("  {label_name}"),
+                Style::default().fg(color),
+            ));
+        }
     }
 
     if let Some(count) = task.note_count
@@ -136,10 +172,14 @@ fn build_task_item<'a>(
         spans.push(Span::styled(format!("  [{count}]"), theme.muted_text()));
     }
 
+    if task.due.as_ref().is_some_and(|d| d.is_recurring) && !task.checked {
+        spans.push(Span::styled("  ↻", theme.muted_text()));
+    }
+
     if let Some(due) = &task.due
         && !task.checked
     {
-        let formatted = dates::format_due(&due.date, theme);
+        let formatted = dates::format_due(due, theme);
         spans.push(Span::styled(
             format!("  {}", formatted.text),
             formatted.style,

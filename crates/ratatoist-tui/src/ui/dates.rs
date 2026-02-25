@@ -1,56 +1,58 @@
 use ratatui::style::Style;
 
 use super::theme::Theme;
+use ratatoist_core::api::models::Due;
 
 pub struct FormattedDue {
     pub text: String,
     pub style: Style,
 }
 
-pub fn format_due(date_str: &str, theme: &Theme) -> FormattedDue {
+pub fn format_due(due: &Due, theme: &Theme) -> FormattedDue {
     let today = today_str();
-    let tomorrow = offset_days_str(1);
-    let yesterday = offset_days_str(-1);
+    let date_str = &due.date;
 
-    if date_str == today {
+    let days_away = days_between(&today, date_str);
+
+    if days_away < 0 {
         return FormattedDue {
-            text: "today".to_string(),
+            text: display_label(due, days_away),
+            style: theme.due_overdue(),
+        };
+    }
+
+    if days_away == 0 {
+        return FormattedDue {
+            text: display_label(due, days_away),
             style: theme.due_today(),
         };
     }
 
-    if date_str == tomorrow {
-        return FormattedDue {
-            text: "tomorrow".to_string(),
-            style: theme.due_upcoming(),
-        };
-    }
-
-    if date_str == yesterday {
-        return FormattedDue {
-            text: "yesterday".to_string(),
-            style: theme.due_overdue(),
-        };
-    }
-
-    if date_str < today.as_str() {
-        return FormattedDue {
-            text: format_short_date(date_str),
-            style: theme.due_overdue(),
-        };
-    }
-
-    let days_away = days_between(&today, date_str);
     if days_away <= 6 {
         return FormattedDue {
-            text: weekday_name(date_str),
+            text: display_label(due, days_away),
             style: theme.due_upcoming(),
         };
     }
 
     FormattedDue {
-        text: format_short_date(date_str),
+        text: display_label(due, days_away),
         style: theme.due_future(),
+    }
+}
+
+fn display_label(due: &Due, days_away: i64) -> String {
+    if let Some(s) = &due.string
+        && !s.is_empty()
+    {
+        return s.clone();
+    }
+
+    match days_away {
+        0 => "today".to_string(),
+        1 => "tomorrow".to_string(),
+        -1 => "yesterday".to_string(),
+        _ => format_short_date(&due.date),
     }
 }
 
@@ -87,16 +89,6 @@ fn days_between(a: &str, b: &str) -> i64 {
         (Some(a), Some(b)) => b - a,
         _ => 999,
     }
-}
-
-fn weekday_name(date_str: &str) -> String {
-    let Some((y, m, d)) = parse_date(date_str) else {
-        return date_str.to_string();
-    };
-    let days = days_from_civil(y, m, d);
-    let weekday = ((days % 7) + 4) % 7; // 0=Sun
-    let names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    names[weekday as usize % 7].to_string()
 }
 
 fn format_short_date(date_str: &str) -> String {

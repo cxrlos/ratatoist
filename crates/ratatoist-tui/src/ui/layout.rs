@@ -5,6 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
 use crate::app::{App, DOCK_ITEMS, DockItem, Pane, SortMode, TaskFilter};
+
+const STATS_HEIGHT: u16 = 4;
 use crate::ui::theme::Theme;
 
 use super::keyhints;
@@ -27,16 +29,27 @@ pub fn render(frame: &mut Frame, app: &App) {
             .areas(main_area);
 
     let projects_active = matches!(app.active_pane, Pane::Projects);
+    let stats_active = matches!(app.active_pane, Pane::StatsDock);
     let settings_active = matches!(app.active_pane, Pane::Settings);
 
     if app.show_settings {
-        let [projects_area, settings_area] =
-            Layout::vertical([Constraint::Min(1), Constraint::Length(5)]).areas(left_area);
+        let [projects_area, stats_area, settings_area] = Layout::vertical([
+            Constraint::Min(1),
+            Constraint::Length(STATS_HEIGHT),
+            Constraint::Length(5),
+        ])
+        .areas(left_area);
 
         render_projects_block(frame, app, projects_area, projects_active);
+        render_stats_block(frame, app, stats_area, stats_active);
         views::settings::render(frame, app, settings_area, settings_active);
     } else {
-        render_projects_block(frame, app, left_area, projects_active);
+        let [projects_area, stats_area] =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(STATS_HEIGHT)])
+                .areas(left_area);
+
+        render_projects_block(frame, app, projects_area, projects_active);
+        render_stats_block(frame, app, stats_area, stats_active);
     }
 
     if matches!(app.active_pane, Pane::Detail) {
@@ -87,11 +100,7 @@ fn render_projects_block(frame: &mut Frame, app: &App, area: Rect, active: bool)
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let [list_area, stats_area] =
-        Layout::vertical([Constraint::Min(1), Constraint::Length(3)]).areas(inner);
-
-    views::projects::render(frame, app, list_area, active);
-    render_stats_dock(frame, app, stats_area);
+    views::projects::render(frame, app, inner, active);
 }
 
 fn dock_filter_color(filter: DockItem, theme: &Theme) -> Color {
@@ -116,8 +125,16 @@ fn render_tasks_block(frame: &mut Frame, app: &App, area: Rect, active: bool) {
     } else {
         (
             format!(" {} ", app.selected_project_name()),
-            if active { theme.active_title() } else { theme.title() },
-            if active { theme.active_border() } else { theme.inactive_border() },
+            if active {
+                theme.active_title()
+            } else {
+                theme.title()
+            },
+            if active {
+                theme.active_border()
+            } else {
+                theme.inactive_border()
+            },
         )
     };
 
@@ -201,10 +218,9 @@ fn render_filter_row(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn render_stats_dock(frame: &mut Frame, app: &App, area: Rect) {
+fn render_stats_block(frame: &mut Frame, app: &App, area: Rect, active: bool) {
     let theme = app.theme();
     let stats = app.overview_stats();
-    let dock_active = app.dock_focus.is_some();
 
     let title = if let Some(idx) = app.dock_focus {
         let hint = DOCK_ITEMS[idx].hint();
@@ -213,27 +229,27 @@ fn render_stats_dock(frame: &mut Frame, app: &App, area: Rect) {
         " Stats ".to_string()
     };
 
-    let sep_block = Block::default()
+    let block = Block::default()
         .title(title)
-        .title_style(if dock_active {
+        .title_style(if active {
             theme.active_title()
         } else {
             theme.muted_text()
         })
-        .borders(Borders::TOP)
-        .border_style(if dock_active {
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(if active {
             theme.active_border()
         } else {
             theme.inactive_border()
-        });
-    let inner = sep_block.inner(area);
-    frame.render_widget(sep_block, area);
+        })
+        .padding(Padding::horizontal(1))
+        .style(theme.base_bg());
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
 
-    let [due_area, prio_area] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .areas(inner);
+    let [due_area, prio_area] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(inner);
 
     let dock_style = |item: DockItem, idx: usize, base: ratatui::style::Style| {
         if app.dock_focus == Some(idx) {
