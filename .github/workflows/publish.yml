@@ -91,10 +91,20 @@ jobs:
           echo "prev_version=$CURRENT" >> $GITHUB_OUTPUT
           echo "${{ inputs.crate }}: $CURRENT → $NEXT"
 
-      - name: Update Cargo.toml
+      - name: Update Cargo.toml versions
         run: |
-          TOML="crates/${{ inputs.crate }}/Cargo.toml"
-          sed -i "s/^version = \".*\"/version = \"${{ steps.semver.outputs.version }}\"/" "$TOML"
+          VERSION="${{ steps.semver.outputs.version }}"
+
+          # 1. Bump the crate's own version.
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "crates/${{ inputs.crate }}/Cargo.toml"
+
+          # 2. When bumping core, also update the workspace-level version declaration
+          #    in the root Cargo.toml.  All consumers inherit it via `workspace = true`
+          #    — no per-crate file needs touching.
+          if [ "${{ inputs.crate }}" = "ratatoist-core" ]; then
+            sed -i "s|ratatoist-core = { path = \"crates/ratatoist-core\", version = \"[^\"]*\" }|ratatoist-core = { path = \"crates/ratatoist-core\", version = \"$VERSION\" }|" Cargo.toml
+            echo "Updated workspace dep: ratatoist-core → $VERSION"
+          fi
 
       - name: Commit and push
         id: commit
@@ -211,6 +221,25 @@ jobs:
           ref: ${{ needs.bump.outputs.sha }}
 
       - uses: dtolnay/rust-toolchain@stable
+
+      # For ratatoist-tui: verify that the version of ratatoist-core it depends on
+      # is already live on crates.io before attempting to publish.  cargo publish
+      # will try to resolve all non-path deps from the registry — if core isn't
+      # there yet the publish fails after the version bump commit has already landed.
+      - name: Check core is published (TUI only)
+        if: inputs.crate == 'ratatoist-tui'
+        run: |
+          CORE_VERSION=$(grep 'ratatoist-core = { path' Cargo.toml | sed 's/.*version = "//;s/".*//')
+          echo "Checking crates.io for ratatoist-core v$CORE_VERSION …"
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "User-Agent: ratatoist-publish-workflow" \
+            "https://crates.io/api/v1/crates/ratatoist-core/$CORE_VERSION")
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::ratatoist-core v$CORE_VERSION is not yet on crates.io (HTTP $HTTP)."
+            echo "::error::Publish ratatoist-core first, then re-run this workflow for ratatoist-tui."
+            exit 1
+          fi
+          echo "ratatoist-core v$CORE_VERSION confirmed on crates.io ✓"
 
       - name: Publish
         run: cargo publish -p ${{ inputs.crate }}
