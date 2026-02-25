@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::{App, InputMode, Pane, VimState};
+use crate::app::{App, DOCK_ITEMS, InputMode, Pane, ProjectNavItem, VimState};
 
 pub enum KeyAction {
     Quit,
@@ -13,6 +13,7 @@ pub enum KeyAction {
     ToggleHelp,
     ToggleMode,
     ToggleCollapse,
+    ToggleFolderCollapse,
     OpenAllFolds,
     CloseAllFolds,
     CompleteTask,
@@ -20,6 +21,7 @@ pub enum KeyAction {
     OpenPriorityPicker,
     SelectPriority,
     StarProject,
+    CycleFilter,
     CycleSort,
     StartInput,
     StartCommentInput,
@@ -33,6 +35,9 @@ pub enum KeyAction {
     CancelInput,
     DetailFieldUp,
     DetailFieldDown,
+    OpenThemePicker,
+    SelectTheme,
+    CloseThemePicker,
     Consumed,
     None,
 }
@@ -62,6 +67,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         };
     }
 
+    if app.show_priority_picker {
+        return handle_priority_picker(app, key);
+    }
+
     if let Some(form) = &app.task_form {
         if form.editing {
             return handle_input(app, key);
@@ -73,21 +82,84 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         return handle_input(app, key);
     }
 
-    if matches!(app.active_pane, Pane::Settings) {
-        return handle_settings(app, key);
+    if app.show_theme_picker {
+        return handle_theme_picker(app, key);
     }
 
-    if app.show_priority_picker {
-        return handle_priority_picker(app, key);
+    if matches!(app.active_pane, Pane::Settings) {
+        return handle_settings(app, key);
     }
 
     if matches!(app.active_pane, Pane::Detail) {
         return handle_detail(app, key);
     }
 
+    if app.dock_focus.is_some() {
+        return handle_dock_nav(app, key);
+    }
+
     match app.input_mode {
         InputMode::Vim(state) => handle_vim(app, key, state),
         InputMode::Standard => handle_standard(app, key),
+    }
+}
+
+fn handle_dock_nav(app: &mut App, key: KeyEvent) -> KeyAction {
+    let focus = app.dock_focus.unwrap_or(0);
+
+    match key.code {
+        KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => {
+            if focus + 1 >= DOCK_ITEMS.len() {
+                app.dock_focus = None;
+                app.active_pane = Pane::Projects;
+            } else {
+                app.dock_focus = Some(focus + 1);
+            }
+            KeyAction::Consumed
+        }
+        KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => {
+            if focus == 0 {
+                app.dock_focus = None;
+                app.active_pane = Pane::Tasks;
+            } else {
+                app.dock_focus = Some(focus - 1);
+            }
+            KeyAction::Consumed
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.dock_focus = Some((focus + 1) % DOCK_ITEMS.len());
+            KeyAction::Consumed
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.dock_focus = Some(if focus == 0 {
+                DOCK_ITEMS.len() - 1
+            } else {
+                focus - 1
+            });
+            KeyAction::Consumed
+        }
+        KeyCode::Enter | KeyCode::Char(' ') => {
+            let item = DOCK_ITEMS[focus];
+            app.dock_filter = if app.dock_filter == Some(item) {
+                None
+            } else {
+                Some(item)
+            };
+            app.dock_focus = None;
+            app.active_pane = Pane::Tasks;
+            let visible_len = app.visible_tasks().len();
+            app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+            KeyAction::Consumed
+        }
+        KeyCode::Esc => {
+            app.dock_focus = None;
+            app.dock_filter = None;
+            app.active_pane = Pane::Projects;
+            let visible_len = app.visible_tasks().len();
+            app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+            KeyAction::Consumed
+        }
+        _ => KeyAction::Consumed,
     }
 }
 
@@ -107,7 +179,7 @@ fn handle_input(app: &mut App, key: KeyEvent) -> KeyAction {
                 } else {
                     KeyAction::FormEscNormal
                 }
-            } else if !app.input_mode.is_vim() {
+            } else if matches!(app.input_mode, InputMode::Standard) {
                 KeyAction::CancelInput
             } else {
                 KeyAction::SubmitInput
@@ -148,6 +220,28 @@ fn handle_form_nav(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('k') | KeyCode::Up => KeyAction::FormFieldUp,
         KeyCode::Enter | KeyCode::Char('i') | KeyCode::Char(' ') => KeyAction::FormEditField,
         KeyCode::Tab => KeyAction::SubmitForm,
+        _ => KeyAction::Consumed,
+    }
+}
+
+fn handle_theme_picker(app: &mut App, key: KeyEvent) -> KeyAction {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => KeyAction::CloseThemePicker,
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.theme_selection = (app.theme_selection + 1) % app.themes.len().max(1);
+            KeyAction::Consumed
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            if app.themes.is_empty() {
+                return KeyAction::Consumed;
+            }
+            app.theme_selection = app
+                .theme_selection
+                .checked_sub(1)
+                .unwrap_or(app.themes.len() - 1);
+            KeyAction::Consumed
+        }
+        KeyCode::Enter | KeyCode::Char(' ') => KeyAction::SelectTheme,
         _ => KeyAction::Consumed,
     }
 }
@@ -231,8 +325,14 @@ fn handle_settings(app: &mut App, key: KeyEvent) -> KeyAction {
         }
 
         KeyCode::Enter | KeyCode::Char(' ') => {
-            if app.settings_selection == 0 {
-                return KeyAction::ToggleMode;
+            match app.settings_selection {
+                0 => return KeyAction::ToggleMode,
+                1 => return KeyAction::OpenThemePicker,
+                2 => {
+                    app.cycle_idle_timeout();
+                    return KeyAction::Consumed;
+                }
+                _ => {}
             }
             KeyAction::Consumed
         }
@@ -242,7 +342,7 @@ fn handle_settings(app: &mut App, key: KeyEvent) -> KeyAction {
 }
 
 fn settings_item_count() -> usize {
-    1
+    3
 }
 
 fn handle_vim(app: &mut App, key: KeyEvent, state: VimState) -> KeyAction {
@@ -277,6 +377,7 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
 
         KeyCode::Char('x') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CompleteTask,
         KeyCode::Char('a') if matches!(app.active_pane, Pane::Tasks) => KeyAction::StartInput,
+        KeyCode::Char('f') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
         KeyCode::Char('o') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleSort,
         KeyCode::Char('s') if matches!(app.active_pane, Pane::Projects) => KeyAction::StarProject,
 
@@ -286,15 +387,25 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('g') => jump_to_edge(app, true),
         KeyCode::Char('G') => jump_to_edge(app, false),
 
-        KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right => {
-            if matches!(app.active_pane, Pane::Projects) {
-                app.active_pane = Pane::Tasks;
+        KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => {
+            match app.active_pane {
+                Pane::Projects => app.active_pane = Pane::Tasks,
+                Pane::Tasks => {
+                    app.dock_focus = Some(0);
+                    app.active_pane = Pane::StatsDock;
+                }
+                _ => {}
             }
             KeyAction::Consumed
         }
-        KeyCode::BackTab | KeyCode::Char('h') | KeyCode::Left => {
-            if matches!(app.active_pane, Pane::Tasks) {
-                app.active_pane = Pane::Projects;
+        KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => {
+            match app.active_pane {
+                Pane::Tasks => app.active_pane = Pane::Projects,
+                Pane::Projects => {
+                    app.dock_focus = Some(DOCK_ITEMS.len() - 1);
+                    app.active_pane = Pane::StatsDock;
+                }
+                _ => {}
             }
             KeyAction::Consumed
         }
@@ -309,10 +420,19 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
         },
 
         KeyCode::Char(' ') if matches!(app.active_pane, Pane::Tasks) => KeyAction::ToggleCollapse,
+        KeyCode::Char(' ') if matches!(app.active_pane, Pane::Projects) => {
+            KeyAction::ToggleFolderCollapse
+        }
 
         KeyCode::Esc => {
             if matches!(app.active_pane, Pane::Tasks) {
-                app.active_pane = Pane::Projects;
+                if app.dock_filter.is_some() {
+                    app.dock_filter = None;
+                    let visible_len = app.visible_tasks().len();
+                    app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+                } else {
+                    app.active_pane = Pane::Projects;
+                }
                 KeyAction::Consumed
             } else {
                 KeyAction::None
@@ -351,6 +471,7 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('q') => KeyAction::Quit,
         KeyCode::Char('?') => KeyAction::ToggleHelp,
         KeyCode::Char(',') => KeyAction::ToggleSettings,
+        KeyCode::Char('f') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
 
         KeyCode::Down => move_in_pane(app, 1),
         KeyCode::Up => move_in_pane(app, -1),
@@ -358,15 +479,25 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Home => jump_to_edge(app, true),
         KeyCode::End => jump_to_edge(app, false),
 
-        KeyCode::Tab | KeyCode::Right => {
-            if matches!(app.active_pane, Pane::Projects) {
-                app.active_pane = Pane::Tasks;
+        KeyCode::Right | KeyCode::Tab => {
+            match app.active_pane {
+                Pane::Projects => app.active_pane = Pane::Tasks,
+                Pane::Tasks => {
+                    app.dock_focus = Some(0);
+                    app.active_pane = Pane::StatsDock;
+                }
+                _ => {}
             }
             KeyAction::Consumed
         }
-        KeyCode::BackTab | KeyCode::Left => {
-            if matches!(app.active_pane, Pane::Tasks) {
-                app.active_pane = Pane::Projects;
+        KeyCode::Left | KeyCode::BackTab => {
+            match app.active_pane {
+                Pane::Tasks => app.active_pane = Pane::Projects,
+                Pane::Projects => {
+                    app.dock_focus = Some(DOCK_ITEMS.len() - 1);
+                    app.active_pane = Pane::StatsDock;
+                }
+                _ => {}
             }
             KeyAction::Consumed
         }
@@ -382,7 +513,13 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
 
         KeyCode::Esc => {
             if matches!(app.active_pane, Pane::Tasks) {
-                app.active_pane = Pane::Projects;
+                if app.dock_filter.is_some() {
+                    app.dock_filter = None;
+                    let visible_len = app.visible_tasks().len();
+                    app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+                } else {
+                    app.active_pane = Pane::Projects;
+                }
                 KeyAction::Consumed
             } else {
                 KeyAction::None
@@ -396,22 +533,55 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
 fn move_in_pane(app: &mut App, delta: i32) -> KeyAction {
     match app.active_pane {
         Pane::Projects => {
-            let len = app.projects.len();
-            if len == 0 {
+            let nav = app.visible_nav_items();
+            if nav.is_empty() {
                 return KeyAction::Consumed;
             }
-            let current = app.selected_project as i32;
-            let next = (current + delta).rem_euclid(len as i32) as usize;
-            app.selected_project = next;
-            KeyAction::ProjectChanged
+            let pos = nav
+                .iter()
+                .position(|item| match item {
+                    ProjectNavItem::Project(i) => {
+                        app.folder_cursor.is_none() && *i == app.selected_project
+                    }
+                    ProjectNavItem::Folder(fi) => app.folder_cursor == Some(*fi),
+                })
+                .unwrap_or(0) as i32;
+            let next_pos = pos + delta;
+            if next_pos >= nav.len() as i32 {
+                app.dock_focus = Some(0);
+                app.active_pane = Pane::StatsDock;
+                return KeyAction::Consumed;
+            }
+            if next_pos < 0 {
+                return KeyAction::Consumed;
+            }
+            match nav[next_pos as usize] {
+                ProjectNavItem::Project(i) => {
+                    app.folder_cursor = None;
+                    app.selected_project = i;
+                    KeyAction::ProjectChanged
+                }
+                ProjectNavItem::Folder(fi) => {
+                    app.folder_cursor = Some(fi);
+                    KeyAction::Consumed
+                }
+            }
         }
         Pane::Tasks => {
-            let visible_len = app.visible_tasks().len();
+            let visible = app.visible_tasks();
+            let visible_len = visible.len();
             if visible_len == 0 {
                 return KeyAction::Consumed;
             }
             let current = app.selected_task as i32;
-            let next = (current + delta).rem_euclid(visible_len as i32) as usize;
+            let mut next = (current + delta).rem_euclid(visible_len as i32) as usize;
+            // Skip context rows (dimmed active parents shown in Done filter).
+            for _ in 0..visible_len {
+                if !app.is_context_task(visible[next]) {
+                    break;
+                }
+                next = ((next as i32) + delta).rem_euclid(visible_len as i32) as usize;
+            }
             app.selected_task = next;
             KeyAction::Consumed
         }
@@ -422,14 +592,21 @@ fn move_in_pane(app: &mut App, delta: i32) -> KeyAction {
 fn jump_to_edge(app: &mut App, top: bool) -> KeyAction {
     match app.active_pane {
         Pane::Projects => {
-            let new = if top {
-                0
-            } else {
-                app.projects.len().saturating_sub(1)
-            };
-            if app.selected_project != new {
-                app.selected_project = new;
-                return KeyAction::ProjectChanged;
+            let nav = app.visible_nav_items();
+            let item = if top { nav.first() } else { nav.last() };
+            match item {
+                Some(ProjectNavItem::Project(i)) => {
+                    let i = *i;
+                    app.folder_cursor = None;
+                    if app.selected_project != i {
+                        app.selected_project = i;
+                        return KeyAction::ProjectChanged;
+                    }
+                }
+                Some(ProjectNavItem::Folder(fi)) => {
+                    app.folder_cursor = Some(*fi);
+                }
+                None => {}
             }
             KeyAction::Consumed
         }

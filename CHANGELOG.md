@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## ratatoist-core 0.3.0 / ratatoist-tui 0.3.0 -- 2026-02-24
+
+### Added
+
+- Sync API transport — all reads and writes now go through `POST /api/v1/sync`; incremental delta sync with sync token persisted to `~/.config/ratatoist/sync_state.json`; exponential-backoff retry with jitter on 429
+- Completed tasks — `f` cycles Active → Done → Both; Done/Both fetches from `GET /api/v1/tasks/completed` and caches per project
+- StatsDock — interactive stats pane (overdue / today / week / P1–P4) with `Projects → Tasks → StatsDock` pane cycle; `h`/`l` scroll items, `Enter` applies filter, `Esc` clears
+- Dynamic theming — 10 built-in Base16 themes (Rose Pine, Gruvbox Dark, Dracula, Nord, One Dark, Solarized Dark, Catppuccin Mocha, Tokyo Night, Monokai, Material Dark); custom themes via `~/.config/ratatoist/themes/*.json`; theme persisted across sessions
+- Workspace and folder navigation — Projects pane renders full org tree with workspace headers, folders, and folder expand/collapse (`Space`)
+- New-user onboarding — `--new-user` flag: guided token entry with live validation, optional shell alias setup written to rc file
+- Optimistic mutations — complete, add, update, and comment operations apply locally immediately with revert snapshots on server error
+- Settings pane expanded — mode toggle, theme picker, and idle timeout cycling (60 s → 30 min)
+- WebSocket infrastructure — URL fetched from user endpoint; background task with exponential-backoff reconnect
+- `SyncCommand` / `SyncResponse` types in `ratatoist-core::api::sync` for type-safe Sync API framing
+- `Workspace` and `Folder` models; `CompletedRecord` and `CompletedTasksResponse` for completed tasks endpoint
+- `--idle-forcer` debug flag adds 5 s idle timeout option for testing
+
+### Changed
+
+- `ratatoist-core` client stripped down to `sync()`, `get_user()`, `get_comments()`, and `get_completed_tasks()` — all CRUD previously done via REST now goes through Sync API commands
+- Theme system rewritten from static Rose Pine constants to dynamic `Theme` struct loaded from Base16 JSON; all render functions receive `&Theme` at call time
+- `App::new()` now accepts `idle_forcer` and `ephemeral` flags
+- Task filter cycling (`f`) replaces the old single-state active-only view
+
+### Fixed
+
+- Task list scroll position clamped after completing a task when selected index would exceed new visible count
+
+### References
+
+- PR #8: StatsDock filtering, visual modifications
+- PR #9: Sync API transport rewrite, WebSocket, real-time refresh
+
 ## ratatoist-core 0.1.0 / ratatoist-tui 0.1.0 -- 2026-02-21
 
 ### Added
