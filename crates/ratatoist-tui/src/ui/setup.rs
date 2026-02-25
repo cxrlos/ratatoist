@@ -98,11 +98,7 @@ pub fn render_alias(
 }
 
 fn render_logo(frame: &mut Frame, logo_lines: &[&str], theme: &Theme, area: Rect) {
-    let max_width = logo_lines
-        .iter()
-        .map(|l| l.len())
-        .max()
-        .unwrap_or(0);
+    let max_width = logo_lines.iter().map(|l| l.len()).max().unwrap_or(0);
 
     let logo_text: Vec<Line> = logo_lines
         .iter()
@@ -112,10 +108,7 @@ fn render_logo(frame: &mut Frame, logo_lines: &[&str], theme: &Theme, area: Rect
         })
         .collect();
 
-    frame.render_widget(
-        Paragraph::new(logo_text).alignment(Alignment::Center),
-        area,
-    );
+    frame.render_widget(Paragraph::new(logo_text).alignment(Alignment::Center), area);
 }
 
 fn render_token_form(

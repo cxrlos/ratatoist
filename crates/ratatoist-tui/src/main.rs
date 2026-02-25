@@ -23,7 +23,10 @@ struct Cli {
     debug: bool,
     #[arg(long)]
     idle_forcer: bool,
-    #[arg(long, help = "Simulate new-user onboarding without touching your config")]
+    #[arg(
+        long,
+        help = "Simulate new-user onboarding without touching your config"
+    )]
     new_user: bool,
 }
 
@@ -142,8 +145,7 @@ async fn run_alias_setup(terminal: &mut ratatui::DefaultTerminal) {
                 }
                 KeyCode::Enter if !custom_input.trim().is_empty() => {
                     let name = custom_input.trim().to_string();
-                    commit_alias(&name, &rc_path, &rc_display, &mut status, terminal, theme)
-                        .await;
+                    commit_alias(&name, &rc_path, &rc_display, &mut status, terminal, theme).await;
                     break;
                 }
                 _ => {}
@@ -159,8 +161,7 @@ async fn run_alias_setup(terminal: &mut ratatui::DefaultTerminal) {
             }
             KeyCode::Enter => match selected {
                 0 => {
-                    commit_alias("rat", &rc_path, &rc_display, &mut status, terminal, theme)
-                        .await;
+                    commit_alias("rat", &rc_path, &rc_display, &mut status, terminal, theme).await;
                     break;
                 }
                 1 => is_typing = true,
@@ -216,9 +217,7 @@ fn detect_shell_rc() -> Option<PathBuf> {
 }
 
 fn write_alias(name: &str, rc_path: &Path) -> Result<()> {
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .open(rc_path)?;
+    let mut file = std::fs::OpenOptions::new().append(true).open(rc_path)?;
     writeln!(file, "\nalias {name}='ratatoist'")?;
     Ok(())
 }
@@ -273,9 +272,8 @@ async fn run_new_user_setup(terminal: &mut ratatui::DefaultTerminal) -> Result<S
                     Ok(client) => match client.get_user().await {
                         Ok(_) => return Ok(token),
                         Err(_) => {
-                            error = Some(
-                                "token not recognized — check it and try again".to_string(),
-                            );
+                            error =
+                                Some("token not recognized — check it and try again".to_string());
                             input.clear();
                         }
                     },

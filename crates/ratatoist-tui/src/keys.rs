@@ -131,7 +131,11 @@ fn handle_dock_nav(app: &mut App, key: KeyEvent) -> KeyAction {
             KeyAction::Consumed
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.dock_focus = Some(if focus == 0 { DOCK_ITEMS.len() - 1 } else { focus - 1 });
+            app.dock_focus = Some(if focus == 0 {
+                DOCK_ITEMS.len() - 1
+            } else {
+                focus - 1
+            });
             KeyAction::Consumed
         }
         KeyCode::Enter | KeyCode::Char(' ') => {

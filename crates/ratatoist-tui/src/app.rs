@@ -12,9 +12,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use ratatoist_core::api::client::TodoistClient;
-use ratatoist_core::api::models::{
-    Comment, Folder, Label, Project, Section, Task, Workspace,
-};
+use ratatoist_core::api::models::{Comment, Folder, Label, Project, Section, Task, Workspace};
 use ratatoist_core::api::sync::{SyncCommand, SyncRequest, SyncResponse};
 use ratatoist_core::sync_state::SyncState;
 
@@ -447,7 +445,11 @@ impl App {
     pub fn cycle_idle_timeout(&mut self) {
         const OPTIONS: &[u64] = &[60, 120, 300, 600, 900, 1800];
         const DEBUG_OPTIONS: &[u64] = &[5, 60, 120, 300, 600, 900, 1800];
-        let options = if self.idle_forcer { DEBUG_OPTIONS } else { OPTIONS };
+        let options = if self.idle_forcer {
+            DEBUG_OPTIONS
+        } else {
+            OPTIONS
+        };
         let pos = options
             .iter()
             .position(|&v| v == self.idle_timeout_secs)
@@ -759,16 +761,10 @@ impl App {
                 }
             }
             if let Some(workspaces) = resp.workspaces {
-                self.workspaces = workspaces
-                    .into_iter()
-                    .filter(|w| !w.is_deleted)
-                    .collect();
+                self.workspaces = workspaces.into_iter().filter(|w| !w.is_deleted).collect();
             }
             if let Some(folders) = resp.folders {
-                self.folders = folders
-                    .into_iter()
-                    .filter(|f| !f.is_deleted)
-                    .collect();
+                self.folders = folders.into_iter().filter(|f| !f.is_deleted).collect();
             }
             if let Some(user) = resp.user {
                 self.current_user_id = Some(user.id.clone());
@@ -1521,7 +1517,10 @@ impl App {
     }
 
     fn sort_projects(&mut self) {
-        let selected_id = self.projects.get(self.selected_project).map(|p| p.id.clone());
+        let selected_id = self
+            .projects
+            .get(self.selected_project)
+            .map(|p| p.id.clone());
         let source = self.projects.clone();
         let mut ordered: Vec<Project> = Vec::with_capacity(source.len());
 
@@ -2030,16 +2029,17 @@ impl App {
     }
 
     pub fn is_context_task(&self, task: &Task) -> bool {
-        if !(self.task_filter == TaskFilter::Done
-            && self.dock_filter.is_none()
-            && !task.checked)
-        {
+        if !(self.task_filter == TaskFilter::Done && self.dock_filter.is_none() && !task.checked) {
             return false;
         }
         if self.has_completed_descendant(&task.id) {
             return true;
         }
-        if let Some(pid) = self.projects.get(self.selected_project).map(|p| p.id.as_str()) {
+        if let Some(pid) = self
+            .projects
+            .get(self.selected_project)
+            .map(|p| p.id.as_str())
+        {
             if let Some(cached) = self.completed_cache.get(pid) {
                 return cached
                     .iter()
@@ -2106,8 +2106,7 @@ impl App {
             // If this cached root has an active parent not yet shown, add it as a context row.
             if let Some(ref pid) = root.parent_id {
                 if !already_shown.contains(pid.as_str()) {
-                    if let Some(parent) =
-                        self.tasks.iter().find(|t| t.id == *pid && !t.is_deleted)
+                    if let Some(parent) = self.tasks.iter().find(|t| t.id == *pid && !t.is_deleted)
                     {
                         result.push(parent);
                     }
@@ -2180,10 +2179,8 @@ async fn run_websocket(url: String, tx: mpsc::Sender<BgResult>) {
     loop {
         let connect_result = (|| async {
             let mut req = url.as_str().into_client_request()?;
-            req.headers_mut().insert(
-                "Origin",
-                "https://app.todoist.com".parse()?,
-            );
+            req.headers_mut()
+                .insert("Origin", "https://app.todoist.com".parse()?);
             connect_async_tls_with_config(req, None, false, None).await
         })()
         .await;

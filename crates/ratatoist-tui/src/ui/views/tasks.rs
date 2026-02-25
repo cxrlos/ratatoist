@@ -132,10 +132,7 @@ fn build_task_item<'a>(
     spans.push(Span::styled(tree_icon, theme.muted_text()));
 
     if app.is_context_task(task) {
-        spans.push(Span::styled(
-            &task.content,
-            theme.muted_text(),
-        ));
+        spans.push(Span::styled(&task.content, theme.muted_text()));
         return ListItem::new(Line::from(spans));
     }
 
