@@ -23,4 +23,4 @@ clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 futures-util = "0.3"
 ratatui = "0.30"
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
