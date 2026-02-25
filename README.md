@@ -159,13 +159,6 @@ cargo test --workspace                  # test
 
 ## Roadmap
 
-- [x] Real-time WebSocket sync
-- [x] Incremental sync (Sync API delta)
-- [x] Completed tasks view (Done / Both filter)
-- [x] Interactive StatsDock with filter
-- [x] Dynamic theming with 10 built-in themes + custom theme support
-- [x] Workspace and folder navigation
-- [x] New-user onboarding (`--new-user`)
 - [ ] Delete task with confirmation
 - [ ] Global search (`/`) with ranked results
 - [ ] Move task between projects
