@@ -38,6 +38,8 @@ pub enum KeyAction {
     OpenThemePicker,
     SelectTheme,
     CloseThemePicker,
+    TodayViewSelected,
+    ToggleOverdueSection,
     Consumed,
     None,
 }
@@ -419,6 +421,9 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
             _ => KeyAction::Consumed,
         },
 
+        KeyCode::Char(' ') if matches!(app.active_pane, Pane::Tasks) && app.today_view_active => {
+            KeyAction::ToggleOverdueSection
+        }
         KeyCode::Char(' ') if matches!(app.active_pane, Pane::Tasks) => KeyAction::ToggleCollapse,
         KeyCode::Char(' ') if matches!(app.active_pane, Pane::Projects) => {
             KeyAction::ToggleFolderCollapse
@@ -541,9 +546,14 @@ fn move_in_pane(app: &mut App, delta: i32) -> KeyAction {
                 .iter()
                 .position(|item| match item {
                     ProjectNavItem::Project(i) => {
-                        app.folder_cursor.is_none() && *i == app.selected_project
+                        !app.today_view_active
+                            && app.folder_cursor.is_none()
+                            && *i == app.selected_project
                     }
                     ProjectNavItem::Folder(fi) => app.folder_cursor == Some(*fi),
+                    ProjectNavItem::TodayView => {
+                        app.today_view_active && app.folder_cursor.is_none()
+                    }
                 })
                 .unwrap_or(0) as i32;
             let next_pos = pos + delta;
@@ -564,6 +574,10 @@ fn move_in_pane(app: &mut App, delta: i32) -> KeyAction {
                 ProjectNavItem::Folder(fi) => {
                     app.folder_cursor = Some(fi);
                     KeyAction::Consumed
+                }
+                ProjectNavItem::TodayView => {
+                    app.folder_cursor = None;
+                    KeyAction::TodayViewSelected
                 }
             }
         }
@@ -605,6 +619,10 @@ fn jump_to_edge(app: &mut App, top: bool) -> KeyAction {
                 }
                 Some(ProjectNavItem::Folder(fi)) => {
                     app.folder_cursor = Some(*fi);
+                }
+                Some(ProjectNavItem::TodayView) => {
+                    app.folder_cursor = None;
+                    return KeyAction::TodayViewSelected;
                 }
                 None => {}
             }

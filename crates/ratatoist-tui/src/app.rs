@@ -288,11 +288,13 @@ pub enum ProjectEntry {
     FolderHeader(usize),
     Project(usize),
     Separator,
+    TodayView,
 }
 
 pub enum ProjectNavItem {
     Folder(usize),
     Project(usize),
+    TodayView,
 }
 
 enum BgResult {
@@ -360,6 +362,8 @@ pub struct App {
     pub collapsed_folders: HashSet<String>,
     pub folder_cursor: Option<usize>,
     pub current_user_name: Option<String>,
+    pub today_view_active: bool,
+    pub overdue_section_collapsed: bool,
     last_activity: Instant,
     pending_ws_sync: bool,
     comments_fetch_seq: u64,
@@ -530,6 +534,8 @@ impl App {
             collapsed_folders: HashSet::new(),
             folder_cursor: None,
             current_user_name: None,
+            today_view_active: false,
+            overdue_section_collapsed: false,
             last_activity: Instant::now(),
             pending_ws_sync: false,
             comments_fetch_seq: 0,
@@ -628,6 +634,8 @@ impl App {
                         self.running = false;
                     }
                     KeyAction::ProjectChanged => self.switch_to_project_tasks(),
+                    KeyAction::TodayViewSelected => self.activate_today_view(),
+                    KeyAction::ToggleOverdueSection => self.toggle_overdue_section(),
                     KeyAction::OpenDetail => self.open_detail(),
                     KeyAction::CloseDetail => {
                         self.active_pane = Pane::Tasks;
@@ -1138,8 +1146,25 @@ impl App {
     }
 
     fn switch_to_project_tasks(&mut self) {
+        self.today_view_active = false;
         self.selected_task = 0;
         self.detail_scroll = 0;
+    }
+
+    pub fn activate_today_view(&mut self) {
+        tracing::debug!("today view activated");
+        self.today_view_active = true;
+        self.overdue_section_collapsed = false;
+        self.selected_task = 0;
+        self.detail_scroll = 0;
+    }
+
+    pub fn toggle_overdue_section(&mut self) {
+        self.overdue_section_collapsed = !self.overdue_section_collapsed;
+        // If collapsing, move cursor to first today task (index 0 in the new visible list).
+        if self.overdue_section_collapsed {
+            self.selected_task = 0;
+        }
     }
 
     fn complete_selected_task(&mut self) {
@@ -1608,7 +1633,11 @@ impl App {
             }
 
             if !folder_collapsed {
+                let is_inbox = self.projects[i].is_inbox();
                 entries.push(ProjectEntry::Project(i));
+                if is_inbox {
+                    entries.push(ProjectEntry::TodayView);
+                }
             }
         }
 
@@ -1644,6 +1673,7 @@ impl App {
             .filter_map(|e| match e {
                 ProjectEntry::FolderHeader(fi) => Some(ProjectNavItem::Folder(fi)),
                 ProjectEntry::Project(i) => Some(ProjectNavItem::Project(i)),
+                ProjectEntry::TodayView => Some(ProjectNavItem::TodayView),
                 _ => None,
             })
             .collect()
@@ -1873,6 +1903,44 @@ impl App {
     }
 
     pub fn visible_tasks(&self) -> Vec<&Task> {
+        if self.today_view_active {
+            let today = crate::ui::dates::today_str();
+            let mut tasks: Vec<&Task> = self
+                .tasks
+                .iter()
+                .filter(|t| {
+                    if t.is_deleted || t.checked || t.parent_id.is_some() {
+                        return false;
+                    }
+                    let is_today_or_overdue = t
+                        .due
+                        .as_ref()
+                        .is_some_and(|d| d.date.as_str() <= today.as_str());
+                    if !is_today_or_overdue {
+                        return false;
+                    }
+                    match &t.responsible_uid {
+                        None => true,
+                        Some(uid) => self.current_user_id.as_deref() == Some(uid.as_str()),
+                    }
+                })
+                .collect();
+            // Overdue tasks first (ascending by date), then today tasks (by child_order).
+            tasks.sort_by(|a, b| {
+                let a_date = a.due.as_ref().map(|d| d.date.as_str()).unwrap_or("");
+                let b_date = b.due.as_ref().map(|d| d.date.as_str()).unwrap_or("");
+                a_date.cmp(b_date).then(a.child_order.cmp(&b.child_order))
+            });
+            if self.overdue_section_collapsed {
+                tasks.retain(|t| {
+                    t.due
+                        .as_ref()
+                        .is_some_and(|d| d.date.as_str() == today.as_str())
+                });
+            }
+            return tasks;
+        }
+
         let today = crate::ui::dates::today_str();
         let week_end = crate::ui::dates::offset_days_str(7);
 
@@ -2091,12 +2159,11 @@ impl App {
                 result.push(parent);
             }
             result.push(root);
-            self.collect_cached_children(&root.id, cached, &mut *result);
+            Self::collect_cached_children(&root.id, cached, &mut *result);
         }
     }
 
     fn collect_cached_children<'a>(
-        &self,
         parent_id: &str,
         cached: &'a [Task],
         result: &mut Vec<&'a Task>,
@@ -2108,7 +2175,7 @@ impl App {
         children.sort_by_key(|t| t.child_order);
         for child in children {
             result.push(child);
-            self.collect_cached_children(&child.id, cached, result);
+            Self::collect_cached_children(&child.id, cached, result);
         }
     }
 

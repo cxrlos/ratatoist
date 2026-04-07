@@ -13,7 +13,34 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     let theme = app.theme();
     let visible = app.visible_tasks();
 
-    if visible.is_empty() && app.dock_filter.is_none() {
+    // Today view empty state.
+    if app.today_view_active && visible.is_empty() && !app.overdue_section_collapsed {
+        let stats = app.overview_stats();
+        if stats.overdue == 0 && stats.due_today == 0 {
+            let lines = vec![
+                ListItem::new(Line::default()),
+                ListItem::new(Line::from(Span::styled(
+                    "All caught up for today",
+                    theme.muted_text(),
+                ))),
+            ];
+            frame.render_widget(List::new(lines), area);
+            return;
+        }
+    }
+    if app.today_view_active && visible.is_empty() {
+        let lines = vec![
+            ListItem::new(Line::default()),
+            ListItem::new(Line::from(Span::styled(
+                "All caught up for today",
+                theme.muted_text(),
+            ))),
+        ];
+        frame.render_widget(List::new(lines), area);
+        return;
+    }
+
+    if visible.is_empty() && !app.today_view_active && app.dock_filter.is_none() {
         let hint = match app.input_mode {
             InputMode::Vim(_) => "press a to add a task",
             InputMode::Standard => "press Ctrl-a to add a task",
@@ -42,25 +69,45 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
         return;
     }
 
-    let cross_project = app.dock_filter.is_some();
+    let cross_project = app.today_view_active || app.dock_filter.is_some();
 
     let mut items: Vec<ListItem> = Vec::new();
     let mut visual_selected: Option<usize> = None;
     let mut current_project_id: Option<String> = None;
     let mut last_section_id: Option<String> = None;
 
+    let today = dates::today_str();
+    let stats = if app.today_view_active {
+        Some(app.overview_stats())
+    } else {
+        None
+    };
+    let mut overdue_header_shown = false;
+
     for (task_idx, task) in visible.iter().enumerate() {
+        // Today view: show "Overdue" section header before the first overdue task.
+        if app.today_view_active
+            && !overdue_header_shown
+            && task
+                .due
+                .as_ref()
+                .is_some_and(|d| d.date.as_str() < today.as_str())
+        {
+            let overdue_count = stats.as_ref().map(|s| s.overdue).unwrap_or(0);
+            let arrow = if app.overdue_section_collapsed {
+                "▶"
+            } else {
+                "▼"
+            };
+            items.push(ListItem::new(Line::from(vec![Span::styled(
+                format!(" {arrow} Overdue  ({overdue_count})"),
+                theme.due_overdue().add_modifier(Modifier::BOLD),
+            )])));
+            overdue_header_shown = true;
+        }
+
+        // Cross-project: show project name header when project changes (dock filter or today view).
         if cross_project && current_project_id.as_deref() != Some(&task.project_id) {
-            let project_name = app
-                .projects
-                .iter()
-                .find(|p| p.id == task.project_id)
-                .map(|p| p.name.as_str())
-                .unwrap_or("Unknown");
-            items.push(ListItem::new(Line::from(Span::styled(
-                format!(" ── {project_name} ──"),
-                theme.muted_text().add_modifier(Modifier::BOLD),
-            ))));
             current_project_id = Some(task.project_id.clone());
             last_section_id = None;
         }
