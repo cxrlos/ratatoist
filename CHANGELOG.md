@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## ratatoist-tui 0.3.2 -- 2026-04-07
+
+### Added
+
+- Today view — sidebar entry below Inbox shows all tasks due today plus overdue tasks; navigate with `j`/`k` in Projects pane; `Space` in the Today task list toggles the Overdue section collapsed/expanded
+
 ## ratatoist-core 0.3.0 / ratatoist-tui 0.3.0 -- 2026-02-24
 
 ### Added
