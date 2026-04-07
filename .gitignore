@@ -8,6 +8,8 @@
 .ai/
 *.plan.md
 *.claude/
+.specify/
+specs/
 
 # Test examples with real API calls
 crates/ratatoist-core/examples/
