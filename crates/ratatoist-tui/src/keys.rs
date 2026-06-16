@@ -23,6 +23,7 @@ pub enum KeyAction {
     StarProject,
     CycleFilter,
     CycleSort,
+    ForceResync,
     StartInput,
     StartCommentInput,
     StartFieldEdit,
@@ -369,6 +370,7 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('q') => KeyAction::Quit,
         KeyCode::Char('?') => KeyAction::ToggleHelp,
         KeyCode::Char(',') => KeyAction::ToggleSettings,
+        KeyCode::Char('R') => KeyAction::ForceResync,
 
         KeyCode::Char('z') => {
             set_pending_z();
@@ -471,6 +473,7 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('q') => KeyAction::Quit,
         KeyCode::Char('?') => KeyAction::ToggleHelp,
         KeyCode::Char(',') => KeyAction::ToggleSettings,
+        KeyCode::Char('R') => KeyAction::ForceResync,
         KeyCode::Char('f') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
 
         KeyCode::Down => move_in_pane(app, 1),
