@@ -22,7 +22,9 @@ impl SyncState {
 
     pub fn save(&self, config_dir: &Path) -> Result<()> {
         let path = Self::path(config_dir);
-        std::fs::write(&path, serde_json::to_string(self)?)?;
+        let tmp = config_dir.join("sync_state.json.tmp");
+        std::fs::write(&tmp, serde_json::to_string(self)?)?;
+        std::fs::rename(&tmp, &path)?;
         Ok(())
     }
 
