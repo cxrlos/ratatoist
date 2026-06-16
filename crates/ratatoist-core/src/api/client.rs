@@ -42,6 +42,8 @@ impl TodoistClient {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
             .build()
             .context("failed to build HTTP client")?;
 

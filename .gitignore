@@ -22,3 +22,9 @@ crates/ratatoist-core/examples/
 
 # Config files that may contain secrets
 config.toml
+
+# Living project plan -- local working notes, not source
+PROJECT_PLAN.md
+
+# Personal tmux helper
+.tmux-sessionizer
