@@ -7,7 +7,8 @@
 # AI agent working files -- not part of the source
 .ai/
 *.plan.md
-*.claude/
+.claude/*
+!.claude/CLAUDE.md
 
 # Test examples with real API calls
 crates/ratatoist-core/examples/
