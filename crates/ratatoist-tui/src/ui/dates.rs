@@ -121,12 +121,42 @@ fn days_from_civil(y: i32, m: u32, d: u32) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::date_part;
+    use super::{date_part, days_between, days_from_civil};
 
     #[test]
     fn date_part_strips_time_suffix() {
         assert_eq!(date_part("2026-06-16T09:00:00"), "2026-06-16");
         assert_eq!(date_part("2026-06-16"), "2026-06-16");
         assert_eq!(date_part(""), "");
+    }
+
+    #[test]
+    fn civil_days_anchor_at_unix_epoch() {
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(1970, 1, 2), 1);
+        assert_eq!(days_from_civil(1969, 12, 31), -1);
+    }
+
+    #[test]
+    fn civil_days_known_value_and_leap_day() {
+        assert_eq!(days_from_civil(2000, 1, 1), 10957);
+        let feb28 = days_from_civil(2020, 2, 28);
+        let mar1 = days_from_civil(2020, 3, 1);
+        assert_eq!(mar1 - feb28, 2);
+    }
+
+    #[test]
+    fn days_between_is_signed_target_minus_today() {
+        assert_eq!(days_between("2026-06-15", "2026-06-15"), 0);
+        assert_eq!(days_between("2026-06-15", "2026-06-16"), 1);
+        assert_eq!(days_between("2026-06-15", "2026-06-14"), -1);
+        assert_eq!(days_between("2026-06-15", "2027-06-15"), 365);
+    }
+
+    #[test]
+    fn days_between_returns_sentinel_on_malformed() {
+        assert_eq!(days_between("not-a-date", "2026-06-15"), 999);
+        assert_eq!(days_between("2026/06/15", "2026-06-15"), 999);
+        assert_eq!(days_between("2026-06", "2026-06-15"), 999);
     }
 }

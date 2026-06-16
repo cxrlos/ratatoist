@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Today view — sidebar entry below Inbox shows all tasks due today plus overdue tasks; navigate with `j`/`k` in Projects pane; `Space` in the Today task list toggles the Overdue section collapsed/expanded
 
+## ratatoist-core 0.3.2 / ratatoist-tui 0.3.2 -- 2026-06-16
+
+### Added
+
+- Force full re-sync — `R` (Vim and Standard modes) discards local optimistic state and refetches everything from the server; a recovery path for a suspected sync-token desync
+
+### Changed
+
+- Minimum supported Rust version is now **1.88** (corrected from the previously claimed but unenforced 1.85; required by `ratatui` 0.30, `time`, and `darling`), now enforced by a dedicated CI job
+- HTTP client gained a 30 s request timeout and 10 s connect timeout, so a stalled connection no longer wedges the background sync indefinitely
+- Sync-token persistence is now an atomic write (temp file + rename), preventing a truncated `sync_state.json` if the process dies mid-save
+- `Task` deserialization tolerates missing scalar fields (`content`, `description`, `child_order`, `priority`, `project_id`), so one drifted item no longer aborts the whole sync delta
+
+### Fixed
+
+- Failed command flush no longer silently drops the change — the optimistic mutation is reverted and an error is surfaced, instead of leaving the UI and server quietly diverged
+- A racing background sync delta no longer clobbers a task being edited optimistically; the edit is preserved until its command resolves
+- Comments and completed-tasks fetches now follow `next_cursor` across pages (capped at 50 with a truncation warning) instead of silently returning only the first page
+
+### Internal
+
+- Seeded the test suite: unit tests for sync-state round-trip / corrupt-fallback and the date-bucket math
+- CI now runs an MSRV (1.88) job alongside fmt / clippy / build / test
+
+### References
+
+- PR #15: Phase 1 — sync correctness (command-loss revert, racing-delta guard, force-resync, pagination, resilient parsing)
+
 ## ratatoist-core 0.3.0 / ratatoist-tui 0.3.0 -- 2026-02-24
 
 ### Added
