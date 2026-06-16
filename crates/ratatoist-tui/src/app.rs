@@ -1676,15 +1676,12 @@ impl App {
     pub fn project_depth(&self, project_id: &str) -> usize {
         let mut depth = 0;
         let mut current = project_id;
-        loop {
-            let Some(parent_id) = self
-                .projects
-                .iter()
-                .find(|p| p.id == current)
-                .and_then(|p| p.parent_id.as_deref())
-            else {
-                break;
-            };
+        while let Some(parent_id) = self
+            .projects
+            .iter()
+            .find(|p| p.id == current)
+            .and_then(|p| p.parent_id.as_deref())
+        {
             depth += 1;
             current = parent_id;
         }
@@ -1980,7 +1977,7 @@ impl App {
                     top_level.sort_by_key(|t| t.child_order);
                 }
             }
-            SortMode::Priority => top_level.sort_by(|a, b| b.priority.cmp(&a.priority)),
+            SortMode::Priority => top_level.sort_by_key(|b| std::cmp::Reverse(b.priority)),
             SortMode::DueDate => top_level.sort_by(|a, b| {
                 let a_due = a.due.as_ref().map(|d| d.date.as_str()).unwrap_or("9999");
                 let b_due = b.due.as_ref().map(|d| d.date.as_str()).unwrap_or("9999");
