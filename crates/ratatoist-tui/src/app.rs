@@ -1161,7 +1161,6 @@ impl App {
 
     pub fn toggle_overdue_section(&mut self) {
         self.overdue_section_collapsed = !self.overdue_section_collapsed;
-        // If collapsing, move cursor to first today task (index 0 in the new visible list).
         if self.overdue_section_collapsed {
             self.selected_task = 0;
         }
@@ -1872,13 +1871,14 @@ impl App {
                 }
             }
             if let Some(due) = &task.due {
-                if due.date == today && !task.checked {
+                let due_date = crate::ui::dates::date_part(&due.date);
+                if due_date == today.as_str() && !task.checked {
                     due_today += 1;
                 }
-                if due.date < today && !task.checked {
+                if due_date < today.as_str() && !task.checked {
                     overdue += 1;
                 }
-                if due.date >= today && due.date <= week_end {
+                if due_date >= today.as_str() && due_date <= week_end.as_str() {
                     due_week += 1;
                 }
             }
@@ -1905,37 +1905,43 @@ impl App {
     pub fn visible_tasks(&self) -> Vec<&Task> {
         if self.today_view_active {
             let today = crate::ui::dates::today_str();
-            let mut tasks: Vec<&Task> = self
-                .tasks
-                .iter()
-                .filter(|t| {
-                    if t.is_deleted || t.checked || t.parent_id.is_some() {
-                        return false;
-                    }
-                    let is_today_or_overdue = t
-                        .due
-                        .as_ref()
-                        .is_some_and(|d| d.date.as_str() <= today.as_str());
-                    if !is_today_or_overdue {
-                        return false;
-                    }
-                    match &t.responsible_uid {
-                        None => true,
-                        Some(uid) => self.current_user_id.as_deref() == Some(uid.as_str()),
-                    }
-                })
-                .collect();
-            // Overdue tasks first (ascending by date), then today tasks (by child_order).
+            let mut tasks: Vec<&Task> =
+                self.tasks
+                    .iter()
+                    .filter(|t| {
+                        if t.is_deleted || t.checked || t.parent_id.is_some() {
+                            return false;
+                        }
+                        let is_today_or_overdue = t.due.as_ref().is_some_and(|d| {
+                            crate::ui::dates::date_part(&d.date) <= today.as_str()
+                        });
+                        if !is_today_or_overdue {
+                            return false;
+                        }
+                        match &t.responsible_uid {
+                            None => true,
+                            Some(uid) => self.current_user_id.as_deref() == Some(uid.as_str()),
+                        }
+                    })
+                    .collect();
             tasks.sort_by(|a, b| {
-                let a_date = a.due.as_ref().map(|d| d.date.as_str()).unwrap_or("");
-                let b_date = b.due.as_ref().map(|d| d.date.as_str()).unwrap_or("");
+                let a_date = a
+                    .due
+                    .as_ref()
+                    .map(|d| crate::ui::dates::date_part(&d.date))
+                    .unwrap_or("");
+                let b_date = b
+                    .due
+                    .as_ref()
+                    .map(|d| crate::ui::dates::date_part(&d.date))
+                    .unwrap_or("");
                 a_date.cmp(b_date).then(a.child_order.cmp(&b.child_order))
             });
             if self.overdue_section_collapsed {
                 tasks.retain(|t| {
                     t.due
                         .as_ref()
-                        .is_some_and(|d| d.date.as_str() == today.as_str())
+                        .is_some_and(|d| crate::ui::dates::date_part(&d.date) == today.as_str())
                 });
             }
             return tasks;

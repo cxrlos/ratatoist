@@ -13,21 +13,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     let theme = app.theme();
     let visible = app.visible_tasks();
 
-    // Today view empty state.
-    if app.today_view_active && visible.is_empty() && !app.overdue_section_collapsed {
-        let stats = app.overview_stats();
-        if stats.overdue == 0 && stats.due_today == 0 {
-            let lines = vec![
-                ListItem::new(Line::default()),
-                ListItem::new(Line::from(Span::styled(
-                    "All caught up for today",
-                    theme.muted_text(),
-                ))),
-            ];
-            frame.render_widget(List::new(lines), area);
-            return;
-        }
-    }
     if app.today_view_active && visible.is_empty() {
         let lines = vec![
             ListItem::new(Line::default()),
@@ -85,13 +70,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     let mut overdue_header_shown = false;
 
     for (task_idx, task) in visible.iter().enumerate() {
-        // Today view: show "Overdue" section header before the first overdue task.
         if app.today_view_active
             && !overdue_header_shown
             && task
                 .due
                 .as_ref()
-                .is_some_and(|d| d.date.as_str() < today.as_str())
+                .is_some_and(|d| dates::date_part(&d.date) < today.as_str())
         {
             let overdue_count = stats.as_ref().map(|s| s.overdue).unwrap_or(0);
             let arrow = if app.overdue_section_collapsed {
@@ -106,10 +90,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
             overdue_header_shown = true;
         }
 
-        // Cross-project: show project name header when project changes (dock filter or today view).
         if cross_project && current_project_id.as_deref() != Some(&task.project_id) {
             current_project_id = Some(task.project_id.clone());
-            last_section_id = None;
         }
 
         if !cross_project && task.parent_id.is_none() && task.section_id != last_section_id {

@@ -56,6 +56,12 @@ fn display_label(due: &Due, days_away: i64) -> String {
     }
 }
 
+/// The calendar-date portion of a Todoist due date, which may be a bare
+/// `YYYY-MM-DD` or a full `YYYY-MM-DDTHH:MM:SS` timestamp.
+pub fn date_part(due_date: &str) -> &str {
+    due_date.split('T').next().unwrap_or(due_date)
+}
+
 pub fn today_str() -> String {
     chrono::Local::now()
         .date_naive()
@@ -111,4 +117,16 @@ fn days_from_civil(y: i32, m: u32, d: u32) -> i64 {
     let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146097 + doe as i64 - 719468
+}
+
+#[cfg(test)]
+mod tests {
+    use super::date_part;
+
+    #[test]
+    fn date_part_strips_time_suffix() {
+        assert_eq!(date_part("2026-06-16T09:00:00"), "2026-06-16");
+        assert_eq!(date_part("2026-06-16"), "2026-06-16");
+        assert_eq!(date_part(""), "");
+    }
 }
