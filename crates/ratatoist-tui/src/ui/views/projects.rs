@@ -1,6 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -11,8 +11,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     let entries = app.project_list_entries();
 
     let selected_visual = entries.iter().position(|e| match e {
-        ProjectEntry::Project(i) => app.folder_cursor.is_none() && *i == app.selected_project,
+        ProjectEntry::Project(i) => {
+            !app.today_view_active && app.folder_cursor.is_none() && *i == app.selected_project
+        }
         ProjectEntry::FolderHeader(fi) => app.folder_cursor == Some(*fi),
+        ProjectEntry::TodayView => app.today_view_active && app.folder_cursor.is_none(),
         _ => false,
     });
 
@@ -53,6 +56,20 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
             }
 
             ProjectEntry::Separator => ListItem::new(Line::default()),
+
+            ProjectEntry::TodayView => {
+                let stats = app.overview_stats();
+                let count = stats.overdue + stats.due_today;
+                let mut spans = vec![
+                    Span::raw("  "),
+                    Span::styled("⊙ ", Style::default().fg(Color::Yellow)),
+                    Span::styled("Today", theme.normal_text()),
+                ];
+                if count > 0 {
+                    spans.push(Span::styled(format!("  {count}"), theme.muted_text()));
+                }
+                ListItem::new(Line::from(spans))
+            }
 
             ProjectEntry::Project(i) => {
                 let project = &app.projects[*i];
