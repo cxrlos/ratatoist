@@ -298,6 +298,9 @@ pub enum ProjectNavItem {
 enum BgResult {
     SyncDelta(Box<SyncResponse>),
     CommandResults(Box<SyncResponse>),
+    CommandFailed {
+        uuids: Vec<String>,
+    },
     CompletedTasks {
         project_id: String,
         records: Result<Vec<Task>>,
@@ -663,6 +666,7 @@ impl App {
                         }
                     }
                     KeyAction::StarProject => self.star_selected_project(),
+                    KeyAction::ForceResync => self.force_full_resync(),
                     KeyAction::CycleFilter => self.cycle_task_filter(),
                     KeyAction::CycleSort => {
                         self.sort_mode = self.sort_mode.next();
@@ -704,6 +708,16 @@ impl App {
 
         info!("exiting main loop");
         Ok(())
+    }
+
+    /// True if an optimistic op for this task is still awaiting its command result.
+    fn task_has_pending_op(&self, task_id: &str) -> bool {
+        self.temp_id_pending.values().any(|op| match op {
+            OptimisticOp::TaskUpdated { task_id: id, .. } => id == task_id,
+            OptimisticOp::TaskAdded { temp_id } => temp_id == task_id,
+            OptimisticOp::TaskRemoved { snapshot } => snapshot.id == task_id,
+            OptimisticOp::CommentAdded { .. } | OptimisticOp::ProjectUpdated { .. } => false,
+        })
     }
 
     fn apply_sync_delta(&mut self, resp: SyncResponse) {
@@ -781,6 +795,11 @@ impl App {
             }
             if let Some(items) = resp.items {
                 for item in items {
+                    // A racing server delta must not clobber a task the user is still
+                    // editing optimistically — skip it until the command resolves.
+                    if self.task_has_pending_op(&item.id) {
+                        continue;
+                    }
                     if item.is_deleted {
                         self.tasks.retain(|t| t.id != item.id);
                     } else if let Some(e) = self.tasks.iter_mut().find(|t| t.id == item.id) {
@@ -866,7 +885,11 @@ impl App {
             return;
         }
 
+        // Callers queue and flush one command at a time. Failure-revert keys off
+        // absolute `before` snapshots, so batching two edits of the same task into
+        // one flush would make the revert order-dependent — keep it one-at-a-time.
         let commands = std::mem::take(&mut self.pending_commands);
+        let uuids: Vec<String> = commands.iter().map(|c| c.uuid.clone()).collect();
         let client = Arc::clone(&self.client);
         let tx = self.bg_tx.clone();
         let sync_token = self.sync_token.clone();
@@ -884,8 +907,7 @@ impl App {
                 }
                 Err(e) => {
                     error!(error = %e, "command flush failed");
-                    // Commands stay lost on network failure; next WS-triggered
-                    // sync will correct server state.
+                    let _ = tx.send(BgResult::CommandFailed { uuids }).await;
                 }
             }
         });
@@ -979,6 +1001,18 @@ impl App {
         });
     }
 
+    /// Recovery path for a suspected desync: abandon any in-flight optimistic
+    /// state and refetch everything. Dropping `temp_id_pending` is deliberate —
+    /// the incoming full sync replaces the task list wholesale, so a late command
+    /// result must not revert against it.
+    fn force_full_resync(&mut self) {
+        self.pending_commands.clear();
+        self.temp_id_pending.clear();
+        self.sync_token = "*".to_string();
+        self.save_sync_token();
+        self.spawn_incremental_sync();
+    }
+
     fn drain_bg_results(&mut self) {
         while let Ok(result) = self.bg_rx.try_recv() {
             match result {
@@ -1022,6 +1056,25 @@ impl App {
                     }
                     if let Some(tid) = refresh_comments_for {
                         self.spawn_comments_fetch(tid);
+                    }
+                }
+
+                BgResult::CommandFailed { uuids } => {
+                    let mut reverted = false;
+                    for uuid in &uuids {
+                        if let Some(op) = self.temp_id_pending.remove(uuid) {
+                            self.revert_optimistic(op);
+                            reverted = true;
+                        }
+                    }
+                    if reverted {
+                        self.error = Some(AppError {
+                            title: "Sync failed".to_string(),
+                            message: "Couldn't reach Todoist — your change was reverted."
+                                .to_string(),
+                            suggestion: Some("Check your connection and try again.".to_string()),
+                            recoverable: true,
+                        });
                     }
                 }
 
