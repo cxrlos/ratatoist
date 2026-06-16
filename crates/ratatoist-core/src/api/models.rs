@@ -34,12 +34,17 @@ impl Project {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Task {
     pub id: String,
+    #[serde(default)]
     pub content: String,
+    #[serde(default)]
     pub description: String,
     #[serde(default)]
     pub checked: bool,
+    #[serde(default)]
     pub child_order: i32,
+    #[serde(default)]
     pub priority: u8,
+    #[serde(default)]
     pub project_id: String,
     pub section_id: Option<String>,
     pub parent_id: Option<String>,
@@ -192,6 +197,8 @@ pub fn priority_label(p: u8) -> &'static str {
 #[derive(Debug, Deserialize)]
 pub struct CompletedTasksResponse {
     pub items: Vec<CompletedRecord>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
 }
 
 // Paginated REST response — still used by get_completed_tasks.
@@ -218,4 +225,31 @@ pub struct ItemAddArgs {
     pub parent_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub section_id: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_tolerates_missing_scalar_fields() {
+        // A partial/drifted item with only `id` must not abort the whole sync delta.
+        let task: Task = serde_json::from_str(r#"{"id":"123"}"#).unwrap();
+        assert_eq!(task.id, "123");
+        assert_eq!(task.content, "");
+        assert_eq!(task.description, "");
+        assert_eq!(task.priority, 0);
+        assert_eq!(task.child_order, 0);
+        assert_eq!(task.project_id, "");
+    }
+
+    #[test]
+    fn completed_response_next_cursor_is_optional() {
+        let no_cursor: CompletedTasksResponse = serde_json::from_str(r#"{"items":[]}"#).unwrap();
+        assert!(no_cursor.next_cursor.is_none());
+
+        let with_cursor: CompletedTasksResponse =
+            serde_json::from_str(r#"{"items":[],"next_cursor":"abc"}"#).unwrap();
+        assert_eq!(with_cursor.next_cursor.as_deref(), Some("abc"));
+    }
 }
