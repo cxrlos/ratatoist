@@ -3,9 +3,10 @@ members  = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-edition    = "2024"
-license    = "MIT"
-repository = "https://github.com/cxrlos/ratatoist"
+edition      = "2024"
+rust-version = "1.88"
+license      = "MIT"
+repository   = "https://github.com/cxrlos/ratatoist"
 
 # Single source of truth for the ratatoist-core version used across the workspace.
 # When publishing core, the workflow updates this version (and the crate's own

@@ -24,7 +24,7 @@
   <a href="https://crates.io/crates/ratatoist-tui">
     <img src="https://img.shields.io/crates/d/ratatoist-tui?style=for-the-badge&label=downloads&color=c4a7e7" alt="crates.io downloads">
   </a>
-  <img src="https://img.shields.io/badge/MSRV-1.85-orange?style=for-the-badge&logo=rust&logoColor=white" alt="MSRV 1.85">
+  <img src="https://img.shields.io/badge/MSRV-1.88-orange?style=for-the-badge&logo=rust&logoColor=white" alt="MSRV 1.88">
   <a href="https://github.com/cxrlos/ratatoist/stargazers">
     <img src="https://img.shields.io/github/stars/cxrlos/ratatoist?style=for-the-badge&color=eb6f92" alt="GitHub stars">
   </a>
@@ -36,7 +36,7 @@
 
 - **Fast** — incremental delta sync, real-time WebSocket updates, exponential-backoff retries
 - **Vim-native** — `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
-- **Polished** — threaded comments, priority indicators, human-readable dates, 10 built-in themes
+- **Polished** — task comments, priority indicators, human-readable dates, 10 built-in themes
 - **Secure** — token never logged, config file permissions validated
 
 ## Packages
@@ -134,7 +134,7 @@ ratatoist
 
 ## Requirements
 
-- Rust 1.85+ (edition 2024)
+- Rust 1.88+ (edition 2024)
 - A [Todoist](https://todoist.com) account with API token
 - A true-color terminal (Alacritty, iTerm2, WezTerm, Kitty, etc.)
 

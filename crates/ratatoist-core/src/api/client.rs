@@ -10,6 +10,7 @@ use super::sync::{SyncRequest, SyncResponse};
 const BASE_URL: &str = "https://api.todoist.com/api/v1";
 const SYNC_URL: &str = "https://api.todoist.com/api/v1/sync";
 const MAX_RETRIES: u32 = 3;
+const MAX_PAGES: usize = 50;
 
 #[derive(Debug)]
 struct RateLimitError {
@@ -42,6 +43,8 @@ impl TodoistClient {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
             .build()
             .context("failed to build HTTP client")?;
 
@@ -73,36 +76,59 @@ impl TodoistClient {
 
     /// Per-task comment fetch — targeted REST call, not available via Sync.
     pub async fn get_comments(&self, task_id: &str) -> Result<Vec<Comment>> {
-        let url = format!("{BASE_URL}/comments?task_id={task_id}");
+        let base = format!("{BASE_URL}/comments?task_id={task_id}");
         let start = Instant::now();
 
         debug!(task_id, "GET comments");
 
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .context("failed to reach Todoist API")?;
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+        for _ in 0..MAX_PAGES {
+            let url = match &cursor {
+                Some(c) => format!("{base}&cursor={c}"),
+                None => base.clone(),
+            };
 
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Todoist API error ({status}): {body}");
+            let resp = self
+                .client
+                .get(&url)
+                .send()
+                .await
+                .context("failed to reach Todoist API")?;
+
+            let status = resp.status();
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                anyhow::bail!("Todoist API error ({status}): {body}");
+            }
+
+            let page: Paginated<Comment> = resp
+                .json()
+                .await
+                .context("failed to parse comments response")?;
+
+            all.extend(page.results);
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
         }
 
-        let page: Paginated<Comment> = resp
-            .json()
-            .await
-            .context("failed to parse comments response")?;
+        if cursor.is_some() {
+            warn!(
+                task_id,
+                max_pages = MAX_PAGES,
+                "comment pagination truncated"
+            );
+        }
 
         info!(
-            count = page.results.len(),
+            count = all.len(),
             task_id,
             elapsed_ms = start.elapsed().as_millis() as u64,
             "fetched comments"
         );
-        Ok(page.results)
+        Ok(all)
     }
 
     /// Completed tasks are not available through the Sync API.
@@ -113,46 +139,49 @@ impl TodoistClient {
         since: Option<&str>,
     ) -> Result<Vec<Task>> {
         let start = Instant::now();
-        let mut url = format!("{BASE_URL}/tasks/completed?annotate_items=1");
+        let mut base = format!("{BASE_URL}/tasks/completed?annotate_items=1");
 
         if let Some(pid) = project_id {
-            url = format!("{url}&project_id={pid}");
+            base = format!("{base}&project_id={pid}");
         }
         if let Some(s) = since {
-            url = format!("{url}&since={s}");
+            base = format!("{base}&since={s}");
         }
 
-        debug!(url = %url, "GET completed tasks");
+        let mut tasks: Vec<Task> = Vec::new();
+        let mut cursor: Option<String> = None;
+        for _ in 0..MAX_PAGES {
+            let url = match &cursor {
+                Some(c) => format!("{base}&cursor={c}"),
+                None => base.clone(),
+            };
 
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .context("failed to reach Todoist API")?;
+            debug!(url = %url, "GET completed tasks");
 
-        let status = resp.status();
-        let elapsed = start.elapsed();
+            let resp = self
+                .client
+                .get(&url)
+                .send()
+                .await
+                .context("failed to reach Todoist API")?;
 
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            error!(
-                status = status.as_u16(),
-                elapsed_ms = elapsed.as_millis() as u64,
-                "completed tasks fetch failed"
-            );
-            anyhow::bail!("Todoist API error ({status}): {body}");
-        }
+            let status = resp.status();
+            if !status.is_success() {
+                let body = resp.text().await.unwrap_or_default();
+                error!(
+                    status = status.as_u16(),
+                    elapsed_ms = start.elapsed().as_millis() as u64,
+                    "completed tasks fetch failed"
+                );
+                anyhow::bail!("Todoist API error ({status}): {body}");
+            }
 
-        let wrapper: CompletedTasksResponse = resp
-            .json()
-            .await
-            .context("failed to parse completed tasks response")?;
+            let wrapper: CompletedTasksResponse = resp
+                .json()
+                .await
+                .context("failed to parse completed tasks response")?;
 
-        let tasks: Vec<Task> = wrapper
-            .items
-            .into_iter()
-            .filter_map(|rec| {
+            tasks.extend(wrapper.items.into_iter().filter_map(|rec| {
                 rec.item_object.or_else(|| {
                     Some(Task {
                         id: rec.task_id,
@@ -166,12 +195,24 @@ impl TodoistClient {
                         ..Default::default()
                     })
                 })
-            })
-            .collect();
+            }));
+
+            cursor = wrapper.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+
+        if cursor.is_some() {
+            warn!(
+                max_pages = MAX_PAGES,
+                "completed-tasks pagination truncated"
+            );
+        }
 
         info!(
             count = tasks.len(),
-            elapsed_ms = elapsed.as_millis() as u64,
+            elapsed_ms = start.elapsed().as_millis() as u64,
             "fetched completed tasks"
         );
         Ok(tasks)

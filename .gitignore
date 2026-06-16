@@ -7,7 +7,8 @@
 # AI agent working files -- not part of the source
 .ai/
 *.plan.md
-*.claude/
+.claude/*
+!.claude/CLAUDE.md
 
 # Test examples with real API calls
 crates/ratatoist-core/examples/
@@ -22,3 +23,9 @@ crates/ratatoist-core/examples/
 
 # Config files that may contain secrets
 config.toml
+
+# Living project plan -- local working notes, not source
+PROJECT_PLAN.md
+
+# Personal tmux helper
+.tmux-sessionizer
