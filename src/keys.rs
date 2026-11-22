@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -43,17 +43,14 @@ pub enum KeyAction {
     None,
 }
 
-static PENDING_Z: Mutex<bool> = Mutex::new(false);
+static PENDING_Z: AtomicBool = AtomicBool::new(false);
 
 fn take_pending_z() -> bool {
-    let mut pending = PENDING_Z.lock().unwrap();
-    let was = *pending;
-    *pending = false;
-    was
+    PENDING_Z.swap(false, Ordering::Relaxed)
 }
 
 fn set_pending_z() {
-    *PENDING_Z.lock().unwrap() = true;
+    PENDING_Z.store(true, Ordering::Relaxed);
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {

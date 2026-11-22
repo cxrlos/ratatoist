@@ -1,0 +1,52 @@
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+all-features = true
+
+[advisories]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = [
+    # No maintained 0.4 release exists. Drop once the date code moves to jiff,
+    # as lrat uses.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained; ratatoist moves its date code to jiff" },
+    # Url::origin() recurses on nested blob: URLs. Nothing in ratatoist,
+    # reqwest, hyper-util, tower-http or tungstenite calls origin(). Drop once
+    # the fixed 2.5.9 has been out two weeks.
+    { id = "RUSTSEC-2026-0592", reason = "no dependency calls Url::origin()" },
+]
+
+[licenses]
+# One license per line, sorted, so parallel additions merge cleanly.
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+# Each exception covers one crate, not new ones.
+exceptions = [
+    # MPL-2.0 is file-level copyleft: it covers the crate's own files, not
+    # ratatoist's. Reached through dirs; drop it when config paths move to
+    # etcetera.
+    { crate = "option-ext", allow = ["MPL-2.0"] },
+    # Mozilla's root certificate data under a permissive data licence. Reached
+    # through rustls-tls-webpki-roots; drop it when the TLS stack moves to the
+    # platform verifier, as lrat uses.
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

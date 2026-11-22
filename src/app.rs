@@ -1644,7 +1644,7 @@ impl App {
                     if let Some(wi) = self
                         .workspaces
                         .iter()
-                        .position(|w| w.id.as_str() == ws_id.unwrap())
+                        .position(|w| Some(w.id.as_str()) == ws_id)
                     {
                         entries.push(ProjectEntry::WorkspaceHeader(wi));
                     }
