@@ -15,9 +15,10 @@ ignore = [
     # No maintained 0.4 release exists. Drop once the date code moves to jiff,
     # as lrat uses.
     { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained; ratatoist moves its date code to jiff" },
-    # Url::origin() recurses on nested blob: URLs. Nothing in ratatoist,
-    # reqwest, hyper-util, tower-http or tungstenite calls origin(). Drop once
-    # the fixed 2.5.9 has been out two weeks.
+    # Url::origin() recurses on nested blob: URLs. `cargo tree -i url` shows
+    # reqwest as url's only dependent, and neither reqwest 0.12's src/ nor
+    # ratatoist's calls origin(). Recheck both if the tree changes. Drop on or
+    # after 2026-12-04, once the fixed 2.5.9 (2026-11-20) has been out two weeks.
     { id = "RUSTSEC-2026-0592", reason = "no dependency calls Url::origin()" },
 ]
 
