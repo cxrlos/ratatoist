@@ -13,41 +13,38 @@ ratatoist supports Linux and macOS, and one Todoist account at a time. Issues la
 - [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny) for dependency checks
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) for the secret scan
 
-`cargo run -- --demo` starts ratatoist on a fictional account, so you don't need a Todoist account to work on the UI. When your change touches how ratatoist talks to Todoist, also try it against a second account, as described in [Testing against a free Todoist account](#testing-against-a-free-todoist-account).
+ratatoist has no token-free demo mode yet, so running it needs a Todoist account. Use a second account made for development, as described in [Testing against a free Todoist account](#testing-against-a-free-todoist-account), never the one you plan your life in.
 
 ## Testing against a free Todoist account
 
-The test suite never calls the Todoist API, so a change to the Todoist client also needs a run against the real thing. I do that in a second, free Todoist account made for it, never in the account I plan my life in: ratatoist can complete, edit and move tasks, and a token reaches everything in its account.
+The test suite never calls the Todoist API, so a change to the Todoist client also needs a run against the real thing. I do that in a second, free Todoist account made for it, never in the account I plan my life in: ratatoist can complete, edit and add tasks, and a token reaches everything in its account.
 
 1. Create the account. Sign up at [todoist.com](https://todoist.com) with a second email address; the free plan is enough.
 2. Copy its API token from Settings, Integrations, Developer ([app.todoist.com/app/settings/integrations/developer](https://app.todoist.com/app/settings/integrations/developer)).
-3. Hand the token to ratatoist in one of two ways:
-   - For one shell session only, keep it in `TODOIST_API_TOKEN`. `read -rs` keeps it out of your shell history and off the screen; paste the token and press Enter:
+3. Keep the token in `TODOIST_API_TOKEN` for one shell session. `read -rs` keeps it out of your shell history and off the screen; paste the token and press Enter:
 
-     ```sh
-     read -rs TODOIST_API_TOKEN && export TODOIST_API_TOKEN
-     ```
+   ```sh
+   read -rs TODOIST_API_TOKEN && export TODOIST_API_TOKEN
+   ```
 
-     Closing the shell forgets it. While it is set it wins over any token in the keyring.
-   - Or store it in the OS keyring with `ratatoist auth login`, which prompts for it without echo. `ratatoist auth logout` removes it again.
+   Closing the shell forgets it. While it is set it wins over any token in `config.toml`, so your own account stays untouched.
 4. Load a handful of sample tasks in the web app: two or three projects, one with sections, a few labels, a subtask, a recurring task, a task due today and one overdue.
 
-I run ratatoist from my working tree with `cargo run --`, so `ratatoist auth status` below is `cargo run -- auth status`, and `ratatoist` is `cargo run`.
+I run ratatoist from my working tree, so `ratatoist` below is `cargo run --`.
 
 ### Manual checks
 
 Run these in order and compare with what each step expects:
 
-1. Log in. Unset `TODOIST_API_TOKEN` first (`unset TODOIST_API_TOKEN`), run `ratatoist auth login` and paste the token. It reports the account it stored the token for.
-2. Check the token. `ratatoist auth status` names where the token comes from (the keyring) and the account, without printing the token.
-3. Load your tasks. `ratatoist` shows the sample projects and their tasks.
-4. Make a write round trip. Complete a task. It shows as completed in ratatoist and in the web app. Uncomplete it; both show it open again.
-5. Watch live updates. In the web app, rename a task. ratatoist shows the change within a few seconds, without a key press.
-6. Log out. `ratatoist auth logout` says it removed the token from the OS keyring, and `ratatoist auth status` then reports no token.
+1. Load your tasks. `ratatoist` shows the sample projects and their tasks.
+2. Make a write round trip. Select a task and press `x`. It shows as completed in ratatoist and in the web app.
+3. Watch live updates. In the web app, reopen that task and rename another one. ratatoist shows both changes within a few seconds, without a key press.
+4. Force a full sync. Press `R`; the same projects and tasks load again.
+5. Try the setup screen without touching your real config. `ratatoist --new-user` asks for a token; paste the test token and press Enter. On the shell alias screen that follows, press Esc to skip it, so nothing is added to your shell rc file. ratatoist loads the sample tasks and writes no `config.toml`.
 
 When you are done, reset the token in the same settings page, or delete the account.
 
-Tokens never go in issues, PRs, logs, screenshots or recordings. Check a terminal screenshot before you post it, and if a token leaks anyway, reset it at once.
+Tokens never go in issues, PRs, logs, screenshots or recordings. The setup screen shows the token as you paste it, so check a terminal screenshot before you post it, and if a token leaks anyway, reset it at once.
 
 ## Workflow
 

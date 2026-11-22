@@ -5,7 +5,7 @@ A terminal client for Todoist, written in Rust with ratatui. One crate; the bina
 ## Read first
 
 - `GLOSSARY.md`: the words for what ratatoist shows and acts on. Use them in code, docs and issues; never use a term listed under _Avoid_.
-- `docs/adr/`: decisions in force. When a change contradicts one, stop and name the ADR.
+- `docs/adr/`: the decisions in force, one file each.
 - `docs/agents/`: issue tracker, triage labels and domain-doc rules.
 - `docs/releasing.md`: how versions, tags and publishing work.
 
@@ -19,7 +19,7 @@ Active. Each milestone's work lands on a `feat/vX.Y.0` branch, which is squash-m
 2. The PR title is the commit: a Conventional Commit, with `!` for breaking changes. Squash merge only.
 3. release-plz owns `CHANGELOG.md` and the version in `Cargo.toml`. Never edit them by hand.
 4. Never accept a changed insta snapshot without showing the `.snap.new` diff first. Generate every pending snapshot in one run with `INSTA_FORCE_PASS=1 INSTA_UPDATE=new cargo test --locked --no-fail-fast`, review them, then accept once.
-5. Let every hook run, and never force-push a shared branch.
+5. `main` and every `feat/vX.Y.0` branch are shared: add commits on top, never rewrite them. Every CI job and the `.claude/settings.json` format hook gate each change; fix what they flag instead of bypassing them.
 6. MSRV is 1.88 (edition 2024; ratatui 0.30 needs it). A dependency or language feature that raises it needs an ADR.
 7. Linux and macOS only. Do not add Windows-specific code paths.
 
@@ -42,6 +42,7 @@ These are targets. New code meets them; older code is brought up to them as it i
 - All Todoist API access goes through one module, so tests swap it for fixtures.
 - One action registry drives key handling, the keymap config, the `?` cheatsheet, the bottom-bar hints and the palette. Never list a key binding anywhere else.
 - No `unwrap`/`expect` outside tests; errors carry context to the screen, and a network failure keeps the data already loaded.
+- Every style comes from a `Theme` method named for its role (`due_overdue`, `error_border`), so built-in and user themes reach every widget.
 - Text is measured and cut only through `src/ui/text.rs`: widths in terminal cells, and cut text ends in `…`.
 - The terminal is restored on every exit path, panics included.
 
@@ -52,12 +53,12 @@ When you add, move or split a module, update its entry here in the same PR.
 - `src/main.rs`: the `ratatoist` binary. Parses the CLI, runs onboarding when there is no token, loads the config, starts logging and runs the app.
 - `src/lib.rs`: the library root, so tests import `ratatoist::...`.
 - `src/app.rs`: the core. `App` state, the event loop, the background task fed over an mpsc channel, the WebSocket refresh and optimistic writes. A write applies locally, queues a `SyncCommand` in `pending_commands` and stores a revert snapshot in `temp_id_pending`, keyed by command uuid; a rejection or a failed flush restores the snapshot and shows the error. Invariant: one command per flush. Queue and flush one command at a time, because the snapshots are absolute `before` values that do not compose when same-task edits share a flush. `apply_sync_delta` skips incremental items whose task is still in `temp_id_pending`, so a racing delta never clobbers an in-flight edit.
-- `src/keys.rs`: key dispatch for the Vim (Normal, Visual, Insert) and Standard modes.
-- `src/todoist/`: all Todoist access. `client.rs` (the reqwest client with retries), `model.rs` (the serde types), `sync.rs` (sync requests, commands and responses). Reads and writes go through `POST /api/v1/sync` with a sync token (`*` for a full sync, otherwise an incremental one). Comments and completed tasks are cursor-paged; completed tasks follow a top-level `next_cursor` that is unverified against the live API, so when it is absent only the first page loads.
+- `src/keys.rs`: key dispatch for the Vim (Normal, Insert) and Standard modes.
+- `src/todoist/`: all Todoist access. `client.rs` (the reqwest client, retrying 429s with backoff), `model.rs` (the serde types), `sync.rs` (sync requests, commands and responses). Reads and writes go through `POST /api/v1/sync` with a sync token (`*` for a full sync, otherwise an incremental one). Comments and completed tasks are cursor-paged; completed tasks follow a top-level `next_cursor` that is unverified against the live API, so when it is absent only the first page loads.
 - `src/config.rs`: the token from `TODOIST_API_TOKEN` or `config.toml`, kept at mode 0600. Its `Debug` impl redacts the token.
 - `src/sync_state.rs`: the sync token, persisted atomically to `sync_state.json` in the config directory.
 - `src/logging.rs`: `tracing` to a daily log file.
-- `src/ui/`: rendering. Layout, status bar and key hints, dates (`dates.rs`), themes (`theme.rs`: the built-ins and user Base16 files), the views (projects, tasks, detail, settings, overview) and the components (popups, pickers, the task form, the cheatsheet).
+- `src/ui/`: rendering. Layout, splash and setup screens, status bar and key hints, dates (`dates.rs`), themes (`theme.rs`: the built-ins under `themes/` and user Base16 files), the views (projects, tasks, detail, settings) and the components (popups, pickers, the task form, the cheatsheet).
 
 ## Commands
 
@@ -72,7 +73,7 @@ gitleaks git --redact
 cargo run -- --demo
 ```
 
-CI runs all of these except `cargo run` on every PR, with tests on Linux and macOS. `gitleaks git` is the local form of CI's full-history secret scan.
+CI runs all of these except `cargo run` on every PR, with tests on Linux and macOS. `gitleaks git` is the local form of CI's full-history secret scan. Until `--demo` exists, `cargo run` needs a token.
 
 ## Agent skills
 

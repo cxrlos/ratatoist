@@ -34,10 +34,10 @@
 
 <!-- video later -->
 
-- **Fast** — incremental delta sync, real-time WebSocket updates, exponential-backoff retries
-- **Vim-native** — `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
-- **Polished** — task comments, priority indicators, human-readable dates, 10 built-in themes
-- **Secure** — token never logged, config file permissions validated
+- **Fast**: incremental delta sync, real-time WebSocket updates, exponential-backoff retries
+- **Vim-native**: `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
+- **Polished**: task comments, priority indicators, human-readable dates, 10 built-in themes
+- **Secure**: token never logged, config file permissions validated
 
 ## Packages
 
@@ -45,7 +45,7 @@
 | ------------------------------------------ | -------------------------------------------- |
 | [`ratatoist-core`](crates/ratatoist-core/) | Todoist Sync API client, config, logging     |
 | [`ratatoist-tui`](crates/ratatoist-tui/)   | Terminal UI binary (installs as `ratatoist`) |
-| [`ratatoist-nvim`](crates/ratatoist-nvim/) | Neovim plugin — coming soon                  |
+| [`ratatoist-nvim`](crates/ratatoist-nvim/) | Neovim plugin stub, not started              |
 
 ## Quick start
 
@@ -88,7 +88,7 @@ ratatoist
 <details>
 <summary><strong>Task operations</strong></summary>
 
-- Complete / uncomplete (`x`) with optimistic UI — instant feedback, reverts on error
+- Complete / uncomplete (`x`) with optimistic UI: instant feedback, reverts on error
 - Quick-add (`a`) with multi-field form: content, priority, due date, project
 - Inline field editing in detail pane (`i` / `Enter`)
 - Priority picker popup with visual selector
@@ -154,15 +154,6 @@ cargo build --workspace --release       # build all
 cargo clippy --workspace                # lint
 cargo test --workspace                  # test
 ```
-
-## Roadmap
-
-- [ ] Delete task with confirmation
-- [ ] Global search (`/`) with ranked results
-- [ ] Move task between projects
-- [ ] Undo / redo stack
-- [ ] Calendar and Board views
-- [ ] Neovim plugin
 
 ## License
 
