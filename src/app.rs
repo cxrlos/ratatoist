@@ -52,8 +52,6 @@ pub enum InputMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VimState {
     Normal,
-    #[allow(dead_code)] // Reserved for visual mode selection.
-    Visual,
     Insert,
 }
 
@@ -62,7 +60,6 @@ impl InputMode {
         match self {
             InputMode::Standard => "STANDARD",
             InputMode::Vim(VimState::Normal) => "NORMAL",
-            InputMode::Vim(VimState::Visual) => "VISUAL",
             InputMode::Vim(VimState::Insert) => "INSERT",
         }
     }
@@ -204,11 +201,8 @@ fn parse_api_error(raw: &str, context: &str) -> (String, String, Option<String>)
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct UserRecord {
     pub id: String,
-    pub full_name: String,
-    pub email: String,
     pub display: String,
 }
 
@@ -222,12 +216,7 @@ impl UserRecord {
             (true, false) => mail.clone(),
             _ => id.clone(),
         };
-        Self {
-            id,
-            full_name: name,
-            email: mail,
-            display,
-        }
+        Self { id, display }
     }
 }
 
@@ -264,13 +253,9 @@ pub enum OptimisticOp {
     TaskAdded {
         temp_id: String,
     },
-    #[allow(dead_code)] // Used once delete task (d) is wired up.
-    TaskRemoved {
-        snapshot: Task,
-    },
     TaskUpdated {
         task_id: String,
-        before: Task,
+        before: Box<Task>,
     },
     CommentAdded {
         temp_id: String,
@@ -278,7 +263,7 @@ pub enum OptimisticOp {
     },
     ProjectUpdated {
         project_id: String,
-        before: Project,
+        before: Box<Project>,
     },
 }
 
@@ -659,12 +644,6 @@ impl App {
                     KeyAction::OpenAllFolds => self.collapsed.clear(),
                     KeyAction::CloseAllFolds => self.close_all_folds(),
                     KeyAction::CompleteTask => self.complete_selected_task(),
-                    KeyAction::OpenPriorityPicker => {
-                        if let Some(task) = self.selected_task() {
-                            self.priority_selection = task.priority;
-                            self.show_priority_picker = true;
-                        }
-                    }
                     KeyAction::SelectPriority => {
                         self.show_priority_picker = false;
                         if let Some(form) = &mut self.task_form {
@@ -723,7 +702,6 @@ impl App {
         self.temp_id_pending.values().any(|op| match op {
             OptimisticOp::TaskUpdated { task_id: id, .. } => id == task_id,
             OptimisticOp::TaskAdded { temp_id } => temp_id == task_id,
-            OptimisticOp::TaskRemoved { snapshot } => snapshot.id == task_id,
             OptimisticOp::CommentAdded { .. } | OptimisticOp::ProjectUpdated { .. } => false,
         })
     }
@@ -940,12 +918,9 @@ impl App {
             OptimisticOp::TaskAdded { temp_id } => {
                 self.tasks.retain(|t| t.id != temp_id);
             }
-            OptimisticOp::TaskRemoved { snapshot } => {
-                self.tasks.push(snapshot);
-            }
             OptimisticOp::TaskUpdated { task_id, before } => {
                 if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
-                    *t = before;
+                    *t = *before;
                 }
             }
             OptimisticOp::CommentAdded { temp_id, task_id } => {
@@ -956,7 +931,7 @@ impl App {
             }
             OptimisticOp::ProjectUpdated { project_id, before } => {
                 if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
-                    *p = before;
+                    *p = *before;
                 }
                 self.sort_projects();
             }
@@ -1264,7 +1239,7 @@ impl App {
                 uuid,
                 OptimisticOp::TaskUpdated {
                     task_id,
-                    before: snapshot,
+                    before: Box::new(snapshot),
                 },
             );
         }
@@ -1464,7 +1439,7 @@ impl App {
             uuid.clone(),
             OptimisticOp::TaskUpdated {
                 task_id: task_id.clone(),
-                before,
+                before: Box::new(before),
             },
         );
         self.pending_commands.push(SyncCommand {
@@ -1565,7 +1540,7 @@ impl App {
             uuid.clone(),
             OptimisticOp::ProjectUpdated {
                 project_id: pid.clone(),
-                before,
+                before: Box::new(before),
             },
         );
         self.pending_commands.push(SyncCommand {
@@ -1770,7 +1745,7 @@ impl App {
             uuid.clone(),
             OptimisticOp::TaskUpdated {
                 task_id: task_id.clone(),
-                before,
+                before: Box::new(before),
             },
         );
         self.pending_commands.push(SyncCommand {

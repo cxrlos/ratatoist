@@ -17,8 +17,6 @@ pub enum KeyAction {
     OpenAllFolds,
     CloseAllFolds,
     CompleteTask,
-    #[allow(dead_code)]
-    OpenPriorityPicker,
     SelectPriority,
     StarProject,
     CycleFilter,
@@ -351,7 +349,6 @@ fn settings_item_count() -> usize {
 fn handle_vim(app: &mut App, key: KeyEvent, state: VimState) -> KeyAction {
     match state {
         VimState::Normal => handle_vim_normal(app, key),
-        VimState::Visual => handle_vim_visual(app, key),
         VimState::Insert => handle_vim_insert(app, key),
     }
 }
@@ -446,13 +443,6 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
             }
         }
 
-        _ => KeyAction::None,
-    }
-}
-
-fn handle_vim_visual(_app: &mut App, key: KeyEvent) -> KeyAction {
-    match key.code {
-        KeyCode::Esc => KeyAction::Consumed,
         _ => KeyAction::None,
     }
 }

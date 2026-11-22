@@ -38,7 +38,6 @@ pub struct Base16Scheme {
     base0f: String,
 }
 
-#[allow(dead_code)]
 pub struct Theme {
     pub name: String,
     pub base: Color,
@@ -252,13 +251,6 @@ impl Theme {
         Style::default()
             .fg(self.base)
             .bg(self.cyan)
-            .add_modifier(Modifier::BOLD)
-    }
-
-    pub fn mode_visual(&self) -> Style {
-        Style::default()
-            .fg(self.base)
-            .bg(self.purple)
             .add_modifier(Modifier::BOLD)
     }
 

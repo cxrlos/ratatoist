@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Project {
     pub id: String,
@@ -30,7 +29,6 @@ impl Project {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Task {
     pub id: String,
@@ -69,7 +67,6 @@ pub struct Task {
     pub is_collapsed: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Due {
     pub date: String,
@@ -81,7 +78,6 @@ pub struct Due {
     pub lang: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Label {
     pub id: String,
@@ -93,7 +89,6 @@ pub struct Label {
     pub is_deleted: Option<bool>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Section {
     pub id: String,
@@ -106,7 +101,6 @@ pub struct Section {
     pub added_at: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Comment {
     pub id: String,
@@ -127,7 +121,6 @@ pub struct Comment {
     pub uids_to_notify: Option<Vec<String>>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct UserInfo {
     pub id: String,
@@ -136,7 +129,6 @@ pub struct UserInfo {
     pub websocket_url: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Collaborator {
     pub id: String,
@@ -157,7 +149,6 @@ pub struct CompletedRecord {
     pub item_object: Option<Task>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Workspace {
     pub id: String,
@@ -166,7 +157,6 @@ pub struct Workspace {
     pub is_deleted: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Folder {
     pub id: String,
@@ -206,25 +196,6 @@ pub struct CompletedTasksResponse {
 pub struct Paginated<T> {
     pub results: Vec<T>,
     pub next_cursor: Option<String>,
-}
-
-// Serializable args types used to build SyncCommand.args values.
-#[derive(Debug, Serialize)]
-pub struct ItemAddArgs {
-    pub content: String,
-    pub project_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub due_string: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub labels: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub section_id: Option<String>,
 }
 
 #[cfg(test)]

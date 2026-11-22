@@ -10,7 +10,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
     let mode_style = match app.input_mode {
         InputMode::Vim(VimState::Normal) => theme.mode_normal(),
-        InputMode::Vim(VimState::Visual) => theme.mode_visual(),
         InputMode::Vim(VimState::Insert) => theme.mode_insert(),
         InputMode::Standard => theme.mode_standard(),
     };
