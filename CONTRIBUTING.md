@@ -73,3 +73,7 @@ Welcome. Agents read [AGENTS.md](AGENTS.md). You are responsible for what you su
 ## Security
 
 Never paste an API token into an issue, PR or log. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Unless you say otherwise, any contribution you submit is dual-licensed as MIT OR Apache-2.0, like the rest of the project, with no additional terms.

@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "A keyboard-first terminal client for Todoist"
 repository = "https://github.com/cxrlos/ratatoist"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
 include = ["/src/**/*.rs", "/themes/*.json", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
 
