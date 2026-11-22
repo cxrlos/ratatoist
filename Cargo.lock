@@ -1607,46 +1607,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "ratatoist-core"
-version = "0.3.2"
-dependencies = [
- "anyhow",
- "chrono",
- "dirs",
- "rand 0.8.6",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "ratatoist-nvim"
-version = "0.1.0"
-dependencies = [
- "ratatoist-core",
-]
-
-[[package]]
-name = "ratatoist-tui"
-version = "0.4.0"
+name = "ratatoist"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
  "crossterm",
+ "dirs",
  "futures-util",
- "ratatoist-core",
+ "rand 0.8.6",
  "ratatui",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
  "tokio-tungstenite",
+ "toml",
  "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
 ]
 
 [[package]]

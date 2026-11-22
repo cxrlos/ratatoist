@@ -4,7 +4,7 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
-use ratatoist_core::api::models::priority_label;
+use crate::todoist::model::priority_label;
 
 use crate::app::{App, TaskForm};
 

@@ -1,7 +1,7 @@
 use ratatui::style::Style;
 
 use super::theme::Theme;
-use ratatoist_core::api::models::Due;
+use crate::todoist::model::Due;
 
 pub struct FormattedDue {
     pub text: String,

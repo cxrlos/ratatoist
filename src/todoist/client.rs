@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use tracing::{debug, error, info, warn};
 
-use super::models::{Comment, CompletedTasksResponse, Paginated, Task, UserInfo};
+use super::model::{Comment, CompletedTasksResponse, Paginated, Task, UserInfo};
 use super::sync::{SyncRequest, SyncResponse};
 
 const BASE_URL: &str = "https://api.todoist.com/api/v1";

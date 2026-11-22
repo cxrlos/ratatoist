@@ -1,7 +1,3 @@
-mod app;
-mod keys;
-mod ui;
-
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -10,11 +6,12 @@ use anyhow::Result;
 use clap::Parser;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
-use ratatoist_core::api::client::TodoistClient;
-use ratatoist_core::config::Config;
-use ratatoist_core::logging;
+use ratatoist::config::Config;
+use ratatoist::logging;
+use ratatoist::todoist::client::TodoistClient;
+use ratatoist::ui;
 
-use app::App;
+use ratatoist::app::App;
 
 #[derive(Parser)]
 #[command(name = "ratatoist", version, about = "A terminal UI for Todoist")]

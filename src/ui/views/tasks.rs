@@ -1,4 +1,4 @@
-use ratatoist_core::api::models::Task;
+use crate::todoist::model::Task;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};

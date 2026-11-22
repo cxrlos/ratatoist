@@ -50,9 +50,7 @@
 ## Quick start
 
 ```sh
-git clone https://github.com/cxrlos/ratatoist.git
-cd ratatoist
-cargo install --path crates/ratatoist-tui
+cargo install ratatoist
 ```
 
 Run the guided setup (validates your token and optionally writes a shell alias):

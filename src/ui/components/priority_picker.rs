@@ -3,7 +3,7 @@ use ratatui::layout::Alignment;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
-use ratatoist_core::api::models::PRIORITY_LABELS;
+use crate::todoist::model::PRIORITY_LABELS;
 
 use crate::ui::theme::Theme;
 

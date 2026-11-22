@@ -7,7 +7,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
-use ratatoist_core::api::models::{Comment, Task};
+use crate::todoist::model::{Comment, Task};
 
 use crate::app::UserRecord;
 use crate::ui::dates;
