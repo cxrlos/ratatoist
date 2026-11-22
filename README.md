@@ -15,14 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/ratatoist-core">
-    <img src="https://img.shields.io/crates/v/ratatoist-core?style=for-the-badge&label=core&color=9ccfd8" alt="core on crates.io">
-  </a>
-  <a href="https://crates.io/crates/ratatoist-tui">
-    <img src="https://img.shields.io/crates/v/ratatoist-tui?style=for-the-badge&label=tui&color=9ccfd8" alt="tui on crates.io">
-  </a>
-  <a href="https://crates.io/crates/ratatoist-tui">
-    <img src="https://img.shields.io/crates/d/ratatoist-tui?style=for-the-badge&label=downloads&color=c4a7e7" alt="crates.io downloads">
+  <a href="https://crates.io/crates/ratatoist">
+    <img src="https://img.shields.io/crates/v/ratatoist?style=for-the-badge&color=9ccfd8" alt="ratatoist on crates.io">
   </a>
   <img src="https://img.shields.io/badge/MSRV-1.88-orange?style=for-the-badge&logo=rust&logoColor=white" alt="MSRV 1.88">
   <a href="https://github.com/cxrlos/ratatoist/stargazers">
@@ -38,14 +32,6 @@
 - **Vim-native**: `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
 - **Polished**: task comments, priority indicators, human-readable dates, 10 built-in themes
 - **Secure**: token never logged, config file permissions validated
-
-## Packages
-
-| Crate                                      | Description                                  |
-| ------------------------------------------ | -------------------------------------------- |
-| [`ratatoist-core`](crates/ratatoist-core/) | Todoist Sync API client, config, logging     |
-| [`ratatoist-tui`](crates/ratatoist-tui/)   | Terminal UI binary (installs as `ratatoist`) |
-| [`ratatoist-nvim`](crates/ratatoist-nvim/) | Neovim plugin stub, not started              |
 
 ## Quick start
 
@@ -140,20 +126,11 @@ ratatoist
 
 |                                                             |                                                    |
 | ----------------------------------------------------------- | -------------------------------------------------- |
-| [TUI keybindings and usage](crates/ratatoist-tui/README.md) | Full key reference for both Vim and Standard modes |
-| [Core library API](crates/ratatoist-core/README.md)         | Using the Todoist client in your own Rust projects |
 | [Changelog](CHANGELOG.md)                                   | Version history                                    |
 
 ## Development
 
-```sh
-cargo run -p ratatoist-tui              # run TUI
-cargo run -p ratatoist-tui -- --debug   # with debug logs
-cargo build --workspace --release       # build all
-./scripts/format.sh                     # format code
-cargo clippy --workspace                # lint
-cargo test --workspace                  # test
-```
+[CONTRIBUTING.md](CONTRIBUTING.md) covers setup, and the Commands section of [AGENTS.md](AGENTS.md) lists every check CI runs.
 
 ## License
 

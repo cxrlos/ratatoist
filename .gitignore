@@ -14,7 +14,6 @@
 !/.claude/settings.json
 
 # Local scripts that call a real Todoist account
-crates/ratatoist-core/examples/
 
 # Editor and OS artifacts
 .DS_Store
