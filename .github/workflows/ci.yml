@@ -72,6 +72,19 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo +1.88 check --all-targets --locked
 
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # Builds the crate from its packaged tarball, so a file the binary embeds
+      # but `include` leaves out fails here instead of on crates.io.
+      - run: cargo package --locked
+
   deny:
     name: cargo deny
     runs-on: ubuntu-latest
