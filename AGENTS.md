@@ -69,6 +69,7 @@ cargo test --locked
 cargo insta pending-snapshots
 cargo +1.88 check --all-targets --locked
 cargo deny check
+cargo package --locked
 gitleaks git --redact
 cargo run -- --demo
 ```
