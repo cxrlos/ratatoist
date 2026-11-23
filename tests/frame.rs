@@ -133,6 +133,18 @@ fn the_tab_row_shrinks_to_the_keys_at_80_columns() {
 }
 
 #[test]
+fn a_tab_row_too_wide_even_for_the_keys_ends_in_an_ellipsis() {
+    let app = sized(30, 24);
+
+    let tabs = tab_row(&app);
+    let tabs = tabs.trim_end();
+
+    assert!(tabs.ends_with('…'));
+    assert!(ratatoist::ui::text::width(tabs) <= 30);
+    assert!(tabs.starts_with(" [1] │ [2] Today │"));
+}
+
+#[test]
 fn the_sync_indicator_follows_sync_events() {
     let mut states = Vec::new();
     let mut app = app();

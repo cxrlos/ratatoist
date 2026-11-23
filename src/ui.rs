@@ -21,7 +21,7 @@ pub mod which_key;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Position, Rect, Size};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph, Tabs};
+use ratatui::widgets::{Block, Paragraph};
 
 use crate::app::{Action, Modal, Pane, Screen, State};
 use crate::keys::{self, Context};
@@ -38,18 +38,10 @@ pub fn draw(frame: &mut Frame, state: &State) {
     let notice = notice_rows(state, area.width);
     let [tabs_area, body_area, notice_area, bar_area] = areas(area, notice.len());
 
-    let selected = Screen::ALL
-        .iter()
-        .position(|&screen| screen == state.screen);
     let titles = tab_titles(state, tabs_area.width);
     let tabs_width = titles_width(&titles);
-    frame.render_widget(
-        Tabs::new(titles)
-            .select(selected)
-            .style(style::muted(theme))
-            .highlight_style(style::accent(theme)),
-        tabs_area,
-    );
+    let tabs = text::fit_line(tab_line(state, titles), usize::from(tabs_area.width));
+    frame.render_widget(Paragraph::new(tabs).style(style::muted(theme)), tabs_area);
     let indicator_width = render_sync_indicator(state, frame, tabs_area, tabs_width);
     release::render_release_notice(state, frame, tabs_area, tabs_width, indicator_width);
     render_body(state, frame, body_area);
@@ -163,8 +155,27 @@ fn tab_title(state: &State, screen: Screen, short: bool) -> String {
     }
 }
 
-/// How wide [`Tabs`] draws `titles`: each padded by a space on both sides,
-/// with a one-column divider between them.
+/// The tab row: each title padded by a space on both sides, the current
+/// screen's accented, with a `│` between them.
+fn tab_line(state: &State, titles: [String; Screen::ALL.len()]) -> Line<'static> {
+    let mut spans = Vec::with_capacity(titles.len() * 4);
+    for (index, (title, screen)) in titles.into_iter().zip(Screen::ALL).enumerate() {
+        if index > 0 {
+            spans.push(Span::raw("│"));
+        }
+        spans.push(Span::raw(" "));
+        if screen == state.screen {
+            spans.push(Span::styled(title, style::accent(state.theme())));
+        } else {
+            spans.push(Span::raw(title));
+        }
+        spans.push(Span::raw(" "));
+    }
+    Line::from(spans)
+}
+
+/// How wide [`tab_line`] draws `titles`: each padded by a space on both
+/// sides, with a one-column divider between them.
 fn titles_width(titles: &[String]) -> u16 {
     let padded: usize = titles.iter().map(|title| text::width(title) + 2).sum();
     let dividers = titles.len().saturating_sub(1);
