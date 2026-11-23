@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/cxrlos/ratatoist/releases/tag/v0.6.0) - 2026-11-23
+
+### Added
+
+- complete ratatoist 0.6.0 ([#85](https://github.com/cxrlos/ratatoist/pull/85))
+- add Today view (sidebar entry below Inbox)
+
+### Fixed
+
+- align workspace dep with core 0.2.1
+
+### Other
+
+- Address code scanning and dependabot suggestions
+- lint
+- 0.3.2 changelog, README MSRV/comment fixes, surface R/f in cheatsheet
+- track project CLAUDE.md for agentic development
+- paginate comments/completed, atomic token write, serde-default Task scalars
+- correct MSRV to 1.88 (real floor — ratatui 0.30 / time / darling)
+- add MSRV 1.85 job and run CI on staging
+- seed unit tests for sync_state and date math
+- Init push to create staging branch
+- Adding token view on no config
+- Remove completed items from roadmap in README
+- Bug fix from deploy reversal
+- Switch tokio-tungstenite to rustls for cross-compilation
+- Merge conflict, reset core to 0.2.1
+- Merge conflict, reset core to 0.2.1
+- FIx attempt pt 3
+- workspace deps, unified publish/rollback workflows, logo update
+- fmt
+- Revamping workflows, improving docs
+- Package fix, linting
+- Updating artifacts
+- fmt
+- Revamped refresh with actual socket and good API calls
+- Stoppoint, visual modifications on filtering
+- Adding styling switcher
+- Quick Readme update
+- ratatoist-core-v0.2.1 ratatoist-tui-v0.2.1
+- Patch
+- ratatoist-core-v0.2.0 ratatoist-tui-v0.2.0
+- changelog
+- Fixing cargo
+- Docs update
+- Fixing wf to trigger deploy
+- remove test examples from tracking
+- Wrapping up for first minor release
+- Scaffolding
+
+### Reverted
+
+- revert optimistic ops on flush failure, guard racing deltas, add force-resync (R)
+
 ## ratatoist-core 0.4.0 / ratatoist-tui 0.5.0 -- 2026-06-16
 
 ### Added
