@@ -190,6 +190,17 @@ fn a_text_field_leaves_out_the_keys_that_would_type() {
 }
 
 #[test]
+fn an_overlay_leaves_the_bar_keys_accented() {
+    let mut form = list(NARROW);
+    send(&mut form, [key('a')]);
+    assert!(matches!(form.state().top_modal(), Some(Modal::Form(_))));
+
+    for app in [picker(NARROW), text_field(NARROW), form] {
+        assert_eq!(fg_of(&app, "Esc close"), accent(&app));
+    }
+}
+
+#[test]
 fn items_that_do_not_fit_are_dropped_whole() {
     let app = configured("", (40, 24));
 

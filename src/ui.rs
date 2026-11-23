@@ -31,7 +31,7 @@ use crate::keys::{self, Context};
 pub const MAX_NOTICE_ROWS: usize = 3;
 
 /// Draws the whole screen from `state`: the tab row, the current screen's
-/// body, the notice, the bottom bar and the overlays over the body.
+/// body, the notice, the overlays over the body, then the bottom bar.
 pub fn draw(frame: &mut Frame, state: &State) {
     let theme = state.theme();
     let area = frame.area();
@@ -55,7 +55,6 @@ pub fn draw(frame: &mut Frame, state: &State) {
     release::render_release_notice(state, frame, tabs_area, tabs_width, indicator_width);
     render_body(state, frame, body_area);
     frame.render_widget(Paragraph::new(notice), notice_area);
-    hints::render(state, frame, bar_area);
 
     for modal in &state.modals {
         match modal {
@@ -69,6 +68,9 @@ pub fn draw(frame: &mut Frame, state: &State) {
             Modal::Palette(palette) => palette::render(state, palette, frame, body_area),
         }
     }
+    // After the overlays, so a legacy one that dims the whole frame leaves
+    // the bar's keys in their own colours.
+    hints::render(state, frame, bar_area);
 }
 
 /// The current screen in `area`: the loading line or an error screen until
