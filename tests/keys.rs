@@ -224,8 +224,7 @@ fn the_standard_preset_changes_only_the_keys_it_lists() {
             assert_eq!(
                 Preset::Standard.default_keys(spec),
                 spec.default_keys,
-                "{}",
-                spec.id
+                "the standard preset keeps a key it does not list"
             );
         }
     }
@@ -264,7 +263,7 @@ fn the_keys_both_presets_share_run_the_same_actions() {
             assert_eq!(
                 app.state().modals,
                 [Modal::Input(InputKind::Field)],
-                "{edit}"
+                "an edit key opens the field prompt"
             );
             assert_eq!(app.state().detail_field, field);
             send(&mut app, [esc()]);
@@ -328,7 +327,7 @@ fn a_key_that_ends_no_chord_closes_the_popup_and_does_nothing() {
 
     let effects = send(&mut app, [key('z'), key('q')]);
 
-    assert!(effects.is_empty(), "{effects:?}");
+    assert!(effects.is_empty());
     assert!(app.state().modals.is_empty());
 }
 
@@ -403,7 +402,7 @@ fn quitting_in_an_overlay_takes_esc_first() {
 
     let effects = send(&mut app, [key('q'), ctrl('c')]);
 
-    assert!(effects.is_empty(), "{effects:?}");
+    assert!(effects.is_empty());
     send(&mut app, [esc()]);
     assert!(app.state().modals.is_empty());
     assert_eq!(send(&mut app, [key('q')]), [Effect::Quit]);
@@ -436,7 +435,7 @@ fn a_text_field_takes_typed_keys_before_the_keymap() {
 
     let effects = send(&mut app, typed("q? jk 1"));
 
-    assert!(effects.is_empty(), "{effects:?}");
+    assert!(effects.is_empty());
     assert_eq!(input(&app), "q? jk 1");
     assert_eq!(app.state().modals, [Modal::Input(InputKind::Comment)]);
 }
@@ -461,7 +460,7 @@ fn the_cursor_moves_and_edits_in_a_text_field() {
     send(&mut app, [press(KeyCode::Home), press(KeyCode::Right)]);
     send(&mut app, [press(KeyCode::Delete)]);
     assert_eq!(input(&app), ">ello");
-    assert!(screen(&app).contains(">▎ello"), "{}", screen(&app));
+    assert!(screen(&app).contains(">▎ello"));
 }
 
 #[test]
@@ -504,8 +503,8 @@ fn esc_in_a_prompt_or_the_form_sends_nothing() {
         send(&mut app, typed("tomorrow"));
         let form = send(&mut app, [esc()]);
 
-        assert!(commands(&comment).is_empty(), "{comment:?}");
-        assert!(commands(&form).is_empty(), "{form:?}");
+        assert!(commands(&comment).is_empty());
+        assert!(commands(&form).is_empty());
         assert!(app.state().modals.is_empty());
         assert!(app.state().tasks.iter().all(|t| t.content != "Pay rent"));
     }

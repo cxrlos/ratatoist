@@ -29,7 +29,7 @@ fn every_key_in_the_reference_reads_back_as_config_notation() {
         let row = markdown
             .lines()
             .find(|line| line.starts_with(&format!("| `{}` |", spec.id)))
-            .unwrap_or_else(|| panic!("{} is missing from the reference", spec.id));
+            .expect("every action has a row in the reference");
         let cells: Vec<&str> = row.split('|').map(str::trim).collect();
         for (cell, preset) in [(cells[2], Preset::Vim), (cells[3], Preset::Standard)] {
             let written: Vec<KeySequence> = cell
@@ -43,7 +43,7 @@ fn every_key_in_the_reference_reads_back_as_config_notation() {
                 .iter()
                 .map(|keys| KeySequence::from(*keys))
                 .collect();
-            assert_eq!(written, defaults, "{} in {}", spec.id, preset.name());
+            assert_eq!(written, defaults, "a row lists its preset's default keys");
         }
     }
 }
