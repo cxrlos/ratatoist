@@ -124,7 +124,8 @@ async fn sync_posts_the_commands_as_json_and_reads_each_status() {
         .mount(&server)
         .await;
 
-    let response = TodoistClient::sync(&client_for(&server), write_request(vec![add, close]))
+    let response = client_for(&server)
+        .sync(write_request(vec![add, close]))
         .await
         .unwrap();
 
@@ -270,7 +271,7 @@ async fn a_429_waits_for_retry_after_then_succeeds() {
         .await;
 
     let started = Instant::now();
-    let response = TodoistClient::sync(&client_for(&server), write_request(vec![])).await;
+    let response = client_for(&server).sync(write_request(vec![])).await;
 
     assert!(response.is_ok(), "{response:?}");
     // Five units of 10 ms, plus at most two units of jitter.
@@ -318,7 +319,8 @@ async fn a_429_that_never_clears_is_rate_limited_with_the_body_wait() {
         .mount(&server)
         .await;
 
-    let error = TodoistClient::sync(&client_for(&server), write_request(vec![]))
+    let error = client_for(&server)
+        .sync(write_request(vec![]))
         .await
         .unwrap_err();
 
@@ -409,11 +411,9 @@ async fn no_client_call_logs_the_token_even_at_trace_level() {
     client.user().await.unwrap();
     client.comments("6Jf8VQXxpwv56VT2").await.unwrap();
     let completed = client.completed_tasks(CompletedQuery::default()).await;
-    let synced = TodoistClient::sync(
-        &client,
-        write_request(vec![command("item_close", "6f3a9c4e")]),
-    )
-    .await;
+    let synced = client
+        .sync(write_request(vec![command("item_close", "6f3a9c4e")]))
+        .await;
 
     assert_eq!(completed.unwrap_err(), ClientError::Unauthorized);
     assert!(synced.is_ok(), "{synced:?}");
@@ -431,7 +431,8 @@ async fn a_401_is_unauthorized() {
         .mount(&server)
         .await;
 
-    let error = TodoistClient::sync(&client_for(&server), write_request(vec![]))
+    let error = client_for(&server)
+        .sync(write_request(vec![]))
         .await
         .unwrap_err();
 

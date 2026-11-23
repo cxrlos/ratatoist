@@ -86,32 +86,6 @@ impl HttpClient {
         })
     }
 
-    /// [`TodoistClient::sync`] with an `anyhow` error, as `app::legacy`
-    /// calls it.
-    pub async fn sync(&self, req: &SyncRequest) -> Result<SyncResponse> {
-        Ok(self.post_sync(req).await?)
-    }
-
-    /// [`TodoistClient::comments`] with an `anyhow` error, as `app::legacy`
-    /// calls it.
-    pub async fn get_comments(&self, task_id: &str) -> Result<Vec<Comment>> {
-        Ok(self.fetch_comments(task_id).await?)
-    }
-
-    /// [`TodoistClient::completed_tasks`] with an `anyhow` error, as
-    /// `app::legacy` calls it.
-    pub async fn get_completed_tasks(
-        &self,
-        project_id: Option<&str>,
-        since: Option<&str>,
-    ) -> Result<Vec<Task>> {
-        let query = CompletedQuery {
-            project_id: project_id.map(str::to_owned),
-            since: since.map(str::to_owned),
-        };
-        Ok(self.fetch_completed_tasks(&query).await?)
-    }
-
     async fn post_sync(&self, body: &SyncRequest) -> Result<SyncResponse, ClientError> {
         let start = Instant::now();
         debug!(
