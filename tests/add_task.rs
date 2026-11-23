@@ -10,6 +10,8 @@ use insta::assert_snapshot;
 use ratatoist::app::{App, Effect, Event, FormField, Modal, State, TaskForm};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
+use ratatoist::ui;
+use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 /// The demo account at `columns` x `rows`, on the Inbox's task list.
@@ -79,15 +81,17 @@ fn form(app: &App<TestBackend>) -> Option<&TaskForm> {
     }
 }
 
+/// The app's state drawn on a fresh terminal of the same size, so a cell
+/// hidden behind a wide character carries nothing from an earlier frame.
+fn drawn(app: &App<TestBackend>) -> TestBackend {
+    let area = app.backend().buffer().area;
+    let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
+    terminal.draw(|frame| ui::draw(frame, app.state())).unwrap();
+    terminal.backend().clone()
+}
+
 fn screen(app: &App<TestBackend>) -> String {
-    let buffer = app.backend().buffer();
-    let width = usize::from(buffer.area.width);
-    buffer
-        .content()
-        .chunks(width)
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n")
+    drawn(app).to_string()
 }
 
 /// The Projects screen with `name`'s list open.
@@ -337,39 +341,74 @@ fn filled(columns: u16, rows: u16) -> App<TestBackend> {
 fn the_empty_form_at_120x36() {
     let mut app = demo_at(120, 36);
     send(&mut app, [key('a')]);
-    assert_snapshot!(screen(&app));
+    assert_snapshot!(drawn(&app));
 }
 
 #[test]
 fn the_empty_form_at_80x24() {
     let mut app = demo();
     send(&mut app, [key('a')]);
-    assert_snapshot!(screen(&app));
+    assert_snapshot!(drawn(&app));
 }
 
 #[test]
 fn a_filled_form_at_120x36() {
     let app = filled(120, 36);
     assert_eq!(form(&app).unwrap().field, FormField::Due);
-    assert_snapshot!(screen(&app));
+    assert_snapshot!(drawn(&app));
 }
 
 #[test]
 fn a_filled_form_at_80x24() {
     let app = filled(80, 24);
-    assert_snapshot!(screen(&app));
+    assert_snapshot!(drawn(&app));
 }
 
 #[test]
 fn the_project_picker_from_the_form_at_120x36() {
     let mut app = filled(120, 36);
     send(&mut app, [tab(), enter()]);
-    assert_snapshot!(screen(&app));
+    assert_snapshot!(drawn(&app));
 }
 
 #[test]
 fn the_project_picker_from_the_form_at_80x24() {
     let mut app = filled(80, 24);
     send(&mut app, [tab(), enter()]);
-    assert_snapshot!(screen(&app));
+    assert_snapshot!(drawn(&app));
+}
+
+#[test]
+fn the_reason_goes_once_the_content_is_typed() {
+    let mut app = demo();
+    send(&mut app, [key('a'), enter()]);
+    assert!(form(&app).unwrap().error.is_some());
+    send(&mut app, typed("abc"));
+    assert_eq!(form(&app).unwrap().error, None);
+}
+
+#[test]
+fn the_reason_goes_when_focus_moves() {
+    let mut app = demo();
+    send(&mut app, [key('a'), enter(), tab()]);
+    assert_eq!(form(&app).unwrap().error, None);
+    assert!(!screen(&app).contains("A task needs content"));
+}
+
+#[test]
+fn the_form_leaves_the_list_above_it_undimmed() {
+    let mut app = demo();
+    let before = drawn(&app);
+    send(&mut app, [key('a')]);
+    assert!(form(&app).is_some());
+    let after = drawn(&app);
+    let width = usize::from(before.buffer().area.width);
+    let rows_above_the_form = 1..5;
+    for row in rows_above_the_form {
+        let cells = row * width..(row + 1) * width;
+        assert_eq!(
+            before.buffer().content()[cells.clone()],
+            after.buffer().content()[cells]
+        );
+    }
 }

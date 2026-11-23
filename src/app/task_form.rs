@@ -33,11 +33,6 @@ impl FormField {
         }
     }
 
-    /// Whether the row takes typed text; the others open a picker.
-    pub fn takes_text(self) -> bool {
-        matches!(self, FormField::Content | FormField::Due)
-    }
-
     /// The row `step` rows away, wrapping at both ends.
     pub fn step(self, step: isize) -> FormField {
         let count = Self::ALL.len().cast_signed();
@@ -78,8 +73,9 @@ impl TaskForm {
     }
 
     /// Whether the focused row takes typed text, in
-    /// [`super::State::input`]: the content and the due date do.
+    /// [`super::State::input`]: the content and the due date do; the
+    /// others open a picker.
     pub fn editing(&self) -> bool {
-        self.field.takes_text()
+        matches!(self.field, FormField::Content | FormField::Due)
     }
 }

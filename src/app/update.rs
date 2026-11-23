@@ -266,10 +266,22 @@ fn type_text(state: &mut State, key: Key) -> Option<Update> {
         });
     }
     let field = focused_field(state)?;
+    let redraw = edit.apply(field);
+    if redraw {
+        forget_form_error(state);
+    }
     Some(Update {
-        redraw: edit.apply(field),
+        redraw,
         effects: Vec::new(),
     })
+}
+
+/// Drops the reason the add-task form last refused Enter, once the user
+/// edits or moves on, so it never shows under text it no longer applies to.
+fn forget_form_error(state: &mut State) {
+    if let Some(Modal::Form(form)) = state.modals.last_mut() {
+        form.error = None;
+    }
 }
 
 /// Applies `edit` to a picker's filter, which has no cursor: typing adds at
@@ -312,6 +324,7 @@ fn paste(state: &mut State, text: &str) -> Update {
     match focused_field(state) {
         Some(field) if !text.is_empty() => {
             field.paste(text);
+            forget_form_error(state);
             Update::redraw(Vec::new())
         }
         _ => Update::default(),
@@ -942,6 +955,7 @@ impl State {
     /// what was typed.
     fn move_form_field(&mut self, step: isize) -> bool {
         self.commit_form_field();
+        forget_form_error(self);
         let Some(Modal::Form(form)) = self.top_modal() else {
             return false;
         };
