@@ -47,7 +47,7 @@ pub fn draw(frame: &mut Frame, state: &State) {
         Some(Modal::Form(form)) => components::task_form::render(frame, state, form),
         Some(Modal::Input(target)) => components::input_popup::render(frame, state, *target),
         Some(Modal::Cheatsheet { .. }) => {
-            components::cheatsheet::render(frame, &state.input_mode, state.theme());
+            components::cheatsheet::render(frame, state.keymap.preset(), state.theme());
         }
         Some(
             Modal::WhichKey { .. }

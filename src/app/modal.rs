@@ -54,8 +54,6 @@ pub struct TaskForm {
     pub due_string: String,
     pub project_id: String,
     pub active_field: usize,
-    /// Typed keys go to the active field's text.
-    pub editing: bool,
 }
 
 impl TaskForm {
@@ -66,11 +64,16 @@ impl TaskForm {
             due_string: String::new(),
             project_id,
             active_field: 0,
-            editing: true,
         }
     }
 
     pub fn field_count() -> usize {
         4
+    }
+
+    /// Whether the active field takes typed text, in
+    /// [`super::State::input`]: the content and the due date do.
+    pub fn editing(&self) -> bool {
+        matches!(self.active_field, 0 | 2)
     }
 }

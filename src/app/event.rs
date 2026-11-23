@@ -10,6 +10,9 @@ pub enum Event {
     /// The runtime has started: the first sync begins.
     Start,
     Key(KeyEvent),
+    /// Text pasted into the terminal, which bracketed paste delivers whole
+    /// instead of as keys.
+    Paste(String),
     Resize {
         width: u16,
         height: u16,

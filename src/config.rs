@@ -3,7 +3,17 @@
 //!
 //! ```toml
 //! [ui]                       # no settings yet
-//! [keys]                     # no settings yet
+//!
+//! [keys]
+//! preset = "standard"        # or "vim", the default
+//!
+//! [keys.global]
+//! quit = "Q"                 # replace: Q is now quit's only key
+//! show-cheatsheet = { append = ["<F1>"] }
+//!
+//! [keys.list]
+//! move-down = { prepend = ["n"] }   # n first, j still works
+//! noop = ["gg", "<C-d>"]            # these keys do nothing, and leave every hint
 //!
 //! [theme]
 //! name = "Nord"              # a built-in, or the name inside a themes/*.json file
@@ -13,7 +23,8 @@
 //! ```
 //!
 //! A problem is reported as `config.toml:LINE:COL: problem`, and only the
-//! section it is in falls back to its defaults. Unknown keys and tables are
+//! section it is in falls back to its defaults, except that a bad binding
+//! resets only its `[keys.CONTEXT]` table. Unknown keys and tables are
 //! reported and ignored. The top-level `api_token` of older versions is a
 //! known key so it does not warn, and this loader never reads its value.
 
@@ -27,6 +38,7 @@ use toml::Spanned;
 use toml::de::{DeTable, DeValue};
 use toml_parser::parser::{Event, EventKind};
 
+use crate::keys::{self, Change, Context, KeySequence, Override, Preset, Target};
 use crate::ui::theme::{Base16Scheme, Theme};
 
 /// The config file's name inside the config folder.
@@ -40,10 +52,20 @@ pub struct Config {
     pub theme: Option<String>,
     /// `[sync] idle-timeout`.
     pub idle_timeout: Option<Duration>,
+    /// `[keys]`: the preset and the changes to its keys.
+    pub keys: Keys,
     /// Theme files loaded from `themes/` in the config folder.
     pub user_themes: Vec<Theme>,
     /// One line per problem found while loading, for the user to read.
     pub warnings: Vec<String>,
+}
+
+/// `[keys]`: which preset the keys start from, and the changes to them in
+/// the `[keys.CONTEXT]` tables.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Keys {
+    pub preset: Preset,
+    pub overrides: Vec<Override>,
 }
 
 /// Reads `config.toml` and the theme files under `dir`, or under the old
@@ -147,7 +169,7 @@ fn load_user_themes(dir: &Path) -> (Vec<Theme>, Vec<String>) {
 
 /// Reads config `text`, matching `[theme] name` against the built-in themes
 /// and `user_themes`.
-fn parse(text: &str, user_themes: &[Theme]) -> Config {
+pub fn parse(text: &str, user_themes: &[Theme]) -> Config {
     let mut reader = Reader {
         text,
         warnings: Vec::new(),
@@ -184,9 +206,10 @@ fn parse(text: &str, user_themes: &[Theme]) -> Config {
                 continue;
             }
             match name_str {
-                "ui" | "keys" => {
+                "ui" => {
                     reader.section::<Empty>(name_str, value, read_nothing);
                 }
+                "keys" => config.keys = reader.keys(value),
                 "theme" => {
                     let section = reader.section("theme", value, read_theme);
                     if let Some((wanted, offset)) = section.name {
@@ -270,7 +293,7 @@ fn table_at(headers: &[(usize, String)], offset: usize) -> Option<String> {
 /// key the section does not have.
 type Setting = Option<Result<(), String>>;
 
-/// `[ui]` and `[keys]`, which take no settings yet.
+/// `[ui]`, which takes no settings yet.
 #[derive(Default)]
 struct Empty;
 
@@ -397,6 +420,160 @@ impl Reader<'_> {
             ),
         );
         None
+    }
+
+    /// `[keys]`. A bad `preset` resets the whole table; a bad binding resets
+    /// only its `[keys.CONTEXT]` table.
+    fn keys(&mut self, keys: &Spanned<DeValue>) -> Keys {
+        let DeValue::Table(entries) = keys.get_ref() else {
+            self.warn_at(
+                keys,
+                "`keys` must be a table, as in `[keys]`; [keys] uses the default keys".to_owned(),
+            );
+            return Keys::default();
+        };
+        let mut read = Keys::default();
+        let mut broken = false;
+        for (name, value) in entries {
+            let name_str: &str = name.get_ref();
+            if name_str == "preset" {
+                match value.get_ref().as_str().and_then(Preset::from_name) {
+                    Some(preset) => read.preset = preset,
+                    None => {
+                        self.warn_at(
+                            value,
+                            "`keys.preset` must be \"vim\" or \"standard\"; \
+                             [keys] uses the default keys"
+                                .to_owned(),
+                        );
+                        broken = true;
+                    }
+                }
+                continue;
+            }
+            let Some(context) = Context::from_name(name_str) else {
+                let names: Vec<&str> = Context::ALL.iter().map(|c| c.name()).collect();
+                let what = match value.get_ref() {
+                    DeValue::Table(_) => format!("context `[keys.{name_str}]`"),
+                    _ => format!("key `{name_str}` in [keys]"),
+                };
+                self.warn_at(
+                    name,
+                    format!(
+                        "unknown {what} is ignored; [keys] takes `preset` and the contexts {}",
+                        names.join(", ")
+                    ),
+                );
+                continue;
+            };
+            let before = self.warnings.len();
+            let found = self.context(context, value);
+            if self.warnings.len() == before {
+                read.overrides.extend(found);
+            } else {
+                for (_, warning) in &mut self.warnings[before..] {
+                    warning.push_str(&format!(
+                        "; [keys.{}] uses the default keys",
+                        context.name()
+                    ));
+                }
+            }
+        }
+        if broken { Keys::default() } else { read }
+    }
+
+    /// The overrides in one `[keys.CONTEXT]` table.
+    fn context(&mut self, context: Context, table: &Spanned<DeValue>) -> Vec<Override> {
+        let DeValue::Table(entries) = table.get_ref() else {
+            self.warn_at(table, format!("`keys.{}` must be a table", context.name()));
+            return Vec::new();
+        };
+        let mut overrides = Vec::new();
+        for (id, value) in entries {
+            let id_str: &str = id.get_ref();
+            let target = if id_str == "noop" {
+                Target::Noop
+            } else {
+                match keys::by_id(id_str) {
+                    Some(spec) if spec.contexts.contains(&context) => Target::Action(spec.action),
+                    Some(_) => {
+                        self.warn_at(
+                            id,
+                            format!("`{id_str}` does not apply in [keys.{}]", context.name()),
+                        );
+                        continue;
+                    }
+                    None => {
+                        self.warn_at(id, format!("unknown action `{id_str}`"));
+                        continue;
+                    }
+                }
+            };
+            let mut add = |change, keys| {
+                overrides.push(Override {
+                    context,
+                    target,
+                    change,
+                    keys,
+                });
+            };
+            match value.get_ref() {
+                DeValue::Table(changes) if target != Target::Noop => {
+                    for (change, keys) in changes {
+                        let change = match change.get_ref().as_ref() {
+                            "prepend" => Change::Prepend,
+                            "append" => Change::Append,
+                            other => {
+                                self.warn_at(
+                                    change,
+                                    format!("`{other}` is not `prepend` or `append`"),
+                                );
+                                continue;
+                            }
+                        };
+                        if let Some(keys) = self.sequences(keys) {
+                            add(change, keys);
+                        }
+                    }
+                }
+                _ => {
+                    if let Some(keys) = self.sequences(value) {
+                        add(Change::Replace, keys);
+                    }
+                }
+            }
+        }
+        overrides
+    }
+
+    /// One key or a list of keys in config notation, or `None` with a
+    /// warning.
+    fn sequences(&mut self, value: &Spanned<DeValue>) -> Option<Vec<KeySequence>> {
+        match value.get_ref() {
+            DeValue::String(_) => Some(vec![self.sequence(value)?]),
+            DeValue::Array(items) => items.iter().map(|item| self.sequence(item)).collect(),
+            _ => {
+                self.warn_at(value, "expected a key or a list of keys".to_owned());
+                None
+            }
+        }
+    }
+
+    fn sequence(&mut self, value: &Spanned<DeValue>) -> Option<KeySequence> {
+        let Some(notation) = value.get_ref().as_str() else {
+            self.warn_at(
+                value,
+                "expected a key such as \"j\" or \"<C-d>\"".to_owned(),
+            );
+            return None;
+        };
+        match notation.parse() {
+            Ok(keys) => Some(keys),
+            Err(error) => {
+                self.warn_at(value, format!("{error}"));
+                None
+            }
+        }
     }
 
     fn warn_at<T>(&mut self, spanned: &Spanned<T>, message: String) {

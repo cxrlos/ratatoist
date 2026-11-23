@@ -3,19 +3,11 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::app::{InputMode, Pane, State, VimState};
+use crate::app::{Pane, State};
 use crate::ui::text;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect) {
     let theme = state.theme();
-
-    let mode_style = match state.input_mode {
-        InputMode::Vim(VimState::Normal) => theme.mode_normal(),
-        InputMode::Vim(VimState::Insert) => theme.mode_insert(),
-        InputMode::Standard => theme.mode_standard(),
-    };
-
-    let mode_label = format!(" {} ", state.input_mode.label());
 
     let project_name = state.selected_project_name();
     let task_count = state.visible_tasks().len();
@@ -54,10 +46,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
     let [left, right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(status_width)]).areas(area);
 
-    let spans = vec![
-        Span::styled(mode_label, mode_style),
-        Span::styled(breadcrumb, theme.subtle_text()),
-    ];
+    let spans = vec![Span::styled(breadcrumb, theme.subtle_text())];
 
     frame.render_widget(
         Paragraph::new(text::fit_line(Line::from(spans), usize::from(left.width)))

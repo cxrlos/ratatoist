@@ -19,6 +19,7 @@ use tracing::warn;
 
 use crate::app::{App, DEFAULT_IDLE_TIMEOUT_SECS, Effect, Event, State};
 use crate::config::Config;
+use crate::keys::Keymap;
 use crate::sync_state::SyncState;
 use crate::todoist::sync::SyncRequest;
 use crate::todoist::{CompletedQuery, TodoistClient};
@@ -74,6 +75,7 @@ pub fn initial_state_from(
     now: DateTime<Local>,
 ) -> State {
     let mut state = State::new(now);
+    state.keymap = Keymap::new(config.keys.preset, &config.keys.overrides);
     state.sync_token = sync_token;
     state.themes = Theme::builtin();
     state.themes.extend(config.user_themes.iter().cloned());
@@ -155,6 +157,7 @@ fn from_terminal(event: TerminalEvent) -> Option<Event> {
     match event {
         TerminalEvent::Key(key) => Some(Event::Key(key)),
         TerminalEvent::Resize(width, height) => Some(Event::Resize { width, height }),
+        TerminalEvent::Paste(text) => Some(Event::Paste(text)),
         _ => None,
     }
 }
@@ -396,6 +399,22 @@ mod tests {
 
         assert_eq!(resumed, "fake");
         assert_eq!(without_files, "*");
+    }
+
+    #[test]
+    fn pasted_text_reaches_the_app_whole() {
+        let pasted = from_terminal(TerminalEvent::Paste("two\nlines".to_owned()));
+
+        assert!(matches!(pasted, Some(Event::Paste(text)) if text == "two\nlines"));
+    }
+
+    #[test]
+    fn the_keymap_comes_from_the_config() {
+        let config = crate::config::parse("[keys]\npreset = \"standard\"\n", &[]);
+
+        let state = start(&config, &UiSettings::default());
+
+        assert_eq!(state.keymap.preset(), crate::keys::Preset::Standard);
     }
 
     #[tokio::test(start_paused = true)]

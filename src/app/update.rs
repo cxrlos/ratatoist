@@ -1,14 +1,15 @@
 use std::collections::HashSet;
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Size;
 use tracing::info;
 
 use super::modal::{InputKind, Modal, TaskForm};
-use super::state::{InputMode, Pane, TaskFilter, VimState};
+use super::state::{DOCK_ITEMS, Pane, ProjectNavItem, TaskFilter};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
-use super::{Effect, Event, State};
-use crate::keys::{self, DetailScroll, KeyAction};
+use super::text_field::TextField;
+use super::{Action, Editable, Effect, Event, State};
+use crate::keys::{self, Key, Resolution};
 use crate::todoist::model::{Comment, Task};
 use crate::todoist::sync::SyncCommand;
 use crate::todoist::{CompletedQuery, LiveMessage};
@@ -49,6 +50,7 @@ pub fn update(state: &mut State, event: Event) -> Update {
             }
         }
         Event::Key(key) => on_key(state, key),
+        Event::Paste(text) => paste(state, &text),
         Event::Shutdown => Update::quit(),
         Event::Resize { width, height } => {
             state.viewport = Some(Size::new(width, height));
@@ -107,9 +109,14 @@ pub fn update(state: &mut State, event: Event) -> Update {
 }
 
 fn on_key(state: &mut State, key: KeyEvent) -> Update {
+    if key.kind == KeyEventKind::Release {
+        return Update::default();
+    }
+    let key = Key::from(key);
     if state.loading {
-        return match keys::handle_key_while_loading(key) {
-            KeyAction::Quit => Update::quit(),
+        // Only quitting works until the first sync answers.
+        return match state.keymap.resolve(&keys::screen_contexts(state), &[key]) {
+            Resolution::Action(Action::Quit) => perform(state, Action::Quit),
             _ => Update::default(),
         };
     }
@@ -117,8 +124,6 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
     let mut effects = Vec::new();
     let was_idle = state.is_idle();
     state.last_activity = state.now;
-    // Leaving idle changes the status bar.
-    let mut redraw = was_idle;
     if was_idle && state.pending_ws_sync {
         state.pending_ws_sync = false;
         effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
@@ -132,118 +137,573 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
         return Update::redraw(effects);
     }
 
+    let cleared_notice = state.notice.take().is_some();
     let prev_pane = state.active_pane;
-    match keys::handle_key(state, key) {
-        KeyAction::None => {}
-        KeyAction::Quit => {
-            info!("quit requested");
-            effects.push(Effect::Quit);
-        }
-        action => {
-            redraw = true;
-            perform(state, action, &mut effects);
-        }
-    }
+    let mut update = type_text(state, key).unwrap_or_else(|| press(state, key));
     if prev_pane == Pane::Tasks && state.active_pane != Pane::Tasks {
         state.dock_filter = None;
     }
-    Update { redraw, effects }
+    // Leaving idle changes the status bar.
+    update.redraw |= was_idle || cleared_notice;
+    effects.append(&mut update.effects);
+    update.effects = effects;
+    update
 }
 
-fn perform(state: &mut State, action: KeyAction, effects: &mut Vec<Effect>) {
-    match action {
-        KeyAction::Quit | KeyAction::Consumed | KeyAction::None => {}
-        KeyAction::ProjectChanged => state.switch_to_project_tasks(),
-        KeyAction::TodayViewSelected => state.activate_today_view(),
-        KeyAction::ToggleOverdueSection => state.toggle_overdue_section(),
-        KeyAction::OpenDetail => state.open_detail(effects),
-        KeyAction::CloseDetail => {
-            state.active_pane = Pane::Tasks;
-            state.detail_scroll = 0;
+/// A field edit a key makes, before the keymap sees it.
+enum TextEdit {
+    Insert(char),
+    Backspace,
+    Delete,
+    DeleteWord,
+    Left,
+    Right,
+    Home,
+    End,
+}
+
+impl TextEdit {
+    fn of(key: Key) -> Option<Self> {
+        if let Some(c) = key.typed() {
+            return Some(TextEdit::Insert(c));
         }
-        KeyAction::ToggleSettings => {
-            state.active_pane = if state.settings_open() {
-                Pane::Projects
-            } else {
-                Pane::Settings
-            };
-        }
-        KeyAction::ToggleHelp => {
-            if matches!(state.top_modal(), Some(Modal::Cheatsheet { .. })) {
-                state.modals.pop();
-            } else {
-                state.modals.push(Modal::Cheatsheet { scroll: 0 });
+        [
+            (Key::named(KeyCode::Backspace), TextEdit::Backspace),
+            (Key::named(KeyCode::Delete), TextEdit::Delete),
+            (Key::ctrl('w'), TextEdit::DeleteWord),
+            (Key::named(KeyCode::Left), TextEdit::Left),
+            (Key::named(KeyCode::Right), TextEdit::Right),
+            (Key::named(KeyCode::Home), TextEdit::Home),
+            (Key::named(KeyCode::End), TextEdit::End),
+        ]
+        .into_iter()
+        .find_map(|(bound, edit)| (bound == key).then_some(edit))
+    }
+
+    /// Applies the edit; whether the field changed.
+    fn apply(self, field: &mut TextField) -> bool {
+        match self {
+            TextEdit::Insert(c) => {
+                field.insert(c);
+                true
             }
-        }
-        KeyAction::ToggleMode => state.toggle_input_mode(),
-        KeyAction::ToggleCollapse => state.toggle_collapse(),
-        KeyAction::ToggleFolderCollapse => state.toggle_folder_collapse(),
-        KeyAction::OpenAllFolds => state.collapsed.clear(),
-        KeyAction::CloseAllFolds => state.close_all_folds(),
-        KeyAction::CompleteTask => state.complete_selected_task(effects),
-        KeyAction::SelectPriority => {
-            let Some(Modal::PriorityPicker { selection }) = state.modals.pop() else {
-                return;
-            };
-            if let Some(Modal::Form(form)) = state.modals.last_mut() {
-                form.priority = selection;
-            } else {
-                state.apply_priority(selection, effects);
-            }
-        }
-        KeyAction::StarProject => state.star_selected_project(effects),
-        KeyAction::ForceResync => state.force_full_resync(effects),
-        KeyAction::CycleFilter => state.cycle_task_filter(effects),
-        KeyAction::CycleSort => {
-            state.sort_mode = state.sort_mode.next();
-            info!(sort = state.sort_mode.label(), "sort mode changed");
-        }
-        KeyAction::StartInput => state.start_input(),
-        KeyAction::StartCommentInput => state.start_input_for(InputKind::Comment, String::new()),
-        KeyAction::StartFieldEdit => state.start_field_edit(),
-        KeyAction::SubmitInput | KeyAction::FormEscNormal => state.submit_input(effects),
-        KeyAction::SubmitForm => state.submit_task_form(effects),
-        KeyAction::FormFieldUp => state.form_field_up(),
-        KeyAction::FormFieldDown => state.form_field_down(),
-        KeyAction::FormEditField => state.form_edit_field(),
-        KeyAction::CancelInput => state.cancel_input(),
-        KeyAction::DetailFieldUp => state.move_detail_field(-1),
-        KeyAction::DetailFieldDown => state.move_detail_field(1),
-        KeyAction::ScrollDetail(by) => state.scroll_detail(by),
-        KeyAction::OpenThemePicker => state.modals.push(Modal::ThemePicker {
-            selection: state.theme_idx,
-        }),
-        KeyAction::SelectTheme => {
-            if let Some(Modal::ThemePicker { selection }) = state.modals.pop() {
-                state.theme_idx = selection;
-                effects.push(state.save_ui_settings());
-            }
-        }
-        KeyAction::CloseThemePicker => {
-            state.modals.pop();
-        }
-        KeyAction::CycleIdleTimeout => {
-            state.cycle_idle_timeout();
-            effects.push(state.save_ui_settings());
+            TextEdit::Backspace => field.backspace(),
+            TextEdit::Delete => field.delete(),
+            TextEdit::DeleteWord => field.delete_word(),
+            TextEdit::Left => field.left(),
+            TextEdit::Right => field.right(),
+            TextEdit::Home => field.home(),
+            TextEdit::End => field.end(),
         }
     }
 }
 
+/// The text field that takes typed keys now: the open prompt's, or the
+/// add-task form's active text field.
+fn focused_field(state: &mut State) -> Option<&mut TextField> {
+    match state.top_modal() {
+        Some(Modal::Input(_)) => Some(&mut state.input),
+        Some(Modal::Form(form)) if form.editing() => Some(&mut state.input),
+        _ => None,
+    }
+}
+
+/// Text entry: when the top overlay has a text field, a printable key
+/// without Ctrl or Alt types into it, and Backspace, Delete, Ctrl-w and the
+/// cursor keys edit it, before the keymap, so `j`, `k` and `q` type rather
+/// than move or quit. The one exception is a key bound to a number pick
+/// that can run now, so 1 to 9 pick in a picker with a text field.
+fn type_text(state: &mut State, key: Key) -> Option<Update> {
+    let edit = TextEdit::of(key)?;
+    if key.typed().is_some() && picks_by_number(state, key) {
+        return None;
+    }
+    let field = focused_field(state)?;
+    Some(Update {
+        redraw: edit.apply(field),
+        effects: Vec::new(),
+    })
+}
+
+/// Pasted text goes into the focused text field, and nowhere else.
+fn paste(state: &mut State, text: &str) -> Update {
+    match focused_field(state) {
+        Some(field) if !text.is_empty() => {
+            field.paste(text);
+            Update::redraw(Vec::new())
+        }
+        _ => Update::default(),
+    }
+}
+
+/// Whether `key` runs a number pick that can run now.
+fn picks_by_number(state: &State, key: Key) -> bool {
+    let contexts = keys::active_contexts(state);
+    match state.keymap.resolve(&contexts, &[key]) {
+        Resolution::Action(action @ Action::PickNumber(_)) => {
+            keys::spec(action).is_some_and(|spec| spec.availability(state).can_run())
+        }
+        _ => false,
+    }
+}
+
+/// Runs the binding for `key` in the active contexts, or for the chord it
+/// completes. A key that continues no chord just closes the which-key popup.
+fn press(state: &mut State, key: Key) -> Update {
+    let mut keys = Vec::new();
+    let mut chord_ended = false;
+    if let Some(Modal::WhichKey { prefix }) = state.top_modal() {
+        keys.clone_from(prefix);
+        state.modals.pop();
+        chord_ended = true;
+    }
+    keys.push(key);
+
+    let contexts = keys::active_contexts(state);
+    let mut update = match state.keymap.resolve(&contexts, &keys) {
+        Resolution::Action(action) => perform(state, action),
+        Resolution::Prefix => {
+            state.modals.push(Modal::WhichKey { prefix: keys });
+            Update::redraw(Vec::new())
+        }
+        Resolution::Unbound => Update::default(),
+    };
+    update.redraw |= chord_ended;
+    update
+}
+
+/// Carries out `action` against `state`. Actions whose feature does not
+/// exist yet change nothing and ask for no redraw.
+pub fn perform(state: &mut State, action: Action) -> Update {
+    let mut effects = Vec::new();
+    let redraw = state.perform(action, &mut effects);
+    Update { redraw, effects }
+}
+
 impl State {
+    /// Runs `action`; whether the screen changed.
+    fn perform(&mut self, action: Action, effects: &mut Vec<Effect>) -> bool {
+        match action {
+            Action::Quit => {
+                info!("quit requested");
+                effects.push(Effect::Quit);
+                false
+            }
+            Action::ShowScreen(screen) => {
+                let changed = self.screen != screen;
+                self.screen = screen;
+                changed
+            }
+            Action::Resync => {
+                self.force_full_resync(effects);
+                true
+            }
+            Action::ShowCheatsheet => {
+                self.modals.push(Modal::Cheatsheet { scroll: 0 });
+                true
+            }
+            Action::ChooseTheme => {
+                self.modals.push(Modal::ThemePicker {
+                    selection: self.theme_idx,
+                });
+                true
+            }
+            Action::ShowPalette
+            | Action::ShowMessages
+            | Action::SkipRelease
+            | Action::ShowReleaseNotes
+            | Action::Confirm
+            | Action::Decline => false,
+            Action::Close => self.close(),
+            Action::ScrollDown => self.scroll_overlay(1),
+            Action::ScrollUp => self.scroll_overlay(-1),
+            Action::Accept => self.accept(effects),
+            Action::PickNumber(n) => self.pick_number(n, effects),
+            Action::NextField => self.move_form_field(1),
+            Action::PreviousField => self.move_form_field(-1),
+            Action::MoveDown
+            | Action::MoveUp
+            | Action::MoveToTop
+            | Action::MoveToBottom
+            | Action::HalfPageDown
+            | Action::HalfPageUp => self.move_cursor(action),
+            Action::LineDown | Action::LineUp => {
+                self.active_pane == Pane::Detail && self.scroll_detail(action)
+            }
+            Action::FocusLeft => self.focus_left(),
+            Action::FocusRight => self.focus_right(),
+            Action::Open => {
+                if self.active_pane != Pane::Tasks || self.selected_task().is_none() {
+                    return false;
+                }
+                self.open_detail(effects);
+                true
+            }
+            Action::OpenList => self.open_list(),
+            Action::ToggleComplete => {
+                self.complete_selected_task(effects);
+                true
+            }
+            Action::AddTask => {
+                self.start_input();
+                true
+            }
+            Action::Edit(field) => self.edit(field),
+            Action::Comment => {
+                if self.selected_task().is_none() {
+                    return false;
+                }
+                self.start_input_for(InputKind::Comment, String::new());
+                true
+            }
+            Action::ToggleFold => self.toggle_fold(),
+            Action::OpenAllFolds => {
+                self.collapsed.clear();
+                true
+            }
+            Action::CloseAllFolds => {
+                self.close_all_folds();
+                true
+            }
+            Action::FilterList => {
+                self.cycle_task_filter(effects);
+                true
+            }
+            Action::SortList => {
+                self.sort_mode = self.sort_mode.next();
+                info!(sort = self.sort_mode.label(), "sort mode changed");
+                true
+            }
+            Action::ToggleFavourite => {
+                self.star_selected_project(effects);
+                true
+            }
+        }
+    }
+
+    /// Closes the top overlay, or steps back: from the detail to its list,
+    /// from a filtered list to the whole list, from the list or the stats
+    /// dock to the projects.
+    fn close(&mut self) -> bool {
+        match self.top_modal() {
+            Some(Modal::Input(_) | Modal::Form(_)) => {
+                self.cancel_input();
+                return true;
+            }
+            Some(_) => {
+                self.modals.pop();
+                return true;
+            }
+            None => {}
+        }
+        if self.dock_focus.is_some() {
+            self.dock_focus = None;
+            self.dock_filter = None;
+            self.active_pane = Pane::Projects;
+            self.clamp_selected_task();
+            return true;
+        }
+        match self.active_pane {
+            Pane::Detail => {
+                self.active_pane = Pane::Tasks;
+                self.detail_scroll = 0;
+                true
+            }
+            Pane::Tasks | Pane::Projects if self.dock_filter.is_some() => {
+                self.dock_filter = None;
+                self.clamp_selected_task();
+                true
+            }
+            Pane::Tasks | Pane::Settings | Pane::StatsDock => {
+                self.active_pane = Pane::Projects;
+                true
+            }
+            Pane::Projects => false,
+        }
+    }
+
+    /// Moves the highlight of the overlay on top by `step`.
+    fn scroll_overlay(&mut self, step: i32) -> bool {
+        let themes = self.themes.len();
+        match self.modals.last_mut() {
+            Some(Modal::PriorityPicker { selection }) => {
+                // The list shows p1 (API 4) at the top.
+                *selection = match (step > 0, *selection) {
+                    (true, 4) => 3,
+                    (true, 3) => 2,
+                    (true, 2) => 1,
+                    (true, _) => 4,
+                    (false, 1) => 2,
+                    (false, 2) => 3,
+                    (false, 3) => 4,
+                    (false, _) => 1,
+                };
+                true
+            }
+            Some(Modal::ThemePicker { selection }) if themes > 0 => {
+                *selection = if step > 0 {
+                    (*selection + 1) % themes
+                } else {
+                    selection.checked_sub(1).unwrap_or(themes - 1)
+                };
+                true
+            }
+            Some(Modal::Form(_)) => self.move_form_field(step),
+            _ => false,
+        }
+    }
+
+    /// Chooses what the overlay on top has highlighted, or submits it.
+    fn accept(&mut self, effects: &mut Vec<Effect>) -> bool {
+        match self.top_modal() {
+            Some(Modal::PriorityPicker { .. }) => self.select_priority(effects),
+            Some(Modal::ThemePicker { .. }) => self.select_theme(effects),
+            Some(Modal::Input(_)) => {
+                self.submit_input(effects);
+                true
+            }
+            Some(Modal::Form(_)) => self.accept_form(effects),
+            _ => false,
+        }
+    }
+
+    /// Chooses entry `n` of the list on top, counting from 1.
+    fn pick_number(&mut self, n: u8, effects: &mut Vec<Effect>) -> bool {
+        let themes = self.themes.len();
+        match self.modals.last_mut() {
+            Some(Modal::PriorityPicker { selection }) if (1..=4).contains(&n) => {
+                *selection = 5 - n;
+                self.select_priority(effects)
+            }
+            Some(Modal::ThemePicker { selection }) if (1..=themes).contains(&usize::from(n)) => {
+                *selection = usize::from(n) - 1;
+                self.select_theme(effects)
+            }
+            _ => false,
+        }
+    }
+
+    fn select_priority(&mut self, effects: &mut Vec<Effect>) -> bool {
+        let Some(Modal::PriorityPicker { selection }) = self.modals.pop() else {
+            return false;
+        };
+        if let Some(Modal::Form(form)) = self.modals.last_mut() {
+            form.priority = selection;
+        } else {
+            self.apply_priority(selection, effects);
+        }
+        true
+    }
+
+    fn select_theme(&mut self, effects: &mut Vec<Effect>) -> bool {
+        let Some(Modal::ThemePicker { selection }) = self.modals.pop() else {
+            return false;
+        };
+        self.theme_idx = selection;
+        effects.push(self.save_ui_settings());
+        true
+    }
+
+    /// Moves the cursor of the focused pane, or the detail's field cursor
+    /// and scroll.
+    fn move_cursor(&mut self, action: Action) -> bool {
+        if self.dock_focus.is_some() && self.active_pane != Pane::Detail {
+            return self.move_in_dock(action);
+        }
+        match (self.active_pane, action) {
+            (Pane::Detail, Action::MoveDown) => self.move_detail_field(1),
+            (Pane::Detail, Action::MoveUp) => self.move_detail_field(-1),
+            (Pane::Detail, Action::MoveToTop) => self.detail_field = DetailField::Content,
+            (Pane::Detail, Action::MoveToBottom) => self.detail_field = DetailField::Description,
+            (Pane::Detail, _) => return self.scroll_detail(action),
+            (Pane::Tasks, _) => self.move_in_tasks(action),
+            (Pane::Projects, _) => self.move_in_projects(action),
+            (Pane::Settings | Pane::StatsDock, _) => return false,
+        }
+        true
+    }
+
+    /// Half the terminal's rows, the step of a half-page move in a list.
+    fn half_page(&self) -> usize {
+        (usize::from(self.screen_size().height) / 2).max(1)
+    }
+
+    fn move_in_dock(&mut self, action: Action) -> bool {
+        let focus = self.dock_focus.unwrap_or(0);
+        let last = DOCK_ITEMS.len() - 1;
+        self.dock_focus = Some(match action {
+            Action::MoveDown => (focus + 1) % DOCK_ITEMS.len(),
+            Action::MoveUp => focus.checked_sub(1).unwrap_or(last),
+            Action::MoveToTop => 0,
+            Action::MoveToBottom => last,
+            _ => return false,
+        });
+        true
+    }
+
+    /// One row down or up wraps around the task list; the other moves stop
+    /// at its ends. Context rows (the dimmed open parents of completed
+    /// subtasks) are skipped.
+    fn move_in_tasks(&mut self, action: Action) {
+        let visible = self.visible_tasks();
+        let len = visible.len();
+        if len == 0 {
+            return;
+        }
+        let last = len - 1;
+        let current = self.selected_task.min(last);
+        let (mut next, delta) = match action {
+            Action::MoveDown => ((current + 1) % len, 1),
+            Action::MoveUp => (current.checked_sub(1).unwrap_or(last), -1),
+            Action::MoveToTop => (0, 1),
+            Action::MoveToBottom => (last, -1),
+            Action::HalfPageDown => (current.saturating_add(self.half_page()).min(last), 1),
+            _ => (current.saturating_sub(self.half_page()), -1),
+        };
+        let wraps = matches!(action, Action::MoveDown | Action::MoveUp);
+        for _ in 0..len {
+            if !self.is_context_task(visible[next]) {
+                break;
+            }
+            next = if wraps {
+                (next as isize + delta).rem_euclid(len as isize) as usize
+            } else {
+                next.saturating_add_signed(delta).min(last)
+            };
+        }
+        self.selected_task = next;
+    }
+
+    /// Moves through the projects pane: the Today view, folders and
+    /// projects. Moving down past the last row focuses the stats dock.
+    fn move_in_projects(&mut self, action: Action) {
+        let nav = self.visible_nav_items();
+        if nav.is_empty() {
+            return;
+        }
+        let last = nav.len() - 1;
+        let current = nav
+            .iter()
+            .position(|item| match item {
+                ProjectNavItem::Project(i) => {
+                    !self.today_view_active
+                        && self.folder_cursor.is_none()
+                        && *i == self.selected_project
+                }
+                ProjectNavItem::Folder(fi) => self.folder_cursor == Some(*fi),
+                ProjectNavItem::TodayView => self.today_view_active && self.folder_cursor.is_none(),
+            })
+            .unwrap_or(0);
+        let next = match action {
+            Action::MoveDown if current == last => {
+                self.dock_focus = Some(0);
+                self.active_pane = Pane::StatsDock;
+                return;
+            }
+            Action::MoveDown => current + 1,
+            Action::MoveUp => current.saturating_sub(1),
+            Action::MoveToTop => 0,
+            Action::MoveToBottom => last,
+            Action::HalfPageDown => current.saturating_add(self.half_page()).min(last),
+            _ => current.saturating_sub(self.half_page()),
+        };
+        match nav[next] {
+            ProjectNavItem::Project(i) => {
+                let changed = self.folder_cursor.is_some()
+                    || self.today_view_active
+                    || self.selected_project != i;
+                self.folder_cursor = None;
+                self.selected_project = i;
+                if changed {
+                    self.switch_to_project_tasks();
+                }
+            }
+            ProjectNavItem::Folder(fi) => self.folder_cursor = Some(fi),
+            ProjectNavItem::TodayView => {
+                self.folder_cursor = None;
+                if !self.today_view_active {
+                    self.activate_today_view();
+                }
+            }
+        }
+    }
+
+    fn focus_left(&mut self) -> bool {
+        match self.active_pane {
+            Pane::Tasks => self.active_pane = Pane::Projects,
+            Pane::Detail => {
+                self.active_pane = Pane::Tasks;
+                self.detail_scroll = 0;
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn focus_right(&mut self) -> bool {
+        if self.active_pane != Pane::Tasks {
+            return false;
+        }
+        self.dock_focus = Some(0);
+        self.active_pane = Pane::StatsDock;
+        true
+    }
+
+    /// Opens the focused project's tasks, or the list the focused dock item
+    /// filters to (or the whole list again when it is the filter already).
+    fn open_list(&mut self) -> bool {
+        if let Some(focus) = self.dock_focus {
+            let item = DOCK_ITEMS[focus.min(DOCK_ITEMS.len() - 1)];
+            self.dock_filter = (self.dock_filter != Some(item)).then_some(item);
+            self.dock_focus = None;
+            self.active_pane = Pane::Tasks;
+            self.clamp_selected_task();
+            return true;
+        }
+        if self.active_pane != Pane::Projects {
+            return false;
+        }
+        self.active_pane = Pane::Tasks;
+        true
+    }
+
+    /// Opens the edit of `field` of the focused task: the priority picker,
+    /// or the prompt for the matching detail field.
+    fn edit(&mut self, field: Editable) -> bool {
+        let Some(task) = self.selected_task() else {
+            return false;
+        };
+        self.detail_field = match field {
+            Editable::Priority => {
+                let selection = task.priority;
+                self.modals.push(Modal::PriorityPicker { selection });
+                return true;
+            }
+            Editable::Content => DetailField::Content,
+            Editable::Description => DetailField::Description,
+            Editable::DueDate => DetailField::Due,
+        };
+        self.start_field_edit();
+        true
+    }
+
+    /// Folds the focused row: the Overdue group in the Today view, a task's
+    /// subtasks, or the focused folder.
+    fn toggle_fold(&mut self) -> bool {
+        match self.active_pane {
+            Pane::Tasks if self.today_view_active => self.toggle_overdue_section(),
+            Pane::Tasks => self.toggle_collapse(),
+            Pane::Projects => self.toggle_folder_collapse(),
+            _ => return false,
+        }
+        true
+    }
+
     fn save_ui_settings(&self) -> Effect {
         Effect::SaveUiSettings {
             theme: self.theme().name.clone(),
             idle_timeout_secs: self.idle_timeout_secs,
         }
-    }
-
-    fn cycle_idle_timeout(&mut self) {
-        const OPTIONS: &[u64] = &[60, 120, 300, 600, 900, 1800];
-        let pos = OPTIONS
-            .iter()
-            .position(|&v| v == self.idle_timeout_secs)
-            .unwrap_or(2);
-        self.idle_timeout_secs = OPTIONS[(pos + 1) % OPTIONS.len()];
     }
 
     fn cycle_task_filter(&mut self, effects: &mut Vec<Effect>) {
@@ -356,18 +816,6 @@ impl State {
         self.send_command(command, op, effects);
     }
 
-    fn enter_insert(&mut self) {
-        if let InputMode::Vim(_) = self.input_mode {
-            self.input_mode = InputMode::Vim(VimState::Insert);
-        }
-    }
-
-    fn leave_insert(&mut self) {
-        if let InputMode::Vim(_) = self.input_mode {
-            self.input_mode = InputMode::Vim(VimState::Normal);
-        }
-    }
-
     fn start_input(&mut self) {
         let project_id = self
             .projects
@@ -375,55 +823,102 @@ impl State {
             .map(|p| p.id.clone())
             .unwrap_or_default();
         self.modals.push(Modal::Form(TaskForm::new(project_id)));
-        self.input_buffer.clear();
-        self.enter_insert();
+        self.input = TextField::default();
     }
 
     fn start_input_for(&mut self, target: InputKind, prefill: String) {
         self.modals.push(Modal::Input(target));
-        self.input_buffer = prefill;
-        self.enter_insert();
+        self.input = TextField::new(prefill);
     }
 
     fn submit_input(&mut self, effects: &mut Vec<Effect>) {
-        let content = self.input_buffer.trim().to_string();
+        let content = self.input.text().trim().to_string();
 
         if let Some(Modal::Input(target)) = self.top_modal() {
             if !content.is_empty() {
                 match target {
                     InputKind::Comment => self.submit_comment(content, effects),
                     InputKind::Field => self.submit_field_edit(content, effects),
-                    // The direct edit keys open these; nothing does yet.
+                    // The edit keys open the Field prompt; nothing opens these.
                     InputKind::Content | InputKind::Description | InputKind::DueDate => {}
                 }
             }
             self.cancel_input();
-            return;
         }
+    }
 
-        match self.modals.last_mut() {
-            Some(Modal::Form(form)) if form.editing => {
-                match form.active_field {
-                    // Content goes verbatim; the API parses any inline
-                    // natural-language dates or priorities.
-                    0 => form.content = content,
-                    2 => form.due_string = content,
-                    _ => {}
-                }
-                form.editing = false;
-                self.input_buffer.clear();
-                self.leave_insert();
+    /// Enter in the add-task form: on a text field it adds the task; on the
+    /// priority it opens the priority picker; on the project it moves to
+    /// the next project.
+    fn accept_form(&mut self, effects: &mut Vec<Effect>) -> bool {
+        let project_ids: Vec<String> = self.projects.iter().map(|p| p.id.clone()).collect();
+        let Some(Modal::Form(form)) = self.modals.last_mut() else {
+            return false;
+        };
+        match form.active_field {
+            1 => {
+                let selection = form.priority;
+                self.modals.push(Modal::PriorityPicker { selection });
             }
-            _ => self.cancel_input(),
+            3 => {
+                let cur = project_ids
+                    .iter()
+                    .position(|id| *id == form.project_id)
+                    .unwrap_or(0);
+                let next = (cur + 1) % project_ids.len().max(1);
+                if let Some(id) = project_ids.get(next) {
+                    form.project_id = id.clone();
+                }
+            }
+            _ => {
+                self.commit_form_field();
+                self.submit_task_form(effects);
+            }
         }
+        true
+    }
+
+    /// Keeps the typed text in the form's active text field.
+    fn commit_form_field(&mut self) {
+        let text = self.input.text().to_owned();
+        if let Some(Modal::Form(form)) = self.modals.last_mut() {
+            match form.active_field {
+                0 => form.content = text,
+                2 => form.due_string = text,
+                _ => {}
+            }
+        }
+    }
+
+    /// Moves the add-task form to the field `step` away, wrapping, keeping
+    /// what was typed and loading the next text field's text.
+    fn move_form_field(&mut self, step: i32) -> bool {
+        self.commit_form_field();
+        let Some(Modal::Form(form)) = self.modals.last_mut() else {
+            return false;
+        };
+        let count = TaskForm::field_count();
+        form.active_field = if step > 0 {
+            (form.active_field + 1) % count
+        } else {
+            form.active_field.checked_sub(1).unwrap_or(count - 1)
+        };
+        self.input = match form.active_field {
+            0 => TextField::new(form.content.clone()),
+            2 => TextField::new(form.due_string.clone()),
+            _ => TextField::default(),
+        };
+        true
     }
 
     fn submit_task_form(&mut self, effects: &mut Vec<Effect>) {
         let Some(Modal::Form(form)) = self.modals.last().cloned() else {
             return;
         };
+        let content = form.content.trim().to_owned();
+        let due_string = form.due_string.trim().to_owned();
 
-        if form.content.trim().is_empty() {
+        if content.is_empty() {
             self.cancel_input();
             return;
         }
@@ -433,19 +928,21 @@ impl State {
 
         let optimistic = Task {
             id: temp_id.clone(),
-            content: form.content.clone(),
+            content: content.clone(),
             project_id: project_id.clone(),
             priority: form.priority,
             ..Task::default()
         };
         self.tasks.push(optimistic);
 
+        // Content goes verbatim; the API parses any inline natural-language
+        // dates or priorities.
         let mut args = serde_json::json!({
-            "content": form.content,
+            "content": content,
             "project_id": project_id,
         });
-        if !form.due_string.is_empty() {
-            args["due_string"] = serde_json::Value::String(form.due_string);
+        if !due_string.is_empty() {
+            args["due_string"] = serde_json::Value::String(due_string);
         }
         if form.priority > 1 {
             args["priority"] = serde_json::Value::Number(serde_json::Number::from(form.priority));
@@ -532,66 +1029,10 @@ impl State {
         self.send_command(command, Some(op), effects);
     }
 
-    fn form_field_up(&mut self) {
-        if let Some(Modal::Form(form)) = self.modals.last_mut()
-            && !form.editing
-        {
-            let count = TaskForm::field_count();
-            form.active_field = if form.active_field == 0 {
-                count - 1
-            } else {
-                form.active_field - 1
-            };
-        }
-    }
-
-    fn form_field_down(&mut self) {
-        if let Some(Modal::Form(form)) = self.modals.last_mut()
-            && !form.editing
-        {
-            form.active_field = (form.active_field + 1) % TaskForm::field_count();
-        }
-    }
-
-    fn form_edit_field(&mut self) {
-        let project_ids: Vec<String> = self.projects.iter().map(|p| p.id.clone()).collect();
-        let Some(Modal::Form(form)) = self.modals.last_mut() else {
-            return;
-        };
-        match form.active_field {
-            0 | 2 => {
-                let prefill = if form.active_field == 0 {
-                    form.content.clone()
-                } else {
-                    form.due_string.clone()
-                };
-                form.editing = true;
-                self.input_buffer = prefill;
-                self.enter_insert();
-            }
-            1 => {
-                let selection = form.priority;
-                self.modals.push(Modal::PriorityPicker { selection });
-            }
-            3 => {
-                let cur = project_ids
-                    .iter()
-                    .position(|id| *id == form.project_id)
-                    .unwrap_or(0);
-                let next = (cur + 1) % project_ids.len().max(1);
-                if let Some(id) = project_ids.get(next) {
-                    form.project_id = id.clone();
-                }
-            }
-            _ => {}
-        }
-    }
-
     fn cancel_input(&mut self) {
         self.modals
             .retain(|m| !matches!(m, Modal::Input(_) | Modal::Form(_)));
-        self.input_buffer.clear();
-        self.leave_insert();
+        self.input = TextField::default();
     }
 
     fn star_selected_project(&mut self, effects: &mut Vec<Effect>) {
@@ -703,20 +1144,23 @@ impl State {
         detail::max_scroll(self, self.screen_size())
     }
 
-    /// Scrolls the task detail, never past its last row. Starting from the
-    /// clamped offset makes the first key up move at once even when the
-    /// content shrank since the last scroll.
-    fn scroll_detail(&mut self, by: DetailScroll) {
+    /// Scrolls the task detail, never past its last row; whether it moved.
+    /// Starting from the clamped offset makes the first key up move at once
+    /// even when the content shrank since the last scroll.
+    fn scroll_detail(&mut self, by: Action) -> bool {
         let max = self.max_detail_scroll();
         let half_page = (detail::page_height(self, self.screen_size()) / 2).max(1);
         let current = self.detail_scroll.min(max);
+        let before = self.detail_scroll;
         self.detail_scroll = match by {
-            DetailScroll::HalfPageDown => current.saturating_add(half_page),
-            DetailScroll::HalfPageUp => current.saturating_sub(half_page),
-            DetailScroll::LineDown => current.saturating_add(1),
-            DetailScroll::LineUp => current.saturating_sub(1),
+            Action::HalfPageDown => current.saturating_add(half_page),
+            Action::HalfPageUp => current.saturating_sub(half_page),
+            Action::LineDown => current.saturating_add(1),
+            Action::LineUp => current.saturating_sub(1),
+            _ => current,
         }
         .min(max);
+        self.detail_scroll != before
     }
 
     fn toggle_collapse(&mut self) {
@@ -755,13 +1199,5 @@ impl State {
                 self.collapsed.insert(task.id.clone());
             }
         }
-    }
-
-    fn toggle_input_mode(&mut self) {
-        self.input_mode = match self.input_mode {
-            InputMode::Vim(_) => InputMode::Standard,
-            InputMode::Standard => InputMode::Vim(VimState::Normal),
-        };
-        info!(mode = self.input_mode.label(), "input mode toggled");
     }
 }

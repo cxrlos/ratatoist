@@ -443,7 +443,7 @@ async fn completing_a_task_keeps_it_completed_and_lists_it_under_done() {
     let first = app.state().visible_tasks()[0].clone();
     assert!(shows(&app, &first.content));
 
-    drive(&mut app, &client, [key('l'), key('x')]).await;
+    drive(&mut app, &client, [press(KeyCode::Enter), key('x')]).await;
 
     assert!(app.state().error.is_none());
     assert!(!shows(&app, &first.content));
@@ -456,14 +456,9 @@ async fn an_added_task_stays_under_its_new_id_and_survives_a_full_sync() {
     let client = demo::client(today());
     let (mut app, _) = started(&client).await;
 
-    drive(&mut app, &client, [key('l'), key('a')]).await;
+    drive(&mut app, &client, [press(KeyCode::Enter), key('a')]).await;
     drive(&mut app, &client, "Feed the parrot".chars().map(key)).await;
-    drive(
-        &mut app,
-        &client,
-        [press(KeyCode::Enter), press(KeyCode::Tab)],
-    )
-    .await;
+    drive(&mut app, &client, [press(KeyCode::Enter)]).await;
 
     let added = app
         .state()
@@ -485,7 +480,7 @@ async fn a_comment_stays_after_the_comments_reload() {
     drive(
         &mut app,
         &client,
-        [key('l'), press(KeyCode::Enter), key('c')],
+        [press(KeyCode::Enter), press(KeyCode::Enter), key('c')],
     )
     .await;
     drive(&mut app, &client, "Seen, thanks".chars().map(key)).await;
@@ -588,7 +583,7 @@ async fn reopening_a_seeded_completed_task_brings_it_back_whole() {
 async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
     let client = demo::client(today());
     let (mut app, _) = started(&client).await;
-    drive(&mut app, &client, [key('l'), key('f')]).await;
+    drive(&mut app, &client, [press(KeyCode::Enter), key('f')]).await;
     assert!(shows(&app, "Book the dentist check-up"));
 
     drive(&mut app, &client, [key('x'), key('R')]).await;

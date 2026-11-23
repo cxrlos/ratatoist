@@ -7,6 +7,8 @@ use super::failure::ErrorLog;
 use super::modal::Modal;
 use super::release::ReleaseState;
 use super::sync::OptimisticOp;
+use super::text_field::TextField;
+use crate::keys::Keymap;
 use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
 use crate::ui::theme::Theme;
 use crate::ui::views::detail::DetailField;
@@ -34,10 +36,14 @@ pub struct State {
     pub selected_task: usize,
     pub active_pane: Pane,
     pub error: Option<AppError>,
-    pub input_mode: InputMode,
-    /// Overlays, drawn bottom to top; the top one takes keys.
+    /// The keys in force: the preset and the overrides from `config.toml`.
+    pub keymap: Keymap,
+    /// Overlays, drawn bottom to top; the top one takes keys. A
+    /// [`Modal::WhichKey`] on top holds the chord typed so far.
     pub modals: Vec<Modal>,
-    pub input_buffer: String,
+    /// The text of the open prompt, or of the add-task form's active text
+    /// field.
+    pub input: TextField,
     pub settings_selection: usize,
     pub collapsed: HashSet<String>,
     /// Rows the task detail is scrolled down by. Scroll keys keep it within
@@ -76,8 +82,6 @@ pub struct State {
     pub current_user_name: Option<String>,
     pub today_view_active: bool,
     pub overdue_section_collapsed: bool,
-    /// The first key of the `z` fold chord was pressed.
-    pub pending_z: bool,
     pub last_activity: DateTime<Local>,
     pub(crate) pending_ws_sync: bool,
     pub(crate) comments_fetch_seq: u64,
@@ -104,9 +108,9 @@ impl State {
             selected_task: 0,
             active_pane: Pane::Projects,
             error: None,
-            input_mode: InputMode::Vim(VimState::Normal),
+            keymap: Keymap::default(),
             modals: Vec::new(),
-            input_buffer: String::new(),
+            input: TextField::default(),
             settings_selection: 0,
             collapsed: HashSet::new(),
             detail_scroll: 0,
@@ -136,7 +140,6 @@ impl State {
             current_user_name: None,
             today_view_active: false,
             overdue_section_collapsed: false,
-            pending_z: false,
             last_activity: now,
             pending_ws_sync: false,
             comments_fetch_seq: 0,
@@ -306,28 +309,6 @@ pub enum Pane {
     Detail,
     Settings,
     StatsDock,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputMode {
-    Standard,
-    Vim(VimState),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VimState {
-    Normal,
-    Insert,
-}
-
-impl InputMode {
-    pub fn label(&self) -> &'static str {
-        match self {
-            InputMode::Standard => "STANDARD",
-            InputMode::Vim(VimState::Normal) => "NORMAL",
-            InputMode::Vim(VimState::Insert) => "INSERT",
-        }
-    }
 }
 
 pub struct OverviewStats {

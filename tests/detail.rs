@@ -4,6 +4,7 @@ use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
 use ratatoist::app::{App, Effect, Event, Modal, Pane, State, update};
+use ratatoist::keys::{Keymap, Preset};
 use ratatoist::todoist::sync::SyncResponse;
 use ratatoist::ui::views::detail::DetailField;
 use ratatui::backend::TestBackend;
@@ -25,7 +26,13 @@ fn response(json: &str) -> Box<SyncResponse> {
 /// The app at `columns` x `rows` after the full sync, told its size as the
 /// runtime's first resize would.
 fn sized(columns: u16, rows: u16) -> App<TestBackend> {
-    let mut app = App::new(TestBackend::new(columns, rows), State::new(now())).unwrap();
+    sized_with(columns, rows, Preset::Vim)
+}
+
+fn sized_with(columns: u16, rows: u16, preset: Preset) -> App<TestBackend> {
+    let mut state = State::new(now());
+    state.keymap = Keymap::new(preset, &[]);
+    let mut app = App::new(TestBackend::new(columns, rows), state).unwrap();
     app.handle(Event::Synced(Ok(response(FULL_SYNC)))).unwrap();
     app.handle(Event::Resize {
         width: columns,
@@ -83,17 +90,30 @@ fn command_types(effects: &[Effect]) -> Vec<String> {
 
 /// Opens the detail of "Call the dentist", the second Inbox task.
 fn open_call_detail(app: &mut App<TestBackend>) {
-    send(app, [key('l'), key('j'), press(KeyCode::Enter)]);
+    send(
+        app,
+        [press(KeyCode::Enter), key('j'), press(KeyCode::Enter)],
+    );
     assert_eq!(app.state().active_pane, Pane::Detail);
 }
 
-fn switch_to_standard(app: &mut App<TestBackend>) {
-    send(app, [key(','), press(KeyCode::Enter), press(KeyCode::Esc)]);
-    assert!(shows(app, "STANDARD"));
+/// Opens the detail of "Call the dentist" in the standard preset.
+fn standard_call_detail(columns: u16, rows: u16) -> App<TestBackend> {
+    let mut app = sized_with(columns, rows, Preset::Standard);
+    send(
+        &mut app,
+        [
+            press(KeyCode::Enter),
+            press(KeyCode::Down),
+            press(KeyCode::Enter),
+        ],
+    );
+    assert_eq!(app.state().active_pane, Pane::Detail);
+    app
 }
 
 #[test]
-fn esc_in_vim_mode_cancels_a_comment_and_sends_nothing() {
+fn esc_cancels_a_comment_and_sends_nothing() {
     let mut app = sized(120, 36);
     open_call_detail(&mut app);
     send(&mut app, [key('c')]);
@@ -104,14 +124,13 @@ fn esc_in_vim_mode_cancels_a_comment_and_sends_nothing() {
     assert!(command_types(&effects).is_empty(), "{effects:?}");
     assert!(app.state().modals.is_empty());
     assert!(!shows(&app, "Never mind"));
-    assert!(shows(&app, "NORMAL"));
 }
 
 #[test]
-fn esc_in_vim_mode_cancels_a_field_edit_and_sends_nothing() {
+fn esc_cancels_a_field_edit_and_sends_nothing() {
     let mut app = sized(120, 36);
     open_call_detail(&mut app);
-    send(&mut app, [key('i')]);
+    send(&mut app, [key('e')]);
     send(&mut app, " soon".chars().map(key));
 
     let effects = send(&mut app, [press(KeyCode::Esc)]);
@@ -123,17 +142,13 @@ fn esc_in_vim_mode_cancels_a_field_edit_and_sends_nothing() {
 }
 
 #[test]
-fn esc_in_standard_mode_cancels_a_comment_and_a_field_edit() {
-    let mut app = sized(120, 36);
-    switch_to_standard(&mut app);
-    send(&mut app, [press(KeyCode::Tab), press(KeyCode::Down)]);
-    send(&mut app, [press(KeyCode::Enter)]);
-    assert_eq!(app.state().active_pane, Pane::Detail);
+fn esc_in_the_standard_preset_cancels_a_comment_and_a_field_edit() {
+    let mut app = standard_call_detail(120, 36);
 
     send(&mut app, [key('c')]);
     send(&mut app, "Never mind".chars().map(key));
     let comment = send(&mut app, [press(KeyCode::Esc)]);
-    send(&mut app, [press(KeyCode::Enter)]);
+    send(&mut app, [key('e')]);
     send(&mut app, " soon".chars().map(key));
     let field = send(&mut app, [press(KeyCode::Esc)]);
 
@@ -146,7 +161,7 @@ fn esc_in_standard_mode_cancels_a_comment_and_a_field_edit() {
 fn enter_submits_a_field_edit_as_one_item_update() {
     let mut app = sized(120, 36);
     open_call_detail(&mut app);
-    send(&mut app, [key('i')]);
+    send(&mut app, [key('e')]);
     send(&mut app, " soon".chars().map(key));
 
     let effects = send(&mut app, [press(KeyCode::Enter)]);
@@ -155,26 +170,24 @@ fn enter_submits_a_field_edit_as_one_item_update() {
     assert!(shows(&app, "Call the dentist soon"));
 }
 
-/// Opens the detail, moves the field cursor down `steps` and starts the
-/// edit.
-fn edit_field(steps: usize) -> App<TestBackend> {
+/// Opens the detail and presses `edit`, one of the edit keys.
+fn edit_field(edit: char) -> App<TestBackend> {
     let mut app = sized(120, 36);
     open_call_detail(&mut app);
-    send(&mut app, (0..steps).map(|_| key('j')));
-    send(&mut app, [key('i')]);
+    send(&mut app, [key(edit)]);
     app
 }
 
 #[test]
 fn editing_the_content_says_so_in_the_title() {
-    let app = edit_field(0);
+    let app = edit_field('e');
     assert_eq!(app.state().detail_field, DetailField::Content);
     assert!(shows(&app, " Edit Content "), "{:#?}", screen(&app));
 }
 
 #[test]
 fn editing_the_priority_opens_the_priority_picker() {
-    let app = edit_field(1);
+    let app = edit_field('p');
     assert!(matches!(
         app.state().top_modal(),
         Some(Modal::PriorityPicker { .. })
@@ -184,13 +197,15 @@ fn editing_the_priority_opens_the_priority_picker() {
 
 #[test]
 fn editing_the_due_date_says_so_in_the_title() {
-    let app = edit_field(2);
+    let app = edit_field('d');
+    assert_eq!(app.state().detail_field, DetailField::Due);
     assert!(shows(&app, " Edit Due Date "), "{:#?}", screen(&app));
 }
 
 #[test]
 fn editing_the_description_says_so_in_the_title() {
-    let app = edit_field(3);
+    let app = edit_field('E');
+    assert_eq!(app.state().detail_field, DetailField::Description);
     assert!(shows(&app, " Edit Description "), "{:#?}", screen(&app));
 }
 
@@ -277,14 +292,19 @@ fn ctrl_e_and_ctrl_y_scroll_one_line() {
 }
 
 #[test]
-fn the_scroll_keys_work_in_standard_mode() {
-    let mut app = sized(80, 24);
+fn the_scroll_keys_work_in_the_standard_preset() {
+    let mut app = sized_with(80, 24, Preset::Standard);
     app.handle(Event::Synced(Ok(long_description()))).unwrap();
-    switch_to_standard(&mut app);
-    send(&mut app, [press(KeyCode::Tab), press(KeyCode::Down)]);
-    send(&mut app, [press(KeyCode::Enter)]);
+    send(
+        &mut app,
+        [
+            press(KeyCode::Enter),
+            press(KeyCode::Down),
+            press(KeyCode::Enter),
+        ],
+    );
 
-    send(&mut app, [ctrl('d')]);
+    send(&mut app, [press(KeyCode::PageDown)]);
     let half = app.state().detail_scroll;
     send(&mut app, [ctrl('e')]);
 
@@ -307,7 +327,7 @@ fn a_taller_screen_lowers_the_scroll_limit() {
     let mut state = State::new(now());
     update(&mut state, Event::Synced(Ok(response(FULL_SYNC))));
     update(&mut state, Event::Synced(Ok(long_description())));
-    for event in [key('l'), key('j'), press(KeyCode::Enter)] {
+    for event in [press(KeyCode::Enter), key('j'), press(KeyCode::Enter)] {
         update(&mut state, event);
     }
     let scroll_to_end = |state: &mut State| {

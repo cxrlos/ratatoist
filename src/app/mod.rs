@@ -13,6 +13,7 @@ mod picker;
 mod release;
 mod state;
 mod sync;
+mod text_field;
 mod update;
 mod view;
 
@@ -26,11 +27,11 @@ pub use palette::Palette;
 pub use picker::{Picker, PickerKind, open_picker};
 pub use release::ReleaseState;
 pub use state::{
-    AppError, DEFAULT_IDLE_TIMEOUT_SECS, DOCK_ITEMS, DockItem, InputMode, ListFilter,
-    OverviewStats, Pane, ProjectEntry, ProjectNavItem, Screen, Sort, SortMode, State, TaskFilter,
-    UserRecord, VimState,
+    AppError, DEFAULT_IDLE_TIMEOUT_SECS, DOCK_ITEMS, DockItem, ListFilter, OverviewStats, Pane,
+    ProjectEntry, ProjectNavItem, Screen, Sort, SortMode, State, TaskFilter, UserRecord,
 };
-pub use update::{Update, update};
+pub use text_field::TextField;
+pub use update::{Update, perform, update};
 
 use ratatui::Terminal;
 use ratatui::backend::Backend;

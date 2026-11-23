@@ -3,7 +3,8 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::app::{DOCK_ITEMS, InputMode, Pane, State};
+use crate::app::{DOCK_ITEMS, Pane, State};
+use crate::keys::Preset;
 use crate::ui::text;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect) {
@@ -29,7 +30,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
         return;
     }
 
-    let hints = match (&state.input_mode, &state.active_pane) {
+    let hints = match (state.keymap.preset(), &state.active_pane) {
         (_, Pane::StatsDock) => vec![("h/l", "navigate"), ("Enter", "filter"), ("Esc", "clear")],
         (_, Pane::Settings) => vec![
             ("j/k", "navigate"),
@@ -44,7 +45,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
             ("?", "help"),
             ("q", "quit"),
         ],
-        (InputMode::Vim(_), Pane::Projects) => vec![
+        (Preset::Vim, Pane::Projects) => vec![
             ("j/k", "navigate"),
             ("g/G", "top/bottom"),
             ("l/Tab", "tasks"),
@@ -52,7 +53,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
             ("?", "help"),
             ("q", "quit"),
         ],
-        (InputMode::Vim(_), Pane::Tasks) => vec![
+        (Preset::Vim, Pane::Tasks) => vec![
             ("j/k", "navigate"),
             ("Enter", "open/fold"),
             ("x", "complete"),
@@ -63,14 +64,14 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
             ("Esc/h", "back"),
             ("q", "quit"),
         ],
-        (InputMode::Standard, Pane::Projects) => vec![
+        (Preset::Standard, Pane::Projects) => vec![
             ("↑/↓", "navigate"),
             ("Tab", "tasks"),
             (",", "settings"),
             ("?", "help"),
             ("q", "quit"),
         ],
-        (InputMode::Standard, Pane::Tasks) => vec![
+        (Preset::Standard, Pane::Tasks) => vec![
             ("↑/↓", "navigate"),
             ("Enter", "open/fold"),
             ("Ctrl-x", "complete"),

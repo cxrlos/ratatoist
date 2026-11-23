@@ -3,13 +3,13 @@ use ratatui::layout::Alignment;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
-use crate::app::InputMode;
+use crate::keys::Preset;
 use crate::ui::text;
 use crate::ui::theme::Theme;
 
 use super::popup::{centered_rect, render_dim_overlay};
 
-pub fn render(frame: &mut Frame, mode: &InputMode, theme: &Theme) {
+pub fn render(frame: &mut Frame, preset: Preset, theme: &Theme) {
     render_dim_overlay(frame, theme);
 
     let area = frame.area();
@@ -25,9 +25,9 @@ pub fn render(frame: &mut Frame, mode: &InputMode, theme: &Theme) {
         .padding(Padding::new(2, 2, 1, 1))
         .style(theme.base_bg());
 
-    let lines = match mode {
-        InputMode::Vim(_) => vim_bindings(theme),
-        InputMode::Standard => standard_bindings(theme),
+    let lines = match preset {
+        Preset::Vim => vim_bindings(theme),
+        Preset::Standard => standard_bindings(theme),
     };
 
     let paragraph = Paragraph::new(lines)

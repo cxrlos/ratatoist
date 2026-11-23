@@ -29,12 +29,6 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let mode_label = state.input_mode.label();
-    let mode_item = ListItem::new(Line::from(vec![
-        Span::styled("Mode  ", theme.muted_text()),
-        Span::styled(mode_label, theme.key_hint()),
-    ]));
-
     let theme_name = &state.theme().name;
     let theme_item = ListItem::new(text::fit_line(
         Line::from(vec![
@@ -54,7 +48,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
         Span::styled(idle_label, theme.key_hint()),
     ]));
 
-    let items = vec![mode_item, theme_item, idle_item];
+    let items = vec![theme_item, idle_item];
 
     let highlight_style = if is_active {
         theme.selected_item()

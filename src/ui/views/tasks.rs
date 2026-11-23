@@ -5,7 +5,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
-use crate::app::{InputMode, State};
+use crate::app::State;
+use crate::keys::Preset;
 use crate::ui::dates::{self, DueBucket};
 use crate::ui::text;
 use crate::ui::theme::Theme;
@@ -29,9 +30,9 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     }
 
     if visible.is_empty() && !state.today_view_active && state.dock_filter.is_none() {
-        let hint = match state.input_mode {
-            InputMode::Vim(_) => "press a to add a task",
-            InputMode::Standard => "press Ctrl-a to add a task",
+        let hint = match state.keymap.preset() {
+            Preset::Vim => "press a to add a task",
+            Preset::Standard => "press Ctrl-a to add a task",
         };
         let lines = vec![
             ListItem::new(Line::default()),

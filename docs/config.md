@@ -7,7 +7,10 @@ ratatoist reads `config.toml` from `$XDG_CONFIG_HOME/ratatoist/`, which is `~/.c
 # no settings yet
 
 [keys]
-# no settings yet
+preset = "vim"
+
+[keys.list]
+move-down = { prepend = ["n"] }
 
 [theme]
 name = "Nord"
@@ -34,9 +37,35 @@ The built-in themes are Catppuccin Mocha, Dracula, Gruvbox Dark, Material Dark, 
 
 The Settings pane saves the theme and idle timeout you pick there to `ui_settings.json` in the same folder. At startup a value set in `config.toml` wins over the saved one; `ui_settings.json` only fills in what `config.toml` leaves out, or a `[theme] name` that matches no theme. So if I set `[theme] name` in `config.toml`, a theme picked in the Settings pane lasts only until the next start.
 
-## `[ui]` and `[keys]`
+## `[keys]`
 
-Both tables are accepted and take no settings yet. A key inside them is reported as unknown.
+| Key | Values | Default | Effect |
+| --- | --- | --- | --- |
+| `preset` | `"vim"` or `"standard"` | `"vim"` | The keys everything starts from. `standard` moves with the arrows, Home/End and PgUp/PgDn, switches panes with Tab and Shift-Tab, adds a task with Ctrl-a and completes one with Ctrl-x; every other action keeps its vim key. |
+
+Each context has its own table that changes the preset's keys there: `[keys.global]`, `[keys.list]`, `[keys.detail]`, `[keys.browse]`, `[keys.projects]` and `[keys.overlay]`. [keymap.md](keymap.md) lists every action by its id, with its keys in both presets and the contexts it applies in. Keys use vim notation: a plain character stands for itself (`j`, `G`, `gg` for a chord), and anything else goes inside `<...>`, as `<C-d>`, `<Esc>`, `<S-Tab>`, `<F1>`, `<Space>` and `<lt>` for `<`.
+
+```toml
+[keys.global]
+quit = "Q"                              # replace: Q is now quit's only key
+choose-theme = ","                      # an action with no default key
+show-cheatsheet = { append = ["<F1>"] }  # F1 as well, after ?
+
+[keys.list]
+move-down = { prepend = ["n"] }         # n first, j still works
+noop = ["gg", "<C-d>"]                  # these keys do nothing, and leave every hint
+```
+
+- A string or a list replaces the action's keys in that context.
+- `{ prepend = [...] }` adds keys ahead of the defaults: they win where a key is bound twice, and they are the ones hints show first.
+- `{ append = [...] }` adds keys after the defaults, which win where a key is bound twice.
+- `noop` binds keys to nothing, which also hides them from every hint.
+
+An unknown action, an action that does not apply in that context, or a key that is not valid notation is reported, and only that context's table falls back to the preset's keys. An unknown context is reported and ignored. A `preset` that is neither `vim` nor `standard` resets the whole `[keys]` table.
+
+## `[ui]`
+
+The table is accepted and takes no settings yet. A key inside it is reported as unknown.
 
 ## Theme files
 

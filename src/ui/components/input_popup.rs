@@ -44,7 +44,7 @@ pub fn render(frame: &mut Frame, state: &State, target: InputKind) {
 
     let mut lines = Vec::new();
 
-    if state.input_buffer.is_empty() {
+    if state.input.is_empty() {
         let placeholder = if target == InputKind::Field && state.detail_field == DetailField::Due {
             "e.g. tomorrow, next monday, 2026-03-15, 28/02/2026..."
         } else if target == InputKind::Comment {
@@ -58,8 +58,9 @@ pub fn render(frame: &mut Frame, state: &State, target: InputKind) {
         )));
     } else {
         lines.push(Line::from(vec![
-            Span::styled(&state.input_buffer, theme.normal_text()),
+            Span::styled(state.input.before_cursor(), theme.normal_text()),
             Span::styled("▎", theme.due_upcoming()),
+            Span::styled(state.input.after_cursor(), theme.normal_text()),
         ]));
     }
 

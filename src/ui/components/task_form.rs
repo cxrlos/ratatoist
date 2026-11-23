@@ -69,7 +69,7 @@ pub fn render(frame: &mut Frame, state: &State, form: &TaskForm) {
         } else {
             theme.muted_text()
         };
-        let value_style = if active && !form.editing {
+        let value_style = if active && !form.editing() {
             theme.normal_text().add_modifier(Modifier::UNDERLINED)
         } else if idx == 1 {
             theme.priority_style(form.priority)
@@ -77,7 +77,7 @@ pub fn render(frame: &mut Frame, state: &State, form: &TaskForm) {
             theme.normal_text()
         };
 
-        let cursor = if active && !form.editing { " <" } else { "" };
+        let cursor = if active && !form.editing() { " <" } else { "" };
 
         lines.push(Line::from(vec![
             Span::styled(
@@ -92,11 +92,12 @@ pub fn render(frame: &mut Frame, state: &State, form: &TaskForm) {
         ]));
     }
 
-    if form.editing {
+    if form.editing() {
         lines.push(Line::default());
         lines.push(Line::from(vec![
-            Span::styled(&state.input_buffer, theme.normal_text()),
+            Span::styled(state.input.before_cursor(), theme.normal_text()),
             Span::styled("_", theme.due_upcoming()),
+            Span::styled(state.input.after_cursor(), theme.normal_text()),
         ]));
     }
 
@@ -107,10 +108,10 @@ pub fn render(frame: &mut Frame, state: &State, form: &TaskForm) {
     )));
     lines.push(Line::default());
 
-    let submit_hint = if form.editing {
-        "Enter save field  Esc back to form"
+    let submit_hint = if form.editing() {
+        "Enter add  Tab next field  Esc cancel"
     } else {
-        "j/k navigate  Enter/i edit  Tab submit  Esc cancel"
+        "Tab next field  Enter change  Esc cancel"
     };
     lines.push(
         Line::from(Span::styled(submit_hint, theme.muted_text())).alignment(Alignment::Center),

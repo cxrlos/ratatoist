@@ -1,17 +1,21 @@
-//! The action registry and the keys built from it. Key dispatch, chords,
+//! The action registry and the keymap built from it. Key dispatch, chords,
 //! the which-key popup, the bottom bar, the cheatsheet, the palette and the
 //! config all read bindings from [`ACTIONS`]; no key is bound anywhere else.
 
 mod key;
-mod legacy;
+mod keymap;
+mod reference;
 mod registry;
 
 pub use key::{Key, KeySequence, ParseKeyError};
-pub use legacy::{DetailScroll, KeyAction, handle_key, handle_key_while_loading};
+pub use keymap::{Change, Keymap, Override, Resolution, Target};
+pub use reference::keymap_reference;
 pub use registry::{
     ACTIONS, ActionSpec, Availability, Group, Hint, HintRow, OverlayKind, Preset, STANDARD, by_id,
     spec,
 };
+
+use crate::app::{Modal, Pane, State};
 
 /// Where a binding applies. Several contexts are active at once, most
 /// specific first, and the first one that binds a key wins.
@@ -69,5 +73,37 @@ impl Context {
             Context::Projects => "Projects",
             Context::Overlay => "Overlays",
         }
+    }
+}
+
+/// The contexts taking keys now, most specific first. An open which-key
+/// popup is ignored: it only waits for the rest of a chord from below it.
+pub fn active_contexts(state: &State) -> Vec<Context> {
+    let overlay = state
+        .modals
+        .iter()
+        .rev()
+        .find(|modal| !matches!(modal, Modal::WhichKey { .. }));
+    match overlay {
+        Some(_) => vec![Context::Overlay],
+        None => screen_contexts(state),
+    }
+}
+
+/// The contexts of the focused pane under any overlay. While the first
+/// sync runs, only the keys that apply everywhere.
+pub fn screen_contexts(state: &State) -> Vec<Context> {
+    if state.loading {
+        return vec![Context::Global];
+    }
+    if state.dock_focus.is_some() && state.active_pane != Pane::Detail {
+        return vec![Context::Browse, Context::Global];
+    }
+    match state.active_pane {
+        Pane::Projects => vec![Context::Projects, Context::Browse, Context::Global],
+        Pane::Tasks => vec![Context::List, Context::Global],
+        Pane::Detail => vec![Context::Detail, Context::Global],
+        Pane::StatsDock => vec![Context::Browse, Context::Global],
+        Pane::Settings => vec![Context::Global],
     }
 }
