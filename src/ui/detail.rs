@@ -367,7 +367,8 @@ fn details(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
         |at| {
             plain(format!(
                 "{} ({})",
-                at.format("%Y-%m-%d %H:%M UTC"),
+                at.with_timezone(&state.now.timezone())
+                    .format("%Y-%m-%d %H:%M"),
                 ago(at, state.now)
             ))
         },

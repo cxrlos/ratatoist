@@ -5,7 +5,9 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use chrono::{Datelike, Days, Months, NaiveDate, NaiveDateTime, NaiveTime, Weekday};
+use chrono::{
+    Datelike, Days, Local, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Weekday,
+};
 use futures_util::Stream;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -358,7 +360,7 @@ impl Store {
     /// When a write happened, as far as the demo account knows: its day at
     /// the time of [`NOW`]. The clock is read only by the runtime.
     fn timestamp(&self) -> String {
-        format!("{}T{}Z", self.today.format("%Y-%m-%d"), NOW.time())
+        utc_stamp(self.today, NOW.time())
     }
 
     fn list(&mut self, key: &str) -> &mut Vec<Value> {
@@ -535,8 +537,23 @@ impl Dates {
     }
 
     fn timestamp(&self, offset: i64, time: &str) -> String {
-        format!("{}T{time}:00Z", self.day(offset))
+        let time = NaiveTime::parse_from_str(time, "%H:%M").unwrap_or(NaiveTime::MIN);
+        utc_stamp(self.date(offset), time)
     }
+}
+
+/// `day` at `time` on this machine's clock, written as Todoist writes a
+/// moment: in UTC, ending in `Z`. The demo account's days are local days,
+/// and its "now" is a local time, so a comment's age reads the same in
+/// every timezone (labelling the local time as UTC made it shift by the
+/// offset, and put comments in the future east of UTC).
+fn utc_stamp(day: NaiveDate, time: NaiveTime) -> String {
+    let local = day.and_time(time);
+    let utc = Local
+        .from_local_datetime(&local)
+        .earliest()
+        .map_or(local, |moment| moment.naive_utc());
+    format!("{}Z", utc.format("%Y-%m-%dT%H:%M:%S"))
 }
 
 fn projects() -> Vec<Value> {

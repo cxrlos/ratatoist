@@ -23,7 +23,7 @@ expression: app.backend()
 "┃  ○ 🏃 Run 5 km alo│   Todoist is rate limiting requests                                          │                   │" Hidden by multi-width symbols: [(6, " ")]
 "┃  ○ Stretch for ten│                                                                              │                   │"
 "┃  ○ Water the seedl│ 09:00:00  validation · edit "Fix the wobbly chair leg"                       │                   │"
-"┃  ○ Draft the new n│   Todoist refused the change. The message says why; change it and try        │UTC (4 weeks ago)  │"
+"┃  ○ Draft the new n│   Todoist refused the change. The message says why; change it and try        │(4 weeks ago)      │"
 "┃  ○ Fix the crash w│   again.                                                                     │                   │"
 "┃                   │   Item not found                                                             │                   │"
 "┃                   └ j/k scroll  Esc close ───────────────────────────────────────────────────────┘                   │"
