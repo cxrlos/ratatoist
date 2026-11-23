@@ -101,7 +101,9 @@ pub fn render_projects(state: &State, frame: &mut Frame, area: Rect) {
         }
         text::draw(frame, name, name_area);
         if is_focused {
-            frame.buffer_mut().set_style(line_area, theme.selection);
+            frame
+                .buffer_mut()
+                .set_style(line_area, theme.selected_item());
         }
     }
 }
@@ -137,7 +139,9 @@ pub fn render_labels(state: &State, frame: &mut Frame, area: Rect) {
         name.push(Span::styled(format!("  {}", row.count), muted));
         text::draw(frame, Line::from(name), name_area);
         if is_focused {
-            frame.buffer_mut().set_style(line_area, theme.selection);
+            frame
+                .buffer_mut()
+                .set_style(line_area, theme.selected_item());
         }
     }
 }

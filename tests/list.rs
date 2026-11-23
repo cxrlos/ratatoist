@@ -554,6 +554,25 @@ fn a_due_date_sent_shows_muted_with_an_ellipsis_until_todoist_answers() {
     assert!(shows(&app, "next friday…"));
 }
 
+#[test]
+fn a_long_due_string_sent_is_cut_with_an_ellipsis_beside_the_content() {
+    let mut app = sized(80, 24);
+    send(&mut app, [key('1')]);
+    let content = app.state().selected_task().unwrap().content.clone();
+    let start: String = content.chars().take(10).collect();
+    let clear = Event::Key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+    send(&mut app, [key('d'), clear]);
+    send(&mut app, typed(&"every other monday ".repeat(4)));
+    send(&mut app, [press(KeyCode::Enter)]);
+
+    let row = rows(&app)
+        .into_iter()
+        .find(|row| row.contains(&start))
+        .unwrap();
+    assert!(row.contains("every other monday…"));
+    assert!(!row.contains(&"every other monday ".repeat(4)));
+}
+
 /// The opener of each edit key, checked against the task the list focuses.
 fn assert_edit_keys_act_on(app_at: impl Fn() -> App<TestBackend>) {
     for (edit, field) in [

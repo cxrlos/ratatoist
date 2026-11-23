@@ -122,7 +122,7 @@ pub fn pane_block(
         Focus::Alone => block.border_style(style::border(theme)),
         Focus::Focused => block
             .border_type(BorderType::Thick)
-            .border_style(Style::new().fg(theme.accent)),
+            .border_style(theme.active_border()),
         Focus::Unfocused => block.border_style(style::muted(theme)),
     }
 }
@@ -256,18 +256,20 @@ pub fn render_row(
         text::draw(frame, Span::raw(icons.focus), marker);
     }
 
-    let due = due_span(state, task)
-        .map(|due| (u16::try_from(due.width()).unwrap_or(u16::MAX), due))
-        .filter(|(width, _)| {
-            body.width >= width.saturating_add(1).saturating_add(CONTENT_BESIDE_DUE)
-        });
+    // The due takes what the content leaves past its 30 columns, cut with
+    // `…` when it is longer, as a long due string not parsed yet can be.
+    let due_room = body.width.saturating_sub(CONTENT_BESIDE_DUE + 1);
+    let due = due_span(state, task).filter(|_| due_room > 0).map(|due| {
+        let width = u16::try_from(text::width(&due.content)).unwrap_or(u16::MAX);
+        (width.min(due_room), due)
+    });
     let content = match due {
         Some((width, due)) => {
             let [content, due_area] =
                 Layout::horizontal([Constraint::Fill(1), Constraint::Length(width)])
                     .spacing(1)
                     .areas(body);
-            frame.render_widget(due, due_area);
+            text::draw(frame, due, due_area);
             content
         }
         None => body,
@@ -282,7 +284,7 @@ pub fn render_row(
     let glyph_style = if task.checked {
         style::muted(theme)
     } else {
-        Style::new().fg(theme.priority(level))
+        theme.priority_style(task.priority)
     };
     text::draw(
         frame,
@@ -302,9 +304,9 @@ pub fn render_row(
 
     if is_focused {
         let highlight = if focus == Focus::Unfocused {
-            Style::new().add_modifier(Modifier::BOLD)
+            theme.unfocused_selection()
         } else {
-            theme.selection
+            theme.selected_item()
         };
         frame.buffer_mut().set_style(line_area, highlight);
     }
