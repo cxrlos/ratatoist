@@ -9,6 +9,7 @@ pub mod hints;
 pub mod icons;
 pub mod layout;
 mod messages;
+pub mod palette;
 pub mod picker;
 pub mod release;
 pub mod style;
@@ -65,7 +66,7 @@ pub fn draw(frame: &mut Frame, state: &State) {
             Modal::Cheatsheet { scroll } => cheatsheet::render(state, *scroll, frame, body_area),
             Modal::WhichKey { prefix } => which_key::render(state, prefix, frame, body_area),
             Modal::Messages { scroll } => messages::render(state, *scroll, frame, body_area),
-            Modal::Palette(_) => {}
+            Modal::Palette(palette) => palette::render(state, palette, frame, body_area),
         }
     }
 }

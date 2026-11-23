@@ -7,6 +7,7 @@ use tracing::info;
 use super::confirm;
 use super::failure::{ErrorKind, Failure};
 use super::modal::{InputKind, Modal, TaskForm};
+use super::palette::{self, Palette};
 use super::picker::{self, Choice, PickerKind, open_picker};
 use super::state::{ListFilter, Pane, ProjectNavItem, Screen};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
@@ -191,6 +192,34 @@ impl TextEdit {
             TextEdit::End => field.end(),
         }
     }
+
+    /// Applies the edit to the palette's query, which is typed at its end
+    /// and has no cursor to move; whether the query changed. A changed
+    /// query highlights the best match again.
+    fn apply_to_query(self, palette: &mut Palette) -> bool {
+        let query = &mut palette.query;
+        let before = query.len();
+        match self {
+            TextEdit::Insert(c) => query.push(c),
+            TextEdit::Backspace => {
+                query.pop();
+            }
+            TextEdit::DeleteWord => {
+                let kept = query.trim_end().rfind(' ').map_or(0, |space| space + 1);
+                query.truncate(kept);
+            }
+            TextEdit::Delete
+            | TextEdit::Left
+            | TextEdit::Right
+            | TextEdit::Home
+            | TextEdit::End => {}
+        }
+        let changed = query.len() != before;
+        if changed {
+            palette.selected = 0;
+        }
+        changed
+    }
 }
 
 /// The text field that takes typed keys now: the open prompt's, or the
@@ -217,6 +246,12 @@ fn type_text(state: &mut State, key: Key) -> Option<Update> {
     if let Some(Modal::Picker(picker)) = state.modals.last_mut() {
         return Some(Update {
             redraw: edit_query(picker.query_mut(), edit),
+            effects: Vec::new(),
+        });
+    }
+    if let Some(Modal::Palette(palette)) = state.top_modal_mut() {
+        return Some(Update {
+            redraw: edit.apply_to_query(palette),
             effects: Vec::new(),
         });
     }
@@ -250,6 +285,15 @@ fn edit_query(query: &mut String, edit: TextEdit) -> bool {
 
 /// Pasted text goes into the focused text field, and nowhere else.
 fn paste(state: &mut State, text: &str) -> Update {
+    if let Some(Modal::Palette(palette)) = state.top_modal_mut() {
+        let line = text.replace(['\n', '\r'], " ");
+        if line.is_empty() {
+            return Update::default();
+        }
+        palette.query.push_str(&line);
+        palette.selected = 0;
+        return Update::redraw(Vec::new());
+    }
     match focused_field(state) {
         Some(field) if !text.is_empty() => {
             field.paste(text);
@@ -332,7 +376,11 @@ impl State {
                 self.modals.push(Modal::Messages { scroll: 0 });
                 true
             }
-            Action::ShowPalette | Action::SkipRelease | Action::ShowReleaseNotes => false,
+            Action::ShowPalette => {
+                self.modals.push(Modal::Palette(Palette::default()));
+                true
+            }
+            Action::SkipRelease | Action::ShowReleaseNotes => false,
             Action::Confirm => confirm::confirm(self, effects),
             Action::Decline => confirm::decline(self),
             Action::Close => self.close(),
@@ -453,8 +501,17 @@ impl State {
 
     /// Moves the highlight of the overlay on top by `step`.
     fn scroll_overlay(&mut self, step: isize) -> bool {
-        if let Some(Modal::Cheatsheet { .. }) = self.top_modal() {
-            return self.scroll_cheatsheet(step);
+        match self.top_modal() {
+            Some(Modal::Cheatsheet { .. }) => return self.scroll_cheatsheet(step),
+            Some(Modal::Palette(_)) => {
+                let action = if step > 0 {
+                    Action::ScrollDown
+                } else {
+                    Action::ScrollUp
+                };
+                return palette::step(self, action);
+            }
+            _ => {}
         }
         if let Some(&Modal::Messages { scroll: before }) = self.top_modal() {
             let max = ui::messages_max_scroll(self, self.screen_size());
@@ -496,6 +553,11 @@ impl State {
     /// Chooses what the overlay on top has highlighted, or submits it.
     fn accept(&mut self, effects: &mut Vec<Effect>) -> bool {
         match self.top_modal() {
+            Some(Modal::Palette(_)) => {
+                let mut update = palette::accept(self);
+                effects.append(&mut update.effects);
+                update.redraw
+            }
             Some(Modal::Picker(picker)) => match picker.selected().cloned() {
                 Some(choice) => self.choose(choice, effects),
                 None => false,

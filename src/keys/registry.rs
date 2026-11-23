@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crossterm::event::KeyCode;
 
 use super::{Context, Key};
-use crate::app::{Action, Editable, ListFilter, Modal, Pane, Screen, State};
+use crate::app::{self, Action, Editable, ListFilter, Modal, Pane, Screen, State};
 use crate::ui;
 
 /// The narrowest terminal, in columns, that shows the task list and the
@@ -1010,12 +1010,13 @@ fn can_move_up(_: &State) -> bool {
 }
 
 /// Whether the overlay on top has somewhere further down to go: the
-/// cheatsheet a hidden row below.
+/// cheatsheet a hidden row below, the palette a match below the highlight.
 fn can_scroll_down(state: &State) -> bool {
     match state.top_modal() {
         Some(Modal::Cheatsheet { scroll }) => {
             *scroll < ui::cheatsheet_max_scroll(state, state.screen_size())
         }
+        Some(Modal::Palette(_)) => app::palette_can_step_down(state),
         other => other.is_some(),
     }
 }
@@ -1023,21 +1024,19 @@ fn can_scroll_down(state: &State) -> bool {
 fn can_scroll_up(state: &State) -> bool {
     match state.top_modal() {
         Some(Modal::Cheatsheet { scroll }) => *scroll > 0,
+        Some(Modal::Palette(palette)) => palette.selected > 0,
         other => other.is_some(),
     }
 }
 
 fn can_accept(state: &State) -> bool {
-    matches!(
-        state.top_modal(),
-        Some(
-            Modal::Picker(_)
-                | Modal::Palette(_)
-                | Modal::Input(_)
-                | Modal::Form(_)
-                | Modal::Confirm(_)
-        )
-    )
+    match state.top_modal() {
+        Some(Modal::Palette(_)) => app::palette_has_selection(state),
+        other => matches!(
+            other,
+            Some(Modal::Picker(_) | Modal::Input(_) | Modal::Form(_) | Modal::Confirm(_))
+        ),
+    }
 }
 
 fn can_close(state: &State) -> bool {

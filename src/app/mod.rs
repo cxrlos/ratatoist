@@ -23,7 +23,9 @@ pub use effect::Effect;
 pub use event::Event;
 pub use failure::{ERROR_LOG_CAP, ErrorKind, ErrorLog, Failure, LoadError};
 pub use modal::{InputKind, Modal, TaskForm};
-pub use palette::Palette;
+pub use palette::{
+    Palette, PaletteEntry, palette_can_step_down, palette_has_selection, palette_matches,
+};
 pub use picker::{Choice, Entry, Picker, PickerKind, open_picker};
 pub use release::ReleaseState;
 pub use state::{
