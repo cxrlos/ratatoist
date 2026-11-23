@@ -447,7 +447,7 @@ async fn completing_a_task_keeps_it_completed_and_lists_it_under_done() {
 
     drive(&mut app, &client, [key('x')]).await;
 
-    assert!(app.state().error.is_none());
+    assert!(app.state().failures.is_empty());
     assert!(!shows(&app, &first.content));
     drive(&mut app, &client, [key('f')]).await;
     assert!(shows(&app, &first.content));
@@ -494,7 +494,7 @@ async fn a_comment_stays_after_the_comments_reload() {
             .any(|e| matches!(e, Effect::FetchComments { .. })),
         "the comments reload after the write"
     );
-    assert!(app.state().error.is_none());
+    assert!(app.state().failures.is_empty());
     assert!(shows(&app, "Seen, thanks"));
 }
 
@@ -590,7 +590,7 @@ async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
 
     drive(&mut app, &client, [key('x'), key('R')]).await;
 
-    assert!(app.state().error.is_none());
+    assert!(app.state().failures.is_empty());
     let reopened = app.state().tasks.iter().find(|t| t.id == "t-dentist");
     assert!(reopened.is_some_and(|t| !t.checked), "{reopened:?}");
 }

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Local, NaiveDate};
 use ratatui::layout::Size;
 
-use super::failure::{ErrorLog, LoadError};
+use super::failure::{ErrorLog, Failure, LoadError};
 use super::modal::Modal;
 use super::release::ReleaseState;
 use super::sync::OptimisticOp;
@@ -44,7 +44,6 @@ pub struct State {
     pub selected_project: usize,
     pub selected_task: usize,
     pub active_pane: Pane,
-    pub error: Option<AppError>,
     /// The keys in force: the preset and the overrides from `config.toml`.
     pub keymap: Keymap,
     /// Overlays, drawn bottom to top; the top one takes keys. A
@@ -65,11 +64,16 @@ pub struct State {
     pub viewport: Option<Size>,
     /// The screen the tab row has selected.
     pub screen: Screen,
-    /// The newest failure's summary or a result, shown above the bottom
-    /// bar until the next key.
+    /// A result or a hint, shown above the bottom bar until the next key.
     pub notice: Option<String>,
+    /// The newest failure is the notice until the next key, in place of
+    /// [`State::notice`].
+    pub show_failure: bool,
     /// The failures of this session, for the messages log.
     pub failures: ErrorLog,
+    /// Tasks whose last write was rolled back, with why. Their rows show the
+    /// failed mark until they change again.
+    pub rolled_back: HashMap<String, Failure>,
     /// What is known about newer releases, for the tab row.
     pub release: ReleaseState,
     pub sort_mode: SortMode,
@@ -104,6 +108,9 @@ pub struct State {
     pub(crate) live_opened: bool,
     /// Revert snapshots of optimistic writes, keyed by command uuid.
     pub(crate) temp_id_pending: HashMap<String, OptimisticOp>,
+    /// What each command still waiting for Todoist does, as `complete "Buy
+    /// oat milk"`, keyed by its uuid, to name it if it fails.
+    pub(crate) pending_actions: HashMap<String, String>,
     pub(crate) next_temp_id: u64,
 }
 
@@ -124,7 +131,6 @@ impl State {
             selected_project: 0,
             selected_task: 0,
             active_pane: Pane::Tasks,
-            error: None,
             keymap: Keymap::default(),
             modals: Vec::new(),
             input: TextField::default(),
@@ -134,7 +140,9 @@ impl State {
             viewport: None,
             screen: Screen::Today,
             notice: None,
+            show_failure: false,
             failures: ErrorLog::default(),
+            rolled_back: HashMap::new(),
             release: ReleaseState::default(),
             sort_mode: SortMode::Default,
             comments: Vec::new(),
@@ -163,6 +171,7 @@ impl State {
             websocket_url: None,
             live_opened: false,
             temp_id_pending: HashMap::new(),
+            pending_actions: HashMap::new(),
             next_temp_id: 0,
         }
     }
@@ -197,6 +206,30 @@ impl State {
     pub fn not_loaded(&mut self, error: LoadError) {
         self.loading = false;
         self.load_error = Some(error);
+    }
+
+    /// Adds `failure` to the messages log and shows it as the notice until
+    /// the next key: for what the user asked for, and the first sync.
+    pub(crate) fn report(&mut self, failure: Failure) {
+        self.show_failure = true;
+        self.log_failure(failure);
+    }
+
+    /// Adds `failure` to the messages log alone: for what ratatoist does in
+    /// the background.
+    pub(crate) fn log_failure(&mut self, failure: Failure) {
+        tracing::error!(
+            kind = failure.kind.name(),
+            error = %failure.message,
+            "failed"
+        );
+        self.failures.record(failure);
+    }
+
+    /// Why the last write to `task_id` was rolled back, while the task has
+    /// not changed since.
+    pub fn rollback_reason(&self, task_id: &str) -> Option<&Failure> {
+        self.rolled_back.get(task_id)
     }
 
     /// What the sync indicator shows: `synced 4s ago`, or what is wrong.
@@ -429,56 +462,6 @@ impl SortMode {
             SortMode::Created => SortMode::Default,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppError {
-    pub title: String,
-    pub message: String,
-    pub suggestion: Option<String>,
-    pub recoverable: bool,
-}
-
-impl AppError {
-    pub(crate) fn from_client(err: &crate::todoist::ClientError, context: &str) -> Self {
-        let raw = err.to_string();
-        let (title, message, suggestion) = parse_api_error(&raw, context);
-        Self {
-            title,
-            message,
-            suggestion,
-            recoverable: true,
-        }
-    }
-}
-
-fn parse_api_error(raw: &str, context: &str) -> (String, String, Option<String>) {
-    if let Some(json) = raw.find('{').and_then(|json_start| raw.get(json_start..))
-        && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json)
-    {
-        let error_msg = parsed["error"]
-            .as_str()
-            .unwrap_or("Unknown error")
-            .to_string();
-        let error_tag = parsed["error_tag"].as_str().unwrap_or("");
-
-        let suggestion = match error_tag {
-            "INVALID_DATE_FORMAT" | "BAD_REQUEST" => Some(
-                "Try natural language like \"tomorrow\", \"next monday\", or \"Feb 28\""
-                    .to_string(),
-            ),
-            "NOT_FOUND" => Some("The item may have been deleted. Try refreshing.".to_string()),
-            "FORBIDDEN" => Some("You don't have permission for this action.".to_string()),
-            "UNAUTHORIZED" => {
-                Some("Your API token may have expired. Check your config.".to_string())
-            }
-            _ => None,
-        };
-
-        return (format!("{context} failed"), error_msg, suggestion);
-    }
-
-    (format!("{context} failed"), raw.to_string(), None)
 }
 
 #[derive(Debug, Clone)]

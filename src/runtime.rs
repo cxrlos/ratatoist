@@ -475,7 +475,7 @@ mod tests {
             .unwrap();
 
         assert!(!app.state().loading);
-        assert!(app.state().error.is_none());
+        assert!(app.state().failures.is_empty());
     }
 
     #[tokio::test(start_paused = true)]

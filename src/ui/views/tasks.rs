@@ -160,12 +160,19 @@ pub(crate) fn task_line<'a>(
         spans.push(Span::styled("  ".repeat(depth), theme.muted_text()));
     }
 
-    let lead = if has_children && !task.checked {
-        icons.fold(!collapsed)
+    if state.rollback_reason(&task.id).is_some() {
+        spans.push(Span::styled(
+            format!("{} ", icons.failed),
+            crate::ui::style::error(theme),
+        ));
     } else {
-        icons.check(task.checked)
-    };
-    spans.push(Span::styled(format!("{lead} "), theme.muted_text()));
+        let lead = if has_children && !task.checked {
+            icons.fold(!collapsed)
+        } else {
+            icons.check(task.checked)
+        };
+        spans.push(Span::styled(format!("{lead} "), theme.muted_text()));
+    }
 
     if state.is_context_task(task) {
         spans.push(Span::styled(&task.content, theme.muted_text()));

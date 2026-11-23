@@ -4,6 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Size;
 use tracing::info;
 
+use super::failure::{ErrorKind, Failure};
 use super::modal::{InputKind, Modal, TaskForm};
 use super::state::{Pane, ProjectNavItem, Screen, TaskFilter};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
@@ -13,6 +14,7 @@ use crate::keys::{self, Key, Resolution};
 use crate::todoist::model::{Comment, Task};
 use crate::todoist::sync::SyncCommand;
 use crate::todoist::{CompletedQuery, LiveMessage};
+use crate::ui;
 use crate::ui::views::detail::{self, DetailField};
 
 /// What one event did: whether the screen changed, and what to ask the
@@ -99,7 +101,17 @@ pub fn update(state: &mut State, event: Event) -> Update {
                         effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
                     }
                 }
-                LiveMessage::Disconnected => state.live_dropped = true,
+                LiveMessage::Disconnected => {
+                    if !was_dropped {
+                        state.log_failure(Failure::new(
+                            ErrorKind::Offline,
+                            "keep the live connection open",
+                            "the live-updates connection dropped",
+                            state.now,
+                        ));
+                    }
+                    state.live_dropped = true;
+                }
             }
             Update {
                 redraw: was_dropped != state.live_dropped,
@@ -122,15 +134,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
         effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
     }
 
-    if let Some(err) = state.error.take() {
-        if !err.recoverable {
-            info!("unrecoverable error dismissed, exiting");
-            effects.push(Effect::Quit);
-        }
-        return Update::redraw(effects);
-    }
-
-    let cleared_notice = state.notice.take().is_some();
+    let cleared_notice = state.notice.take().is_some() | std::mem::take(&mut state.show_failure);
     let prev_pane = state.active_pane;
     let mut update = type_text(state, key).unwrap_or_else(|| press(state, key));
     if prev_pane == Pane::Tasks && state.active_pane != Pane::Tasks {
@@ -297,8 +301,11 @@ impl State {
                 });
                 true
             }
+            Action::ShowMessages => {
+                self.modals.push(Modal::Messages { scroll: 0 });
+                true
+            }
             Action::ShowPalette
-            | Action::ShowMessages
             | Action::SkipRelease
             | Action::ShowReleaseNotes
             | Action::Confirm
@@ -423,6 +430,18 @@ impl State {
 
     /// Moves the highlight of the overlay on top by `step`.
     fn scroll_overlay(&mut self, step: i32) -> bool {
+        if let Some(&Modal::Messages { scroll: before }) = self.top_modal() {
+            let max = ui::messages_max_scroll(self, self.screen_size());
+            let after = if step > 0 {
+                before.saturating_add(1).min(max)
+            } else {
+                before.saturating_sub(1)
+            };
+            if let Some(Modal::Messages { scroll }) = self.modals.last_mut() {
+                *scroll = after;
+            }
+            return after != before;
+        }
         let themes = self.themes.len();
         match self.modals.last_mut() {
             Some(Modal::PriorityPicker { selection }) => {

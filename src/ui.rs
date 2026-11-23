@@ -7,6 +7,7 @@ pub mod hints;
 pub mod icons;
 pub mod keyhints;
 pub mod layout;
+mod messages;
 pub mod release;
 pub mod style;
 pub mod text;
@@ -65,16 +66,9 @@ pub fn draw(frame: &mut Frame, state: &State) {
             Modal::Cheatsheet { .. } => {
                 components::cheatsheet::render(frame, state.keymap.preset(), theme);
             }
-            Modal::WhichKey { .. }
-            | Modal::Palette(_)
-            | Modal::Picker(_)
-            | Modal::Confirm(_)
-            | Modal::Messages { .. } => {}
+            Modal::Messages { scroll } => messages::render(state, *scroll, frame, body_area),
+            Modal::WhichKey { .. } | Modal::Palette(_) | Modal::Picker(_) | Modal::Confirm(_) => {}
         }
-    }
-
-    if let Some(error) = &state.error {
-        components::error_popup::render(frame, error, theme);
     }
 }
 
@@ -115,11 +109,15 @@ fn render_body(state: &State, frame: &mut Frame, area: Rect) {
     }
 }
 
-/// The focused task's detail, filling `area`.
+/// The focused task's detail, filling `area`, under why its last write was
+/// rolled back when it was.
 fn render_detail(state: &State, frame: &mut Frame, area: Rect) {
     let Some(task) = state.selected_task() else {
         return;
     };
+    let reason = rollback_lines(state, area.width);
+    let [reason_area, area] = split_detail(area, reason.len());
+    frame.render_widget(Paragraph::new(reason), reason_area);
     views::detail::render(
         frame,
         task,
@@ -224,27 +222,70 @@ pub fn list_rows(state: &State, viewport: Size) -> usize {
 }
 
 /// Where the focused task's detail is drawn in a `viewport`-sized terminal:
-/// the whole body, since the detail shows in place of its list.
+/// the body, under why its last write was rolled back when it was.
 pub fn detail_area(state: &State, viewport: Size) -> Rect {
-    body_area(state, viewport)
+    let body = body_area(state, viewport);
+    let [_, detail] = split_detail(body, rollback_lines(state, body.width).len());
+    detail
 }
 
-/// The notice under the body, cut into rows of `width` cells.
+/// How many rows of the messages log do not fit in a `viewport`-sized
+/// terminal, so scrolling stops at its last row.
+pub fn messages_max_scroll(state: &State, viewport: Size) -> u16 {
+    messages::max_scroll(state, body_area(state, viewport))
+}
+
+/// `area` split into `reason_rows` rows on top and the detail under them.
+fn split_detail(area: Rect, reason_rows: usize) -> [Rect; 2] {
+    Layout::vertical([
+        Constraint::Length(u16::try_from(reason_rows).unwrap_or(0)),
+        Constraint::Fill(1),
+    ])
+    .areas(area)
+}
+
+/// Why the focused task's last write was rolled back, in the error style,
+/// in rows of `width` cells; none when it was not.
+fn rollback_lines(state: &State, width: u16) -> Vec<Line<'static>> {
+    let Some(failure) = state
+        .selected_task()
+        .and_then(|task| state.rollback_reason(&task.id))
+    else {
+        return Vec::new();
+    };
+    let reason = format!(
+        "{} Could not {}: {}",
+        state.icons().failed,
+        failure.action,
+        failure.message
+    );
+    notice_lines(&reason, width, style::error(state.theme()))
+}
+
+/// The notice under the body, cut into rows of `width` cells: the newest
+/// failure in the error style until the next key, or else the plain notice,
+/// muted.
 fn notice_rows(state: &State, width: u16) -> Vec<Line<'static>> {
+    let theme = state.theme();
+    if state.show_failure
+        && let Some(failure) = state.failures.newest()
+    {
+        return notice_lines(&failure.notice(), width, style::error(theme));
+    }
     state
         .notice
         .as_deref()
-        .map(|notice| notice_lines(notice, width, style::muted(state.theme())))
+        .map(|notice| notice_lines(notice, width, style::muted(theme)))
         .unwrap_or_default()
 }
 
-/// `notice` wrapped at spaces into rows of `width` cells in `style`, at most
-/// [`MAX_NOTICE_ROWS`]; the last ends in `…` when the rest does not fit.
-fn notice_lines(notice: &str, width: u16, style: ratatui::style::Style) -> Vec<Line<'static>> {
-    let room = usize::from(width.max(1));
+/// `paragraph` wrapped at spaces into rows of at most `room` cells; a word
+/// wider than a row is cut.
+pub(crate) fn wrap(paragraph: &str, room: usize) -> Vec<String> {
+    let room = room.max(1);
     let mut rows: Vec<String> = Vec::new();
     let mut row = String::new();
-    for word in notice.split_whitespace() {
+    for word in paragraph.split_whitespace() {
         let joined = if row.is_empty() {
             word.to_owned()
         } else {
@@ -259,6 +300,14 @@ fn notice_lines(notice: &str, width: u16, style: ratatui::style::Style) -> Vec<L
     if !row.is_empty() {
         rows.push(row);
     }
+    rows.into_iter().map(|row| text::fit(&row, room)).collect()
+}
+
+/// `notice` wrapped at spaces into rows of `width` cells in `style`, at most
+/// [`MAX_NOTICE_ROWS`]; the last ends in `…` when the rest does not fit.
+fn notice_lines(notice: &str, width: u16, style: ratatui::style::Style) -> Vec<Line<'static>> {
+    let room = usize::from(width.max(1));
+    let mut rows = wrap(notice, room);
     let overflow = rows.len() > MAX_NOTICE_ROWS;
     rows.truncate(MAX_NOTICE_ROWS);
     let last = rows.len().saturating_sub(1);

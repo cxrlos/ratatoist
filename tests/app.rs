@@ -143,7 +143,7 @@ fn the_first_sync_opens_the_live_connection_and_saves_the_token() {
 }
 
 #[test]
-fn a_failed_first_sync_shows_the_error_over_the_empty_screen() {
+fn a_failed_first_sync_shows_the_error_in_the_notice() {
     let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
 
     app.handle(Event::Synced(Err(ClientError::Network(
@@ -151,7 +151,11 @@ fn a_failed_first_sync_shows_the_error_over_the_empty_screen() {
     ))))
     .unwrap();
 
-    assert!(shows(&app, "Initial sync failed"), "{:#?}", screen(&app));
+    assert!(
+        shows(&app, "Could not load your tasks"),
+        "{:#?}",
+        screen(&app)
+    );
 }
 
 #[test]
@@ -334,8 +338,11 @@ fn a_failed_flush_restores_the_completed_task_and_says_so() {
 
     assert!(!task(&app, "t-milk").checked);
     assert!(!app.state().is_pending(&command.uuid));
-    assert!(shows(&app, "Sync failed"), "{:#?}", screen(&app));
-    assert!(shows(&app, "Buy oat milk"));
+    assert!(
+        shows(&app, "Could not complete \"Buy oat milk\""),
+        "{:#?}",
+        screen(&app)
+    );
 }
 
 #[test]
@@ -355,11 +362,17 @@ fn a_rejected_command_restores_the_task_and_shows_todoist_s_message() {
     .unwrap();
 
     assert!(!task(&app, "t-milk").checked);
-    assert!(shows(&app, "Item not found"), "{:#?}", screen(&app));
+    assert!(
+        shows(&app, "Todoist refused the change"),
+        "{:#?}",
+        screen(&app)
+    );
+    let logged = app.state().failures.newest().map(|f| f.message.as_str());
+    assert_eq!(logged, Some("Item not found"));
 }
 
 #[test]
-fn any_key_dismisses_the_error_and_does_nothing_else() {
+fn the_next_key_clears_the_error_notice_and_still_runs() {
     let mut app = app();
     let command = single_command(&send(&mut app, [key('1'), key('x')]));
     app.handle(Event::CommandsSent {
@@ -368,11 +381,12 @@ fn any_key_dismisses_the_error_and_does_nothing_else() {
     })
     .unwrap();
 
-    let effects = send(&mut app, [key('q')]);
+    send(&mut app, [key('j')]);
 
-    assert!(effects.is_empty(), "{effects:?}");
-    assert!(app.state().error.is_none());
-    assert!(!shows(&app, "Sync failed"));
+    assert!(!app.state().show_failure);
+    assert!(!shows(&app, "Could not"));
+    assert_eq!(app.state().failures.len(), 1);
+    assert_eq!(app.state().selected_task, 1);
 }
 
 #[test]
