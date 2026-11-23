@@ -3,9 +3,11 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Local, NaiveDate};
 use ratatui::layout::Size;
 
+use super::failure::ErrorLog;
 use super::modal::Modal;
+use super::release::ReleaseState;
 use super::sync::OptimisticOp;
-use crate::todoist::model::{Comment, Folder, Label, Project, Section, Task, Workspace};
+use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
 use crate::ui::theme::Theme;
 use crate::ui::views::detail::DetailField;
 
@@ -43,7 +45,16 @@ pub struct State {
     pub detail_scroll: u16,
     /// The terminal size: read when the app starts, then from each resize.
     /// `None` only for a `State` no terminal has shown.
-    pub screen: Option<Size>,
+    pub viewport: Option<Size>,
+    /// The screen the tab row has selected.
+    pub screen: Screen,
+    /// The newest failure's summary or a result, shown above the bottom
+    /// bar until the next key.
+    pub notice: Option<String>,
+    /// The failures of this session, for the messages log.
+    pub failures: ErrorLog,
+    /// What is known about newer releases, for the tab row.
+    pub release: ReleaseState,
     pub sort_mode: SortMode,
     pub comments: Vec<Comment>,
     pub detail_field: DetailField,
@@ -99,7 +110,11 @@ impl State {
             settings_selection: 0,
             collapsed: HashSet::new(),
             detail_scroll: 0,
-            screen: None,
+            viewport: None,
+            screen: Screen::Today,
+            notice: None,
+            failures: ErrorLog::default(),
+            release: ReleaseState::default(),
             sort_mode: SortMode::Default,
             comments: Vec::new(),
             detail_field: DetailField::Content,
@@ -154,7 +169,7 @@ impl State {
 
     /// The terminal size, assuming 80x24 when no terminal has reported one.
     pub fn screen_size(&self) -> Size {
-        self.screen.unwrap_or(Size::new(80, 24))
+        self.viewport.unwrap_or(Size::new(80, 24))
     }
 
     pub fn sync_age_label(&self) -> String {
@@ -184,9 +199,28 @@ impl State {
 fn fallback_theme() -> &'static Theme {
     static FALLBACK: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
     FALLBACK.get_or_init(|| {
+        use crate::ui::theme::{DueColors, PriorityColors};
         use ratatui::style::Color;
+        use ratatui::style::{Modifier, Style};
         Theme {
             name: "terminal".to_owned(),
+            background: Color::Reset,
+            accent: Color::Cyan,
+            error: Color::Red,
+            border: Color::Reset,
+            selection: Style::new().add_modifier(Modifier::REVERSED),
+            priorities: PriorityColors {
+                p1: Color::Red,
+                p2: Color::LightRed,
+                p3: Color::Blue,
+                p4: Color::DarkGray,
+            },
+            due: DueColors {
+                overdue: Color::Red,
+                today: Color::Cyan,
+                this_week: Color::Reset,
+                later: Color::DarkGray,
+            },
             base: Color::Reset,
             surface: Color::Reset,
             overlay: Color::DarkGray,
@@ -205,6 +239,67 @@ fn fallback_theme() -> &'static Theme {
             maroon: Color::LightMagenta,
         }
     })
+}
+
+/// The screens of the tab row, in its order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Screen {
+    Inbox,
+    Today,
+    Upcoming,
+    Projects,
+    Labels,
+    Analytics,
+}
+
+impl Screen {
+    pub const ALL: [Screen; 6] = [
+        Screen::Inbox,
+        Screen::Today,
+        Screen::Upcoming,
+        Screen::Projects,
+        Screen::Labels,
+        Screen::Analytics,
+    ];
+
+    /// Its name in the tab row.
+    pub fn title(self) -> &'static str {
+        match self {
+            Screen::Inbox => "Inbox",
+            Screen::Today => "Today",
+            Screen::Upcoming => "Upcoming",
+            Screen::Projects => "Projects",
+            Screen::Labels => "Labels",
+            Screen::Analytics => "Analytics",
+        }
+    }
+}
+
+/// The list filter: what a task list shows, chosen with the filter picker.
+/// The default shows open tasks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ListFilter {
+    #[default]
+    Open,
+    Completed,
+    /// Open and completed tasks.
+    All,
+    Overdue,
+    DueToday,
+    /// Due today or in the six days after.
+    DueThisWeek,
+    Priority(Priority),
+}
+
+/// How a task list is sorted, chosen with the sort picker. The default keeps
+/// Todoist's own order.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Sort {
+    #[default]
+    Order,
+    Priority,
+    DueDate,
+    Created,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

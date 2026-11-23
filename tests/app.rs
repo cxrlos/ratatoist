@@ -174,7 +174,7 @@ fn cheatsheet_at_120x36() {
 
     send(&mut app, [key('?')]);
 
-    assert_eq!(app.state().modals, [Modal::Help]);
+    assert_eq!(app.state().modals, [Modal::Cheatsheet { scroll: 0 }]);
     assert_snapshot!(app.backend());
 }
 

@@ -193,6 +193,52 @@ pub const PRIORITY_LABELS: &[(u8, &str)] = &[
     (1, "P4  Normal"),
 ];
 
+/// A task's priority as the screen shows it: p1 is the most urgent and p4
+/// the default. The API numbers it the other way round (`4` is p1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Priority {
+    P1,
+    P2,
+    P3,
+    P4,
+}
+
+impl Priority {
+    /// Every priority, most urgent first.
+    pub const ALL: [Priority; 4] = [Priority::P1, Priority::P2, Priority::P3, Priority::P4];
+
+    /// The priority the API's `priority` number means. Anything outside 1
+    /// to 4 (a missing field reads as 0) is p4.
+    pub fn from_api(value: u8) -> Self {
+        match value {
+            4 => Priority::P1,
+            3 => Priority::P2,
+            2 => Priority::P3,
+            _ => Priority::P4,
+        }
+    }
+
+    /// The API's `priority` number for it.
+    pub fn api(self) -> u8 {
+        match self {
+            Priority::P1 => 4,
+            Priority::P2 => 3,
+            Priority::P3 => 2,
+            Priority::P4 => 1,
+        }
+    }
+
+    /// `P1` to `P4`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Priority::P1 => "P1",
+            Priority::P2 => "P2",
+            Priority::P3 => "P3",
+            Priority::P4 => "P4",
+        }
+    }
+}
+
 pub fn priority_label(p: u8) -> &'static str {
     PRIORITY_LABELS
         .iter()

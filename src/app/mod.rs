@@ -2,20 +2,33 @@
 //! [`Effect`]s out. [`App`] owns the state and the terminal and redraws only
 //! when an event changed the screen.
 
+mod action;
+mod confirm;
 mod effect;
 mod event;
+mod failure;
 mod modal;
+mod palette;
+mod picker;
+mod release;
 mod state;
 mod sync;
 mod update;
 mod view;
 
+pub use action::{Action, Editable};
+pub use confirm::{Confirm, Confirmed};
 pub use effect::Effect;
 pub use event::Event;
-pub use modal::{InputTarget, Modal, TaskForm};
+pub use failure::{ERROR_LOG_CAP, ErrorKind, ErrorLog, Failure, LoggedFailure};
+pub use modal::{InputKind, Modal, TaskForm};
+pub use palette::Palette;
+pub use picker::{Picker, PickerKind, open_picker};
+pub use release::ReleaseState;
 pub use state::{
-    AppError, DEFAULT_IDLE_TIMEOUT_SECS, DOCK_ITEMS, DockItem, InputMode, OverviewStats, Pane,
-    ProjectEntry, ProjectNavItem, SortMode, State, TaskFilter, UserRecord, VimState,
+    AppError, DEFAULT_IDLE_TIMEOUT_SECS, DOCK_ITEMS, DockItem, InputMode, ListFilter,
+    OverviewStats, Pane, ProjectEntry, ProjectNavItem, Screen, Sort, SortMode, State, TaskFilter,
+    UserRecord, VimState,
 };
 pub use update::{Update, update};
 
@@ -36,8 +49,8 @@ impl<B: Backend> App<B> {
     /// starting size is read here.
     pub fn new(backend: B, mut state: State) -> Result<Self, B::Error> {
         let terminal = Terminal::new(backend)?;
-        if state.screen.is_none() {
-            state.screen = Some(terminal.size()?);
+        if state.viewport.is_none() {
+            state.viewport = Some(terminal.size()?);
         }
         let mut app = Self {
             state,

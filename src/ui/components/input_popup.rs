@@ -4,21 +4,21 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
-use crate::app::{InputTarget, State};
+use crate::app::{InputKind, State};
 use crate::ui::views::detail::DetailField;
 
 use super::popup::{centered_rect, render_dim_overlay};
 
-pub fn render(frame: &mut Frame, state: &State, target: InputTarget) {
+pub fn render(frame: &mut Frame, state: &State, target: InputKind) {
     let theme = state.theme();
     render_dim_overlay(frame, theme);
 
     let area = frame.area();
     let popup_area = centered_rect(50, 20, area);
 
-    let title = if target == InputTarget::Comment {
+    let title = if target == InputKind::Comment {
         " Add Comment "
-    } else if target == InputTarget::Field {
+    } else if target == InputKind::Field {
         match state.detail_field {
             DetailField::Content => " Edit Content ",
             DetailField::Priority => " Edit Priority ",
@@ -45,10 +45,9 @@ pub fn render(frame: &mut Frame, state: &State, target: InputTarget) {
     let mut lines = Vec::new();
 
     if state.input_buffer.is_empty() {
-        let placeholder = if target == InputTarget::Field && state.detail_field == DetailField::Due
-        {
+        let placeholder = if target == InputKind::Field && state.detail_field == DetailField::Due {
             "e.g. tomorrow, next monday, 2026-03-15, 28/02/2026..."
-        } else if target == InputTarget::Comment {
+        } else if target == InputKind::Comment {
             "write a comment..."
         } else {
             "type task content (p1, @label, #project, due date parsed automatically)..."

@@ -38,6 +38,9 @@ exceptions = [
     # through rustls-tls-webpki-roots; drop it when the TLS stack moves to the
     # platform verifier, as lrat uses.
     { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+    # MPL-2.0 is file-level copyleft: it covers the crate's own files, not
+    # ratatoist's. Allowed for the palette's fuzzy matcher alone.
+    { crate = "nucleo-matcher", allow = ["MPL-2.0"] },
 ]
 
 [bans]

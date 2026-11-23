@@ -72,17 +72,31 @@ pub fn handle_key(state: &mut State, key: KeyEvent) -> KeyAction {
     }
 
     match state.top_modal() {
-        Some(Modal::Help) => {
+        Some(Modal::Cheatsheet { .. }) => {
             return match key.code {
                 KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') => KeyAction::ToggleHelp,
                 _ => KeyAction::None,
             };
         }
         Some(Modal::PriorityPicker { .. }) => return handle_priority_picker(state, key),
-        Some(Modal::TaskForm(form)) if form.editing => return handle_input(state, key),
-        Some(Modal::TaskForm(_)) => return handle_form_nav(state, key),
+        Some(Modal::Form(form)) if form.editing => return handle_input(state, key),
+        Some(Modal::Form(_)) => return handle_form_nav(state, key),
         Some(Modal::Input(_)) => return handle_input(state, key),
         Some(Modal::ThemePicker { .. }) => return handle_theme_picker(state, key),
+        // Overlays the keymap engine drives; nothing opens them yet.
+        Some(
+            Modal::WhichKey { .. }
+            | Modal::Palette(_)
+            | Modal::Picker(_)
+            | Modal::Confirm(_)
+            | Modal::Messages { .. },
+        ) => {
+            if key.code == KeyCode::Esc {
+                state.modals.pop();
+                return KeyAction::Consumed;
+            }
+            return KeyAction::None;
+        }
         None => {}
     }
 
@@ -165,7 +179,7 @@ fn handle_dock_nav(state: &mut State, key: KeyEvent) -> KeyAction {
 
 fn handle_input(state: &mut State, key: KeyEvent) -> KeyAction {
     let form_field = match state.top_modal() {
-        Some(Modal::TaskForm(form)) => Some(form.active_field),
+        Some(Modal::Form(form)) => Some(form.active_field),
         _ => None,
     };
 
@@ -194,7 +208,7 @@ fn handle_form_nav(state: &mut State, key: KeyEvent) -> KeyAction {
     match key.code {
         KeyCode::Char('q') => KeyAction::CancelInput,
         KeyCode::Esc => {
-            if let Some(Modal::TaskForm(form)) = state.modals.last_mut() {
+            if let Some(Modal::Form(form)) = state.modals.last_mut() {
                 if form.active_field == 0 {
                     return KeyAction::CancelInput;
                 }

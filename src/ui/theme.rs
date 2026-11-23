@@ -38,9 +38,25 @@ pub struct Base16Scheme {
     base0f: String,
 }
 
+/// The colours of a theme: the roles every widget draws with, then the raw
+/// Base16 slots the older views still read.
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub name: String,
+    /// Painted behind everything; [`Color::Reset`] keeps the terminal's own.
+    pub background: Color,
+    /// What is active: keys the user can use now, the focused pane.
+    pub accent: Color,
+    /// Messages about something that went wrong.
+    pub error: Color,
+    /// Borders of a pane alone on screen or of a popup.
+    pub border: Color,
+    /// The focused row. Reversing keeps each cell's own contrast.
+    pub selection: Style,
+    /// The glyph and label of each priority.
+    pub priorities: PriorityColors,
+    /// A due date, by how near it is.
+    pub due: DueColors,
     pub base: Color,
     pub surface: Color,
     pub overlay: Color,
@@ -57,6 +73,26 @@ pub struct Theme {
     pub blue: Color,
     pub purple: Color,
     pub maroon: Color,
+}
+
+/// The colour of each priority, p1 the most urgent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PriorityColors {
+    pub p1: Color,
+    pub p2: Color,
+    pub p3: Color,
+    pub p4: Color,
+}
+
+/// The colour of a due date in each [`crate::ui::dates::DueBucket`] that has
+/// one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DueColors {
+    pub overdue: Color,
+    pub today: Color,
+    /// The six days after today.
+    pub this_week: Color,
+    pub later: Color,
 }
 
 /// `#rgb` or `#rrggbb`, in either case; `#rgb` doubles each digit. The `#`
@@ -96,8 +132,32 @@ impl Theme {
         let colour = |key: &str, value: &str| {
             parse_hex(value).map_err(|problem| format!("{key}: {problem}"))
         };
+        let background = colour("base00", &s.base00)?;
+        let muted = colour("base03", &s.base03)?;
+        let text = colour("base05", &s.base05)?;
+        let red = colour("base08", &s.base08)?;
+        let orange = colour("base09", &s.base09)?;
+        let cyan = colour("base0C", &s.base0c)?;
+        let blue = colour("base0D", &s.base0d)?;
         Ok(Self {
             name: s.name.clone(),
+            background,
+            accent: cyan,
+            error: red,
+            border: muted,
+            selection: Style::new().add_modifier(Modifier::REVERSED),
+            priorities: PriorityColors {
+                p1: red,
+                p2: orange,
+                p3: blue,
+                p4: muted,
+            },
+            due: DueColors {
+                overdue: red,
+                today: cyan,
+                this_week: text,
+                later: muted,
+            },
             base: colour("base00", &s.base00)?,
             surface: colour("base01", &s.base01)?,
             overlay: colour("base02", &s.base02)?,

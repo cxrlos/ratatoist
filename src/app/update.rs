@@ -4,7 +4,7 @@ use crossterm::event::KeyEvent;
 use ratatui::layout::Size;
 use tracing::info;
 
-use super::modal::{InputTarget, Modal, TaskForm};
+use super::modal::{InputKind, Modal, TaskForm};
 use super::state::{InputMode, Pane, TaskFilter, VimState};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
 use super::{Effect, Event, State};
@@ -51,7 +51,7 @@ pub fn update(state: &mut State, event: Event) -> Update {
         Event::Key(key) => on_key(state, key),
         Event::Shutdown => Update::quit(),
         Event::Resize { width, height } => {
-            state.screen = Some(Size::new(width, height));
+            state.viewport = Some(Size::new(width, height));
             state.detail_scroll = state.detail_scroll.min(state.max_detail_scroll());
             Update::redraw(effects)
         }
@@ -169,10 +169,10 @@ fn perform(state: &mut State, action: KeyAction, effects: &mut Vec<Effect>) {
             };
         }
         KeyAction::ToggleHelp => {
-            if state.top_modal() == Some(&Modal::Help) {
+            if matches!(state.top_modal(), Some(Modal::Cheatsheet { .. })) {
                 state.modals.pop();
             } else {
-                state.modals.push(Modal::Help);
+                state.modals.push(Modal::Cheatsheet { scroll: 0 });
             }
         }
         KeyAction::ToggleMode => state.toggle_input_mode(),
@@ -185,7 +185,7 @@ fn perform(state: &mut State, action: KeyAction, effects: &mut Vec<Effect>) {
             let Some(Modal::PriorityPicker { selection }) = state.modals.pop() else {
                 return;
             };
-            if let Some(Modal::TaskForm(form)) = state.modals.last_mut() {
+            if let Some(Modal::Form(form)) = state.modals.last_mut() {
                 form.priority = selection;
             } else {
                 state.apply_priority(selection, effects);
@@ -199,7 +199,7 @@ fn perform(state: &mut State, action: KeyAction, effects: &mut Vec<Effect>) {
             info!(sort = state.sort_mode.label(), "sort mode changed");
         }
         KeyAction::StartInput => state.start_input(),
-        KeyAction::StartCommentInput => state.start_input_for(InputTarget::Comment, String::new()),
+        KeyAction::StartCommentInput => state.start_input_for(InputKind::Comment, String::new()),
         KeyAction::StartFieldEdit => state.start_field_edit(),
         KeyAction::SubmitInput | KeyAction::FormEscNormal => state.submit_input(effects),
         KeyAction::SubmitForm => state.submit_task_form(effects),
@@ -374,12 +374,12 @@ impl State {
             .get(self.selected_project)
             .map(|p| p.id.clone())
             .unwrap_or_default();
-        self.modals.push(Modal::TaskForm(TaskForm::new(project_id)));
+        self.modals.push(Modal::Form(TaskForm::new(project_id)));
         self.input_buffer.clear();
         self.enter_insert();
     }
 
-    fn start_input_for(&mut self, target: InputTarget, prefill: String) {
+    fn start_input_for(&mut self, target: InputKind, prefill: String) {
         self.modals.push(Modal::Input(target));
         self.input_buffer = prefill;
         self.enter_insert();
@@ -391,8 +391,10 @@ impl State {
         if let Some(Modal::Input(target)) = self.top_modal() {
             if !content.is_empty() {
                 match target {
-                    InputTarget::Comment => self.submit_comment(content, effects),
-                    InputTarget::Field => self.submit_field_edit(content, effects),
+                    InputKind::Comment => self.submit_comment(content, effects),
+                    InputKind::Field => self.submit_field_edit(content, effects),
+                    // The direct edit keys open these; nothing does yet.
+                    InputKind::Content | InputKind::Description | InputKind::DueDate => {}
                 }
             }
             self.cancel_input();
@@ -400,7 +402,7 @@ impl State {
         }
 
         match self.modals.last_mut() {
-            Some(Modal::TaskForm(form)) if form.editing => {
+            Some(Modal::Form(form)) if form.editing => {
                 match form.active_field {
                     // Content goes verbatim; the API parses any inline
                     // natural-language dates or priorities.
@@ -417,7 +419,7 @@ impl State {
     }
 
     fn submit_task_form(&mut self, effects: &mut Vec<Effect>) {
-        let Some(Modal::TaskForm(form)) = self.modals.last().cloned() else {
+        let Some(Modal::Form(form)) = self.modals.last().cloned() else {
             return;
         };
 
@@ -531,7 +533,7 @@ impl State {
     }
 
     fn form_field_up(&mut self) {
-        if let Some(Modal::TaskForm(form)) = self.modals.last_mut()
+        if let Some(Modal::Form(form)) = self.modals.last_mut()
             && !form.editing
         {
             let count = TaskForm::field_count();
@@ -544,7 +546,7 @@ impl State {
     }
 
     fn form_field_down(&mut self) {
-        if let Some(Modal::TaskForm(form)) = self.modals.last_mut()
+        if let Some(Modal::Form(form)) = self.modals.last_mut()
             && !form.editing
         {
             form.active_field = (form.active_field + 1) % TaskForm::field_count();
@@ -553,7 +555,7 @@ impl State {
 
     fn form_edit_field(&mut self) {
         let project_ids: Vec<String> = self.projects.iter().map(|p| p.id.clone()).collect();
-        let Some(Modal::TaskForm(form)) = self.modals.last_mut() else {
+        let Some(Modal::Form(form)) = self.modals.last_mut() else {
             return;
         };
         match form.active_field {
@@ -587,7 +589,7 @@ impl State {
 
     fn cancel_input(&mut self) {
         self.modals
-            .retain(|m| !matches!(m, Modal::Input(_) | Modal::TaskForm(_)));
+            .retain(|m| !matches!(m, Modal::Input(_) | Modal::Form(_)));
         self.input_buffer.clear();
         self.leave_insert();
     }
@@ -686,7 +688,7 @@ impl State {
                 .unwrap_or_default(),
             DetailField::Description => task.description.clone(),
         };
-        self.start_input_for(InputTarget::Field, prefill);
+        self.start_input_for(InputKind::Field, prefill);
     }
 
     fn move_detail_field(&mut self, delta: i32) {
