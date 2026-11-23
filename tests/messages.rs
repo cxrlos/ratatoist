@@ -215,6 +215,32 @@ async fn the_mark_goes_when_the_task_changes_again() {
     assert!(!row_with(&app, "Renamed elsewhere").unwrap().contains('✘'));
 }
 
+#[tokio::test]
+async fn a_full_sync_keeps_the_mark_until_the_task_changes() {
+    let client = rejecting_updates();
+    let mut app = App::new(TestBackend::new(120, 36), State::new(now())).unwrap();
+    drive(&mut app, &client, [Event::Start, key('1')]).await;
+    let task = app.state().visible_tasks()[0].clone();
+    drive(&mut app, &client, [key('p'), key('1')]).await;
+
+    drive(&mut app, &client, [key('R')]).await;
+    assert!(row_with(&app, &task.content).unwrap().contains('✘'));
+
+    let mut account = demo::account(demo::NOW.date()).sync;
+    for item in account["items"].as_array_mut().unwrap() {
+        if item["id"] == serde_json::json!(task.id) {
+            item["content"] = serde_json::json!("Renamed elsewhere");
+        }
+    }
+    send(
+        &mut app,
+        [Event::Synced(Ok(Box::new(
+            serde_json::from_value(account).unwrap(),
+        )))],
+    );
+    assert!(!row_with(&app, "Renamed elsewhere").unwrap().contains('✘'));
+}
+
 #[test]
 fn an_offline_comments_fetch_logs_each_time_and_never_writes_a_notice() {
     let mut app = app();

@@ -9,7 +9,7 @@ use super::Effect;
 use super::failure::{Failure, LoadError};
 use super::state::{State, SyncHealth, UserRecord};
 use crate::todoist::ClientError;
-use crate::todoist::model::{Folder, Project};
+use crate::todoist::model::{Folder, Project, Task};
 use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
 
 /// What local state looked like before an optimistic write, so it can be
@@ -165,7 +165,9 @@ impl State {
                 self.sort_projects();
             }
             if let Some(items) = resp.items {
+                let before = std::mem::take(&mut self.tasks);
                 self.tasks = items.into_iter().filter(|t| !t.is_deleted).collect();
+                self.keep_marks_of_unchanged_tasks(&before);
             }
             if let Some(labels) = resp.labels {
                 self.labels = labels
@@ -205,7 +207,6 @@ impl State {
             if let Some(folders) = resp.folders {
                 self.folders = folders.into_iter().filter(|f| !f.is_deleted).collect();
             }
-            self.rolled_back.clear();
             if let Some(user) = resp.user {
                 self.current_user_id = Some(user.id.clone());
                 self.websocket_url = user.websocket_url;
@@ -486,6 +487,22 @@ impl State {
                 None
             }
         }
+    }
+
+    /// Drops the failed mark of every task a full sync changed or removed,
+    /// comparing each task with its copy in `before`.
+    fn keep_marks_of_unchanged_tasks(&mut self, before: &[Task]) {
+        let tasks = &self.tasks;
+        self.rolled_back.retain(|id, _| {
+            let old = before.iter().find(|t| &t.id == id);
+            let new = tasks.iter().find(|t| &t.id == id);
+            match (old, new) {
+                (Some(old), Some(new)) => {
+                    serde_json::to_value(old).ok() == serde_json::to_value(new).ok()
+                }
+                _ => false,
+            }
+        });
     }
 
     /// Recovery path for a suspected desync: abandon any in-flight optimistic
