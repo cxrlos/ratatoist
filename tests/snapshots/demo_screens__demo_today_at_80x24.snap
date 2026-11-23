@@ -21,8 +21,8 @@ expression: app.backend()
 "│                      ││ ○   Read 20 pages  reading  15min  ↻  every day      │"
 "╰──────────────────────╯│ ○ ● 🏃 Run 5 km along the river  health  outdoors  ↻ │" Hidden by multi-width symbols: [(31, " ")]
 "╭ Stats ───────────────╮│ ○   Stretch for ten minutes  health  15min  ↻  every │"
-"│ Due  ▲ 8  ◆ 11  ◇ 25 ││ ○   Water the seedlings  quick  ↻  every 2 days      │"
-"│ P    ● 5  ● 11  ● 10 ││ ▾ ● Draft the new navigation  deep-work  computer  [ │"
+"│ Due  ▲ 8  ◆ 11  ◇ 23 ││ ○   Water the seedlings  quick  ↻  every 2 days      │"
+"│ P    ● 5  ● 10  ● 10 ││ ▾ ● Draft the new navigation  deep-work  computer  [ │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────────╯"
 " NORMAL   Inbox                                                       Offline ○ "
 " j/k navigate  g/G top/bottom  l/Tab tasks  , settings  ? help  q quit          "
