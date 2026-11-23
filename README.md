@@ -106,7 +106,6 @@ To read the token from a password manager instead, pipe it in: `pass show todois
 - Dimmed background overlay on popups
 - Keybinding cheatsheet (`?`)
 - `ratatoist auth login | status | logout` for the token in the OS keyring
-- `--idle-forcer` flag for testing idle timeout (adds 5 s option)
 
 </details>
 

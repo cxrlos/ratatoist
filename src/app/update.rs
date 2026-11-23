@@ -232,17 +232,11 @@ impl State {
 
     fn cycle_idle_timeout(&mut self) {
         const OPTIONS: &[u64] = &[60, 120, 300, 600, 900, 1800];
-        const DEBUG_OPTIONS: &[u64] = &[5, 60, 120, 300, 600, 900, 1800];
-        let options = if self.idle_forcer {
-            DEBUG_OPTIONS
-        } else {
-            OPTIONS
-        };
-        let pos = options
+        let pos = OPTIONS
             .iter()
             .position(|&v| v == self.idle_timeout_secs)
             .unwrap_or(2);
-        self.idle_timeout_secs = options[(pos + 1) % options.len()];
+        self.idle_timeout_secs = OPTIONS[(pos + 1) % OPTIONS.len()];
     }
 
     fn cycle_task_filter(&mut self, effects: &mut Vec<Effect>) {

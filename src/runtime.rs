@@ -56,14 +56,14 @@ impl UiSettings {
 
 /// The first state, with "now" read from the clock and the saved settings
 /// and sync token read from the config folder.
-pub fn initial_state(config: &Config, idle_forcer: bool) -> State {
+pub fn initial_state(config: &Config) -> State {
     let dir = crate::paths::config_dir().ok();
     let ui = dir.as_deref().map(UiSettings::load).unwrap_or_default();
     let sync_token = dir
         .as_deref()
         .map(|dir| SyncState::load(dir).sync_token)
         .unwrap_or_else(|| "*".to_owned());
-    initial_state_from(config, &ui, sync_token, idle_forcer, Local::now())
+    initial_state_from(config, &ui, sync_token, Local::now())
 }
 
 /// The first state from what was read. Where `config` and `ui` both set the
@@ -72,11 +72,9 @@ pub fn initial_state_from(
     config: &Config,
     ui: &UiSettings,
     sync_token: String,
-    idle_forcer: bool,
     now: DateTime<Local>,
 ) -> State {
     let mut state = State::new(now);
-    state.idle_forcer = idle_forcer;
     state.sync_token = sync_token;
     state.themes = Theme::builtin();
     state.themes.extend(config.user_themes.iter().cloned());
@@ -302,7 +300,7 @@ mod tests {
     }
 
     fn start(config: &Config, ui: &UiSettings) -> State {
-        initial_state_from(config, ui, "*".to_owned(), false, now())
+        initial_state_from(config, ui, "*".to_owned(), now())
     }
 
     #[test]
@@ -325,7 +323,6 @@ mod tests {
             &Config::default(),
             &ui("Dracula", 120),
             "saved-token".to_owned(),
-            false,
             now(),
         );
 

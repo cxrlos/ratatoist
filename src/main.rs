@@ -25,18 +25,18 @@ async fn main() -> Result<()> {
     let _log_guard = logging::init(&paths::state_dir()?)?;
 
     if cli.demo {
-        run_app(FakeClient::new(), &config, cli.idle_forcer).await
+        run_app(FakeClient::new(), &config).await
     } else {
         let resolved = auth::resolve()?;
         let client = HttpClient::new(&resolved.token)?;
-        run_app(client, &config, cli.idle_forcer).await
+        run_app(client, &config).await
     }
 }
 
-async fn run_app<C: TodoistClient>(client: C, config: &Config, idle_forcer: bool) -> Result<()> {
+async fn run_app<C: TodoistClient>(client: C, config: &Config) -> Result<()> {
     let shutdown = terminal::shutdown_signal()?;
     let _guard = terminal::Guard::enter()?;
-    let state = runtime::initial_state(config, idle_forcer);
+    let state = runtime::initial_state(config);
     let mut app = App::new(CrosstermBackend::new(io::stdout()), state)?;
     runtime::run(&mut app, &client, EventStream::new(), shutdown).await
 }

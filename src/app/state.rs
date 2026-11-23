@@ -17,8 +17,6 @@ pub struct State {
     /// Set by the runtime from the clock; fixed in tests.
     pub today: NaiveDate,
     pub now: DateTime<Local>,
-    /// Offers a five-second idle timeout in Settings, for testing idle syncs.
-    pub idle_forcer: bool,
 
     /// True until the first sync answers; the splash shows meanwhile.
     pub loading: bool,
@@ -77,7 +75,6 @@ impl State {
         Self {
             today: now.date_naive(),
             now,
-            idle_forcer: false,
             loading: true,
             projects: Vec::new(),
             workspaces: Vec::new(),

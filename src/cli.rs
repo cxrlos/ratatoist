@@ -11,9 +11,6 @@ pub struct Cli {
     /// Open a fictional Todoist account: no token, keyring or network.
     #[arg(long)]
     pub demo: bool,
-    /// Treat the session as idle from the start (for testing idle syncs).
-    #[arg(long, hide = true)]
-    pub idle_forcer: bool,
     #[command(subcommand)]
     pub command: Option<Command>,
 }
