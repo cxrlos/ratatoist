@@ -903,14 +903,20 @@ fn notes(at: &Dates) -> Vec<Value> {
 
 fn completed(at: &Dates) -> Vec<Value> {
     let done = |id: &str, project_id: &str, section_id: Option<&str>, content: &str, ago: i64| {
+        let completed_at = at.timestamp(-ago, "19:00");
+        let mut item = task(at, id, project_id, content).0;
+        item["section_id"] = json!(section_id);
+        item["checked"] = json!(true);
+        item["completed_at"] = json!(completed_at);
         json!({
             "task_id": id,
             "content": content,
-            "completed_at": at.timestamp(-ago, "19:00"),
+            "completed_at": completed_at,
             "project_id": project_id,
             "section_id": section_id,
             "note_count": 0,
             "user_id": USER,
+            "item_object": item,
         })
     };
     vec![

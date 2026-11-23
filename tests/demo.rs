@@ -7,9 +7,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatoist::app::{App, Effect, Event, State};
 use ratatoist::todoist::demo::{self, DemoClient};
 use ratatoist::todoist::model::{CompletedTasksResponse, Task};
-use ratatoist::todoist::sync::{SyncRequest, SyncResponse};
+use ratatoist::todoist::sync::{SyncCommand, SyncRequest, SyncResponse};
 use ratatoist::todoist::{CompletedQuery, TodoistClient};
 use ratatui::backend::TestBackend;
+use serde_json::json;
 
 fn today() -> NaiveDate {
     demo::NOW.date()
@@ -490,4 +491,67 @@ async fn completed_tasks_are_served_per_project() {
 
     assert!(!served.is_empty());
     assert!(served.iter().all(|t| t.project_id == project_id));
+}
+
+// Writes against the demo client, checked through the next full sync.
+
+async fn send(client: &DemoClient, kind: &str, args: serde_json::Value) {
+    let request = SyncRequest {
+        sync_token: "demo".to_owned(),
+        resource_types: vec![],
+        commands: vec![SyncCommand {
+            r#type: kind.to_owned(),
+            temp_id: Some(format!("tmp-{kind}")),
+            uuid: format!("uuid-{kind}"),
+            args,
+        }],
+    };
+    let response = client.sync(request).await.unwrap();
+    assert!(response.sync_status.values().all(|s| !s.is_err()));
+}
+
+async fn full_sync(client: &DemoClient) -> Vec<Task> {
+    let request = SyncRequest {
+        sync_token: "*".to_owned(),
+        resource_types: vec![],
+        commands: vec![],
+    };
+    client.sync(request).await.unwrap().items.unwrap()
+}
+
+async fn done(client: &DemoClient) -> Vec<Task> {
+    let query = CompletedQuery {
+        project_id: None,
+        since: None,
+    };
+    client.completed_tasks(query).await.unwrap()
+}
+
+#[tokio::test]
+async fn reopening_a_seeded_completed_task_brings_it_back_whole() {
+    let client = demo::client(today());
+
+    send(&client, "item_reopen", json!({ "id": "t-dentist" })).await;
+
+    let items = full_sync(&client).await;
+    let reopened = items.iter().find(|t| t.id == "t-dentist").unwrap();
+    assert_eq!(reopened.content, "Book the dentist check-up");
+    assert_eq!(reopened.project_id, "p-inbox");
+    assert!(!reopened.checked);
+    assert!(reopened.completed_at.is_none());
+    assert!(!done(&client).await.iter().any(|t| t.id == "t-dentist"));
+}
+
+#[tokio::test]
+async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
+    let client = demo::client(today());
+    let (mut app, _) = started(&client).await;
+    drive(&mut app, &client, [key('l'), key('f')]).await;
+    assert!(shows(&app, "Book the dentist check-up"));
+
+    drive(&mut app, &client, [key('x'), key('R')]).await;
+
+    assert!(app.state().error.is_none());
+    let reopened = app.state().tasks.iter().find(|t| t.id == "t-dentist");
+    assert!(reopened.is_some_and(|t| !t.checked), "{reopened:?}");
 }
