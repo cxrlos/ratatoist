@@ -100,11 +100,7 @@ fn weekday_recurrences_name_the_day_they_are_due_on_any_day() {
             }
             let date = NaiveDate::parse_from_str(&due.date[..10], "%Y-%m-%d").unwrap();
             let weekday = date.format("%a").to_string().to_lowercase();
-            assert!(
-                named.contains(&weekday.as_str()),
-                "{built} {}: {rule}",
-                task.id
-            );
+            assert!(named.contains(&weekday.as_str()));
         }
     }
 }
@@ -126,7 +122,7 @@ fn has_four_or_five_personal_projects_besides_the_inbox() {
         .iter()
         .filter(|p| !p.is_inbox() && p.workspace_id.is_none())
         .count();
-    assert!((4..=5).contains(&personal), "{personal}");
+    assert!((4..=5).contains(&personal));
 }
 
 #[test]
@@ -186,7 +182,7 @@ fn has_sections_holding_tasks() {
 fn has_about_a_dozen_labels_all_in_use() {
     let account = sync();
     let labels = account.labels.unwrap();
-    assert!((10..=14).contains(&labels.len()), "{}", labels.len());
+    assert!((10..=14).contains(&labels.len()));
     let items = account.items.unwrap();
     assert!(
         labels
@@ -198,7 +194,7 @@ fn has_about_a_dozen_labels_all_in_use() {
 #[test]
 fn has_about_sixty_tasks() {
     let count = tasks().len() + completed().len();
-    assert!((55..=70).contains(&count), "{count}");
+    assert!((55..=70).contains(&count));
 }
 
 #[test]
@@ -285,14 +281,14 @@ fn has_comments_from_two_or_three_authors() {
         .iter()
         .filter_map(|n| n.posted_by_uid.as_deref())
         .collect();
-    assert!((2..=3).contains(&authors.len()), "{authors:?}");
+    assert!((2..=3).contains(&authors.len()));
     let items = account.items.unwrap();
     for task in items.iter().filter(|t| t.note_count.unwrap_or(0) > 0) {
         let on_task = notes
             .iter()
             .filter(|n| n.item_id.as_deref() == Some(&task.id))
             .count();
-        assert_eq!(Some(on_task as i32), task.note_count, "{}", task.id);
+        assert_eq!(Some(on_task as i32), task.note_count);
     }
 }
 
@@ -468,7 +464,7 @@ async fn an_added_task_stays_under_its_new_id_and_survives_a_full_sync() {
         .iter()
         .find(|t| t.content == "Feed the parrot")
         .unwrap();
-    assert!(!added.id.starts_with("tmp_"), "{}", added.id);
+    assert!(!added.id.starts_with("tmp_"));
     assert!(shows(&app, "Feed the parrot"));
     drive(&mut app, &client, [key('R')]).await;
     assert!(shows(&app, "Feed the parrot"));
@@ -592,7 +588,7 @@ async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
 
     assert!(app.state().failures.is_empty());
     let reopened = app.state().tasks.iter().find(|t| t.id == "t-dentist");
-    assert!(reopened.is_some_and(|t| !t.checked), "{reopened:?}");
+    assert!(reopened.is_some_and(|t| !t.checked));
 }
 
 #[tokio::test]
@@ -606,7 +602,7 @@ async fn completing_a_parent_completes_its_subtasks() {
     assert!(!items.iter().any(|t| family.contains(&t.id.as_str())));
     let done = done(&client).await;
     for id in family {
-        assert!(done.iter().any(|t| t.id == id && t.checked), "{id}");
+        assert!(done.iter().any(|t| t.id == id && t.checked));
     }
 }
 
@@ -620,7 +616,7 @@ async fn reopening_a_subtask_reopens_its_completed_parents() {
     let items = full_sync(&client).await;
     let open: Vec<&str> = items.iter().map(|t| t.id.as_str()).collect();
     for id in ["t-tiles", "t-samples", "t-grout"] {
-        assert!(open.contains(&id), "{id}");
+        assert!(open.contains(&id));
     }
     assert!(!open.contains(&"t-worktop"));
     assert!(done(&client).await.iter().any(|t| t.id == "t-worktop"));
@@ -645,9 +641,9 @@ async fn completing_a_recurring_task_moves_it_to_its_next_date() {
         let items = full_sync(&client).await;
         let task = items.iter().find(|t| t.id == id).unwrap();
         let due = task.due.as_ref().unwrap();
-        assert_eq!(due.date, next, "{id}");
-        assert!(due.is_recurring && !task.checked, "{id}");
-        assert!(!done(&client).await.iter().any(|t| t.id == id), "{id}");
+        assert_eq!(due.date, next);
+        assert!(due.is_recurring && !task.checked);
+        assert!(!done(&client).await.iter().any(|t| t.id == id));
     }
 }
 
@@ -685,7 +681,7 @@ async fn a_due_edit_changes_the_due_date() {
         let items = full_sync(&client).await;
         let task = items.iter().find(|t| t.id == "t-insurance").unwrap();
         let due = task.due.as_ref().map(|d| (d.date.clone(), d.is_recurring));
-        assert_eq!(due, expected.map(|d| (d, false)), "{due_string:?}");
+        assert_eq!(due, expected.map(|d| (d, false)));
     }
 }
 
@@ -746,5 +742,5 @@ async fn an_added_task_goes_after_the_tasks_already_in_its_project() {
         .map(|t| t.child_order)
         .max()
         .unwrap();
-    assert!(added.child_order > last, "{} <= {last}", added.child_order);
+    assert!(added.child_order > last);
 }
