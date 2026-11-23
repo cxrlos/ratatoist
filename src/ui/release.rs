@@ -4,25 +4,21 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Span;
 
-use super::{style, text};
-use crate::app::State;
+use super::{style, tab_title, text, titles_width};
+use crate::app::{Screen, State};
 
 /// The release notice, muted, between the tabs and the sync indicator,
-/// `tabs_width` and `indicator_width` wide. The first thing left out when
-/// the row is too narrow.
-pub fn render_release_notice(
-    state: &State,
-    frame: &mut Frame,
-    area: Rect,
-    tabs_width: u16,
-    indicator_width: u16,
-) {
+/// `indicator_width` wide. The first thing left out when the row is too
+/// narrow: it shows only beside every tab's full title, so the titles never
+/// shrink to their keys to make room for it.
+pub fn render_release_notice(state: &State, frame: &mut Frame, area: Rect, indicator_width: u16) {
     let Some(version) = state.release.notice() else {
         return;
     };
     let text = format!("v{version} available  ");
     let width = u16::try_from(text::width(&text)).unwrap_or(u16::MAX);
-    let taken = tabs_width.saturating_add(indicator_width);
+    let full_tabs = titles_width(&Screen::ALL.map(|screen| tab_title(state, screen, false)));
+    let taken = full_tabs.saturating_add(indicator_width);
     if taken.saturating_add(width).saturating_add(1) > area.width {
         return;
     }

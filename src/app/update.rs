@@ -10,6 +10,7 @@ use super::modal::Modal;
 use super::palette::{self, Palette};
 use super::picker::{self, Choice, PickerKind, open_picker};
 use super::prompt::{PromptField, open_prompt};
+use super::release;
 use super::state::{ListFilter, Pane, Screen};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
 use super::task_form::{FormField, TODAY, TaskForm};
@@ -60,12 +61,17 @@ pub fn update(state: &mut State, event: Event) -> Update {
         Event::Key(key) => on_key(state, key),
         Event::Paste(text) => paste(state, &text),
         Event::Shutdown => Update::quit(),
+        Event::ReleaseChecked(latest) => {
+            let redraw = release::checked(state, latest, &mut effects);
+            Update { redraw, effects }
+        }
         Event::Resize { width, height } => {
             state.viewport = Some(Size::new(width, height));
             state.detail_scroll = state.detail_scroll.min(state.max_detail_scroll());
             Update::redraw(effects)
         }
         Event::Tick { now } => {
+            effects.extend(release::tick(state, now.with_timezone(&chrono::Utc)));
             let before = (state.today, state.indicator());
             state.now = now;
             state.today = now.date_naive();
@@ -408,7 +414,8 @@ impl State {
                 self.modals.push(Modal::Palette(Palette::default()));
                 true
             }
-            Action::SkipRelease | Action::ShowReleaseNotes => false,
+            Action::SkipRelease => release::skip(self, effects),
+            Action::ShowReleaseNotes => release::show_notes(self, effects),
             Action::Confirm => confirm::confirm(self, effects),
             Action::Decline => confirm::decline(self),
             Action::Close => self.close(),

@@ -18,6 +18,9 @@ name = "nord"
 
 [sync]
 idle-timeout = 300
+
+[updates]
+check = true
 ```
 
 ## `[ui]`
@@ -60,6 +63,16 @@ When the `NO_COLOR` environment variable is set to anything but an empty string,
 | Key | Values | Default | Effect |
 | --- | --- | --- | --- |
 | `idle-timeout` | Whole seconds, 0 to 86400. 0 turns idle detection off. | 300 | How long without a key press before the session counts as idle. |
+
+## `[updates]`
+
+| Key | Values | Default | Effect |
+| --- | --- | --- | --- |
+| `check` | `true` or `false` | `true` | Whether ratatoist asks GitHub once a day for a newer release. |
+
+With the check on, ratatoist asks GitHub's latest release of `cxrlos/ratatoist` in the background after the first frame, at most once a day, and keeps the answer in `release.json` in `$XDG_CACHE_HOME/ratatoist/` (`~/.cache/ratatoist/` by default). The request carries no token and no account data, only `ratatoist/VERSION` as its User-Agent, and it is the only request ratatoist makes to anything other than Todoist. When a newer stable release is out, the tab row shows a muted `vX.Y.Z available` left of the sync state, and the cheatsheet says how to upgrade: `brew upgrade ratatoist` for Homebrew, the README's install section for `cargo install`, `cargo binstall` and the shell installer. AUR and Nix installs show no notice, since their package manager owns updates. The palette's "What's new" opens the release page in my browser, and "Skip this release" hides the notice until a newer version is out. A failed check (offline, rate limited, a bad answer) only goes to the log.
+
+Setting `RATATOIST_NO_UPDATE_CHECK` to anything but an empty string turns the check off too, whatever `check` says. `ratatoist --demo` and the `auth` commands never check.
 
 ## `ui_settings.json`
 

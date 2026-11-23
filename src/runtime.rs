@@ -15,11 +15,13 @@ use ratatui::backend::Backend;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::app::{App, DEFAULT_IDLE_TIMEOUT_SECS, Effect, Event, State};
+use crate::browser;
 use crate::config::Config;
 use crate::keys::Keymap;
+use crate::release::ReleaseCheck;
 use crate::sync_state::SyncState;
 use crate::todoist::sync::SyncRequest;
 use crate::todoist::{CompletedQuery, TodoistClient};
@@ -127,13 +129,33 @@ pub fn initial_state_from(
 
 /// Runs until the app asks to quit, `shutdown` resolves or terminal input
 /// ends, saving the sync token and settings in `files`, or nowhere when it
-/// is `None`.
+/// is `None`. It never asks for a newer release.
 pub async fn run<B, C, I, S>(
+    app: &mut App<B>,
+    client: &C,
+    input: I,
+    shutdown: S,
+    files: Option<&Path>,
+) -> anyhow::Result<()>
+where
+    B: Backend,
+    B::Error: Send + Sync + 'static,
+    C: TodoistClient,
+    I: Stream<Item = io::Result<TerminalEvent>> + Unpin,
+    S: Future<Output = ()>,
+{
+    run_checking(app, client, input, shutdown, files, None).await
+}
+
+/// [`run`], asking `releases` for a newer release when the app's release
+/// state says a check is due.
+pub async fn run_checking<B, C, I, S>(
     app: &mut App<B>,
     client: &C,
     mut input: I,
     shutdown: S,
     files: Option<&Path>,
+    releases: Option<&ReleaseCheck>,
 ) -> anyhow::Result<()>
 where
     B: Backend,
@@ -148,6 +170,7 @@ where
         client,
         answers: tx,
         files: files.map(Path::to_path_buf),
+        releases,
     };
     let mut ticks = tokio::time::interval(TICK);
     ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -202,12 +225,13 @@ fn from_terminal(event: TerminalEvent) -> Option<Event> {
     }
 }
 
-/// What effects reach: the client, the way back for answers, and the folder
-/// files are saved in.
+/// What effects reach: the client, the way back for answers, the folder
+/// files are saved in, and GitHub's releases with their cache.
 struct Outside<'a, C> {
     client: &'a C,
     answers: mpsc::UnboundedSender<Event>,
     files: Option<PathBuf>,
+    releases: Option<&'a ReleaseCheck>,
 }
 
 impl<C: TodoistClient> Outside<'_, C> {
@@ -269,6 +293,25 @@ impl<C: TodoistClient> Outside<'_, C> {
                     warn!(error = %error, "failed to persist sync token");
                 }
             }
+            Effect::CheckRelease => {
+                let releases = self.releases.cloned();
+                let answers = self.answers.clone();
+                tokio::spawn(async move {
+                    let _ = answers.send(check_release(releases.as_ref()).await);
+                });
+            }
+            Effect::SaveRelease(record) => {
+                if let Some(releases) = self.releases
+                    && let Err(error) = releases.cache.save(&record)
+                {
+                    warn!("could not save the release cache: {error:#}");
+                }
+            }
+            Effect::OpenUrl(url) => {
+                if let Err(error) = browser::open(&url) {
+                    warn!("{error:#}");
+                }
+            }
         }
         ControlFlow::Continue(())
     }
@@ -286,6 +329,24 @@ impl<C: TodoistClient> Outside<'_, C> {
             // The loop has stopped if this fails; nothing is waiting.
             let _ = answers.send(answer.await);
         });
+    }
+}
+
+/// The latest release, or `None`, logged, when it could not be read. A
+/// failed check is quiet: no notice and no entry in the messages log.
+async fn check_release(releases: Option<&ReleaseCheck>) -> Event {
+    let Some(releases) = releases else {
+        return Event::ReleaseChecked(None);
+    };
+    match releases.source.latest().await {
+        Ok(latest) => {
+            info!(%latest, "checked for a newer release");
+            Event::ReleaseChecked(Some(latest))
+        }
+        Err(error) => {
+            warn!("could not check for a newer release: {error:#}");
+            Event::ReleaseChecked(None)
+        }
     }
 }
 

@@ -46,7 +46,7 @@ pub fn draw(frame: &mut Frame, state: &State) {
     let tabs = text::fit_line(tab_line(state, titles), usize::from(tabs_area.width));
     frame.render_widget(Paragraph::new(tabs).style(style::muted(theme)), tabs_area);
     let indicator_width = render_sync_indicator(state, frame, tabs_area, tabs_width);
-    release::render_release_notice(state, frame, tabs_area, tabs_width, indicator_width);
+    release::render_release_notice(state, frame, tabs_area, indicator_width);
     render_body(state, frame, body_area);
     frame.render_widget(Paragraph::new(notice), notice_area);
 

@@ -22,6 +22,9 @@
 //!
 //! [sync]
 //! idle-timeout = 300         # seconds without a key press before the session is idle
+//!
+//! [updates]
+//! check = true               # ask GitHub once a day for a newer release
 //! ```
 //!
 //! A problem is reported as `config.toml:LINE:COL: problem`, and only the
@@ -62,10 +65,26 @@ pub struct Config {
     pub idle_timeout: Option<Duration>,
     /// `[keys]`: the preset and the changes to its keys.
     pub keys: Keys,
+    /// `[updates]`.
+    pub updates: UpdateSettings,
     /// Theme files loaded from `themes/` in the config folder.
     pub user_themes: Vec<Theme>,
     /// One line per problem found while loading, for the user to read.
     pub warnings: Vec<String>,
+}
+
+/// `[updates]`: whether ratatoist asks GitHub once a day for a newer
+/// release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UpdateSettings {
+    /// `check`: true by default.
+    pub check: bool,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self { check: true }
+    }
 }
 
 /// `[keys]`: which preset the keys start from, and the changes to them in
@@ -228,6 +247,7 @@ pub fn parse(text: &str, user_themes: &[Theme]) -> Config {
                 "sync" => {
                     config.idle_timeout = reader.section("sync", value, read_sync).idle_timeout;
                 }
+                "updates" => config.updates = reader.section("updates", value, read_updates),
                 // Read only by the one-time move into the keyring (see `auth`).
                 "api_token" => {}
                 _ => {
@@ -238,7 +258,7 @@ pub fn parse(text: &str, user_themes: &[Theme]) -> Config {
                     reader.warn_at(
                         name,
                         format!(
-                            "unknown {what} is ignored; ratatoist reads [ui], [keys], [theme] and [sync]"
+                            "unknown {what} is ignored; ratatoist reads [ui], [keys], [theme], [sync] and [updates]"
                         ),
                     );
                 }
@@ -253,7 +273,7 @@ pub fn parse(text: &str, user_themes: &[Theme]) -> Config {
 }
 
 /// The top-level tables ratatoist reads.
-const SECTIONS: [&str; 4] = ["ui", "keys", "theme", "sync"];
+const SECTIONS: [&str; 5] = ["ui", "keys", "theme", "sync", "updates"];
 
 /// Where each table header starts and the top-level table it opens, in
 /// file order. TOML's own parser finds them, so a header-like line inside a
@@ -357,6 +377,19 @@ fn read_sync(sync: &mut SyncSection, key: &str, value: &Spanned<DeValue>) -> Set
         "idle-timeout" => integer(value, "sync.idle-timeout", "seconds", SECONDS)
             .map(|seconds| sync.idle_timeout = Some(Duration::from_secs(seconds))),
         _ => return None,
+    })
+}
+
+fn read_updates(updates: &mut UpdateSettings, key: &str, value: &Spanned<DeValue>) -> Setting {
+    if key != "check" {
+        return None;
+    }
+    Some(match value.get_ref().as_bool() {
+        Some(check) => {
+            updates.check = check;
+            Ok(())
+        }
+        None => Err("`updates.check` must be true or false".to_owned()),
     })
 }
 

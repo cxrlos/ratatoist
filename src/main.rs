@@ -7,9 +7,10 @@ use clap::Parser;
 use crossterm::event::EventStream;
 use ratatui::backend::CrosstermBackend;
 
-use ratatoist::app::{App, LoadError, State};
+use ratatoist::app::{App, LoadError, ReleaseState, State};
 use ratatoist::cli::{Cli, Command};
 use ratatoist::config::{self, Config};
+use ratatoist::release::{self, Channel, ReleaseCheck};
 use ratatoist::todoist::{FakeClient, HttpClient, TodoistClient, demo};
 use ratatoist::{auth, logging, paths, runtime, terminal};
 
@@ -29,8 +30,8 @@ async fn main() -> ExitCode {
 }
 
 async fn start(cli: Cli) -> Result<()> {
-    if let Some(Command::Auth(command)) = cli.command {
-        return auth::run(command).await;
+    if let Some(Command::Auth(command)) = &cli.command {
+        return auth::run(command.clone()).await;
     }
 
     if cli.demo {
@@ -39,7 +40,7 @@ async fn start(cli: Cli) -> Result<()> {
         // nothing there, so it always starts from defaults.
         let _log_guard = logging::init(&paths::state_dir()?)?;
         let state = runtime::initial_state(&Config::default(), None);
-        return run_app(demo::client(runtime::today()), state, None).await;
+        return run_app(demo::client(runtime::today()), state, None, None).await;
     }
 
     let config_dir = paths::config_dir()?;
@@ -49,6 +50,10 @@ async fn start(cli: Cli) -> Result<()> {
     }
     let _log_guard = logging::init(&paths::state_dir()?)?;
     let mut state = runtime::initial_state(&config, Some(&config_dir));
+    let releases = release_check(&cli, &config);
+    if let Some(releases) = &releases {
+        state.release = ReleaseState::new(true, Channel::of_running(), releases.cache.load());
+    }
     let resolved = match auth::resolve() {
         Ok(resolved) => resolved,
         Err(error) if runtime::is_missing_token(&error) => {
@@ -56,20 +61,49 @@ async fn start(cli: Cli) -> Result<()> {
             // With no token there is nothing to ask Todoist, and no sync
             // starts, so the client is never called and no sync token is
             // saved.
-            return run_app(FakeClient::new(), state, None).await;
+            return run_app(FakeClient::new(), state, None, releases.as_ref()).await;
         }
         Err(error) => return Err(error),
     };
     state.token_source = Some(resolved.source);
     let client = HttpClient::new(&resolved.token)?;
-    run_app(client, state, Some(&config_dir)).await
+    run_app(client, state, Some(&config_dir), releases.as_ref()).await
+}
+
+/// GitHub's releases and their cache, when this run checks for a newer
+/// release; `None`, logged, when there is no cache dir or HTTP client.
+fn release_check(cli: &Cli, config: &Config) -> Option<ReleaseCheck> {
+    let off = release::off_switch(
+        &config.updates,
+        std::env::var_os(release::OFF_VAR).as_deref(),
+    );
+    if !release::checks_in_background(cli, off) {
+        tracing::info!(?off, "not checking for a newer release");
+        return None;
+    }
+    ReleaseCheck::github()
+        .inspect_err(|error| tracing::warn!("no release check: {error:#}"))
+        .ok()
 }
 
 /// Runs the TUI from `state` against `client`, saving the sync token in
-/// `files`.
-async fn run_app<C: TodoistClient>(client: C, state: State, files: Option<&Path>) -> Result<()> {
+/// `files` and asking `releases` for a newer release.
+async fn run_app<C: TodoistClient>(
+    client: C,
+    state: State,
+    files: Option<&Path>,
+    releases: Option<&ReleaseCheck>,
+) -> Result<()> {
     let shutdown = terminal::shutdown_signal()?;
     let _guard = terminal::Guard::enter()?;
     let mut app = App::new(CrosstermBackend::new(io::stdout()), state)?;
-    runtime::run(&mut app, &client, EventStream::new(), shutdown, files).await
+    runtime::run_checking(
+        &mut app,
+        &client,
+        EventStream::new(),
+        shutdown,
+        files,
+        releases,
+    )
+    .await
 }

@@ -209,10 +209,11 @@ fn lines(state: &State, area: Rect, available: impl Fn(&ActionSpec) -> bool) -> 
         .collect();
     if let Some(version) = state.release.notice() {
         lines.push(Line::default());
-        lines.push(Line::styled(
-            format!(" {INDENT}ratatoist v{version} is available "),
-            style::muted(theme),
-        ));
+        let line = match state.release.upgrade() {
+            Some(how) => format!(" {INDENT}ratatoist v{version} is available: {how} "),
+            None => format!(" {INDENT}ratatoist v{version} is available "),
+        };
+        lines.push(Line::styled(line, style::muted(theme)));
     }
     lines
 }
