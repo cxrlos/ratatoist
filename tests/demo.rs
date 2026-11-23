@@ -726,3 +726,28 @@ async fn an_added_task_keeps_its_due_date() {
         .unwrap();
     assert_eq!(due_date(added), Some(day(1).as_str()));
 }
+
+#[tokio::test]
+async fn an_added_task_goes_after_the_tasks_already_in_its_project() {
+    let client = demo::client(today());
+
+    send(
+        &client,
+        "item_add",
+        json!({ "content": "Feed the parrot", "project_id": "p-inbox" }),
+    )
+    .await;
+
+    let items = full_sync(&client).await;
+    let added = items
+        .iter()
+        .find(|t| t.content == "Feed the parrot")
+        .unwrap();
+    let last = items
+        .iter()
+        .filter(|t| t.project_id == "p-inbox" && t.id != added.id)
+        .map(|t| t.child_order)
+        .max()
+        .unwrap();
+    assert!(added.child_order > last, "{} <= {last}", added.child_order);
+}

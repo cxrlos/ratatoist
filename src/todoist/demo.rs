@@ -213,7 +213,12 @@ impl Store {
                 if let Some(due) = args["due_string"].as_str().and_then(|s| due(s, self.today)) {
                     item["due"] = due;
                 }
-                self.list("items").push(item);
+                let items = self.list("items");
+                // Seeded orders are unique across the account, so one past
+                // the highest puts the new task last wherever it lands.
+                let last = items.iter().filter_map(|i| i["child_order"].as_i64()).max();
+                item["child_order"] = json!(last.map_or(0, |order| order + 1));
+                items.push(item);
                 command.temp_id.clone().map(|temp| (temp, real_id))
             }
             "item_complete" => {
