@@ -2,10 +2,26 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding};
 
 use crate::app::{ProjectEntry, State};
 use crate::ui::text;
+
+/// The Projects tree in its bordered block, filling `area`.
+pub fn render_block(frame: &mut Frame, state: &State, area: Rect) {
+    let theme = state.theme();
+    let block = Block::default()
+        .title(" Projects ")
+        .title_style(theme.active_title())
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(theme.active_border())
+        .padding(Padding::horizontal(1))
+        .style(theme.base_bg());
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    render(frame, state, inner, true);
+}
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let theme = state.theme();

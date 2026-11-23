@@ -3,13 +3,32 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding};
 
 use crate::app::{ListFilter, Screen, State};
 use crate::ui::dates::{self, DueBucket};
 use crate::ui::icons::Icons;
 use crate::ui::text;
 use crate::ui::theme::Theme;
+
+/// The task list in its bordered block titled `title`, filling `area`.
+pub fn render_block(frame: &mut Frame, state: &State, area: Rect, title: &str) {
+    let theme = state.theme();
+    let block = Block::default()
+        .title(format!(
+            " {} ",
+            text::fit(title, usize::from(area.width.saturating_sub(4)))
+        ))
+        .title_style(theme.active_title())
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(theme.active_border())
+        .padding(Padding::horizontal(1))
+        .style(theme.base_bg());
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    render(frame, state, inner, true);
+}
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     render_with_icons(frame, state, area, is_active, state.icons());

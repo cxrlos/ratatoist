@@ -7,7 +7,6 @@ pub mod dates;
 mod error;
 pub mod hints;
 pub mod icons;
-pub mod layout;
 mod messages;
 pub mod palette;
 pub mod picker;
@@ -99,13 +98,13 @@ fn render_body(state: &State, frame: &mut Frame, area: Rect) {
     }
     match state.screen {
         Screen::Inbox | Screen::Today => {
-            layout::render_tasks_block(frame, state, area, state.list_title());
+            views::tasks::render_block(frame, state, area, state.list_title());
         }
         Screen::Upcoming => upcoming::render(state, frame, area),
         Screen::Projects if state.active_pane == Pane::Projects => {
-            layout::render_projects_block(frame, state, area);
+            views::projects::render_block(frame, state, area);
         }
-        Screen::Projects => layout::render_tasks_block(frame, state, area, state.list_title()),
+        Screen::Projects => views::tasks::render_block(frame, state, area, state.list_title()),
         Screen::Labels => error::render_not_built(state.theme(), title, frame, area),
     }
 }
