@@ -4,7 +4,7 @@ ratatoist reads `config.toml` from `$XDG_CONFIG_HOME/ratatoist/`, which is `~/.c
 
 ```toml
 [ui]
-# no settings yet
+icons = "unicode"
 
 [keys]
 preset = "vim"
@@ -18,6 +18,28 @@ name = "nord"
 [sync]
 idle-timeout = 300
 ```
+
+## `[ui]`
+
+| Key | Values | Default | Effect |
+| --- | --- | --- | --- |
+| `icons` | `"unicode"` or `"nerd"` | `"unicode"` | The glyphs for task state, priority, recurring, comments, folds, project kinds, the focused row, failed writes and the Overdue and Today markers. `"nerd"` needs a patched Nerd Font. |
+
+The Unicode set, which any terminal font has:
+
+| Meaning | Glyph |
+| --- | --- |
+| Open, completed task | `○` `●` |
+| Priority p1 to p4 | `▮▮▮` `▮▮▯` `▮▯▯` `···` |
+| Recurring | `↻` |
+| Inbox, project, favourite | `▣` `#` `★` |
+| Folder open, closed | `▾` `▸` |
+| Subtasks shown, folded | `▿` `▹` |
+| Comment count | `✉` |
+| Focused row, failed write | `▸` `✘` |
+| Overdue, today | `▲` `◆` |
+
+The Nerd set uses the Font Awesome glyphs of the same meaning, one cell each. Within a set every priority and every task state has its own shape, so none of them relies on colour.
 
 ## `[theme]`
 
@@ -68,10 +90,6 @@ noop = ["gg", "<C-d>"]                  # these keys do nothing, and leave every
 If I name an unknown action, an action that does not apply in that context, or a key that is not valid notation, ratatoist reports it and only that context's table falls back to the preset's keys. An unknown context is reported and ignored. A `preset` that is neither `vim` nor `standard` resets the whole `[keys]` table.
 
 Some actions have no default key and wait for the palette. `choose-theme` is one: to pick a theme from the keyboard I bind it, as in the example above. The idle timeout has no key at all; I set it with `[sync] idle-timeout`.
-
-## `[ui]`
-
-The table is accepted and takes no settings yet. A key inside it is reported as unknown.
 
 ## Theme files
 

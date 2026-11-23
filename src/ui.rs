@@ -42,7 +42,7 @@ pub fn draw(frame: &mut Frame, state: &State) {
             components::theme_picker::render(frame, state, *selection);
         }
         Some(Modal::PriorityPicker { selection }) => {
-            components::priority_picker::render(frame, *selection, state.theme());
+            components::priority_picker::render(frame, *selection, state.theme(), state.icons());
         }
         Some(Modal::Form(form)) => components::task_form::render(frame, state, form),
         Some(Modal::Input(target)) => components::input_popup::render(frame, state, *target),

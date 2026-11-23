@@ -1,4 +1,4 @@
-use crate::todoist::model::Task;
+use crate::todoist::model::{Priority, Task};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Modifier;
@@ -78,13 +78,10 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
             && state.due_bucket(task) == DueBucket::Overdue
         {
             let overdue_count = stats.as_ref().map(|s| s.overdue).unwrap_or(0);
-            let arrow = if state.overdue_section_collapsed {
-                "▶"
-            } else {
-                "▼"
-            };
+            let icons = state.icons();
+            let fold = icons.fold(!state.overdue_section_collapsed);
             items.push(row(Line::from(vec![Span::styled(
-                format!(" {arrow} Overdue  ({overdue_count})"),
+                format!(" {fold} {} Overdue  ({overdue_count})", icons.overdue),
                 theme.due_overdue().add_modifier(Modifier::BOLD),
             )])));
             overdue_header_shown = true;
@@ -145,33 +142,28 @@ fn task_line<'a>(task: &'a Task, state: &State, theme: &Theme, show_project: boo
         spans.push(Span::styled("  ".repeat(depth), theme.muted_text()));
     }
 
-    let tree_icon = if has_children {
-        if collapsed { "▸ " } else { "▾ " }
+    let icons = state.icons();
+    let lead = if has_children && !task.checked {
+        icons.fold(!collapsed)
     } else {
-        match depth {
-            0 => "○ ",
-            1 => "◦ ",
-            _ => "· ",
-        }
+        icons.check(task.checked)
     };
-    spans.push(Span::styled(tree_icon, theme.muted_text()));
+    spans.push(Span::styled(format!("{lead} "), theme.muted_text()));
 
     if state.is_context_task(task) {
         spans.push(Span::styled(&task.content, theme.muted_text()));
         return Line::from(spans);
     }
 
+    let priority = format!("{} ", icons.priority(Priority::from_api(task.priority)));
     if task.checked {
-        spans.push(Span::styled("✓ ", theme.success()));
+        spans.push(Span::styled(priority, theme.muted_text()));
         spans.push(Span::styled(
             &task.content,
             theme.muted_text().add_modifier(Modifier::CROSSED_OUT),
         ));
     } else {
-        spans.push(Span::styled(
-            if task.priority > 1 { "● " } else { "  " },
-            theme.priority_style(task.priority),
-        ));
+        spans.push(Span::styled(priority, theme.priority_style(task.priority)));
         spans.push(Span::styled(&task.content, theme.normal_text()));
     }
 
@@ -185,11 +177,17 @@ fn task_line<'a>(task: &'a Task, state: &State, theme: &Theme, show_project: boo
         && count > 0
         && !task.checked
     {
-        spans.push(Span::styled(format!("  [{count}]"), theme.muted_text()));
+        spans.push(Span::styled(
+            format!("  {}{count}", icons.comments),
+            theme.muted_text(),
+        ));
     }
 
     if task.due.as_ref().is_some_and(|d| d.is_recurring) && !task.checked {
-        spans.push(Span::styled("  ↻", theme.muted_text()));
+        spans.push(Span::styled(
+            format!("  {}", icons.recurring),
+            theme.muted_text(),
+        ));
     }
 
     if let Some(due) = &task.due

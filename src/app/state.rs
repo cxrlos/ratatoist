@@ -10,6 +10,7 @@ use super::sync::OptimisticOp;
 use super::text_field::TextField;
 use crate::keys::Keymap;
 use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
+use crate::ui::icons::{IconSet, Icons};
 use crate::ui::theme::{self, Theme};
 use crate::ui::views::detail::DetailField;
 
@@ -68,6 +69,8 @@ pub struct State {
     pub task_filter: TaskFilter,
     pub dock_focus: Option<usize>,
     pub dock_filter: Option<DockItem>,
+    /// The glyphs every view draws with, from `[ui] icons`.
+    pub icon_set: IconSet,
     /// The themes the theme picker offers; `theme_idx` is the one drawn.
     pub themes: Vec<Theme>,
     pub theme_idx: usize,
@@ -126,6 +129,7 @@ impl State {
             task_filter: TaskFilter::Active,
             dock_focus: None,
             dock_filter: None,
+            icon_set: IconSet::default(),
             themes: Theme::built_ins(),
             theme_idx: 0,
             websocket_connected: false,
@@ -154,6 +158,11 @@ impl State {
             .get(self.theme_idx)
             .or_else(|| self.themes.first())
             .unwrap_or_else(|| fallback_theme())
+    }
+
+    /// The glyphs of the icon set in use.
+    pub fn icons(&self) -> &'static Icons {
+        self.icon_set.icons()
     }
 
     pub fn top_modal(&self) -> Option<&Modal> {

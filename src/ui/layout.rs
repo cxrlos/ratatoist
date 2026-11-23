@@ -53,6 +53,7 @@ pub fn render(frame: &mut Frame, state: &State) {
                 state.detail_field,
                 state.today,
                 theme,
+                state.icons(),
             );
         }
     } else {
@@ -254,14 +255,15 @@ fn render_stats_block(frame: &mut Frame, state: &State, area: Rect, active: bool
         theme.muted_text()
     };
 
+    let icons = state.icons();
     let due_line = Line::from(vec![
         Span::styled("Due  ", theme.muted_text()),
         Span::styled(
-            format!("▲ {}  ", stats.overdue),
+            format!("{} {}  ", icons.overdue, stats.overdue),
             dock_style(DockItem::DueOverdue, 0, overdue_base),
         ),
         Span::styled(
-            format!("◆ {}  ", stats.due_today),
+            format!("{} {}  ", icons.today, stats.due_today),
             dock_style(DockItem::DueToday, 1, theme.due_today()),
         ),
         Span::styled(
@@ -274,19 +276,19 @@ fn render_stats_block(frame: &mut Frame, state: &State, area: Rect, active: bool
     let prio_line = Line::from(vec![
         Span::styled("P    ", theme.muted_text()),
         Span::styled(
-            format!("● {}  ", p[4]),
+            format!("{} {}  ", icons.priority(Priority::P1), p[4]),
             dock_style(DockItem::Priority(4), 3, theme.priority_style(4)),
         ),
         Span::styled(
-            format!("● {}  ", p[3]),
+            format!("{} {}  ", icons.priority(Priority::P2), p[3]),
             dock_style(DockItem::Priority(3), 4, theme.priority_style(3)),
         ),
         Span::styled(
-            format!("● {}  ", p[2]),
+            format!("{} {}  ", icons.priority(Priority::P3), p[2]),
             dock_style(DockItem::Priority(2), 5, theme.priority_style(2)),
         ),
         Span::styled(
-            format!("─ {}", p[1]),
+            format!("{} {}", icons.priority(Priority::P4), p[1]),
             dock_style(DockItem::Priority(1), 6, theme.muted_text()),
         ),
     ]);

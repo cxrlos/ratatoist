@@ -199,14 +199,14 @@ fn a_bad_idle_timeout_warns_and_keeps_the_default() {
 }
 
 #[test]
-fn ui_and_keys_take_no_settings_yet() {
-    let dir = TempDir::with_config("ui", "[ui]\nicons = \"nerd\"\n");
+fn an_unknown_key_in_ui_is_reported() {
+    let dir = TempDir::with_config("ui", "[ui]\ncolour = \"none\"\n");
 
     let config = load(&dir);
 
     assert_eq!(
         config.warnings,
-        vec!["config.toml:2:1: unknown key `icons` in [ui] is ignored".to_owned()]
+        vec!["config.toml:2:1: unknown key `colour` in [ui] is ignored".to_owned()]
     );
 }
 

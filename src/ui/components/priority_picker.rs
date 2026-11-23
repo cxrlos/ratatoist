@@ -3,13 +3,14 @@ use ratatui::layout::Alignment;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
-use crate::todoist::model::PRIORITY_LABELS;
+use crate::todoist::model::{PRIORITY_LABELS, Priority};
 
+use crate::ui::icons::Icons;
 use crate::ui::theme::Theme;
 
 use super::popup::{centered_fixed_rect, render_dim_overlay};
 
-pub fn render(frame: &mut Frame, selected: u8, theme: &Theme) {
+pub fn render(frame: &mut Frame, selected: u8, theme: &Theme, icons: &Icons) {
     render_dim_overlay(frame, theme);
 
     let area = frame.area();
@@ -39,7 +40,10 @@ pub fn render(frame: &mut Frame, selected: u8, theme: &Theme) {
         };
         lines.push(Line::from(vec![
             Span::styled(marker, theme.key_hint()),
-            Span::styled(format!("● {label}"), style),
+            Span::styled(
+                format!("{} {label}", icons.priority(Priority::from_api(*value))),
+                style,
+            ),
         ]));
     }
 

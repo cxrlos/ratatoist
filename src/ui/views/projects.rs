@@ -9,6 +9,7 @@ use crate::ui::text;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let theme = state.theme();
+    let icons = state.icons();
     let entries = state.project_list_entries();
 
     let selected_visual = entries.iter().position(|e| match e {
@@ -51,7 +52,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                 let collapsed = folder
                     .map(|f| state.collapsed_folders.contains(&f.id))
                     .unwrap_or(false);
-                let arrow = if collapsed { "▸" } else { "▾" };
+                let arrow = icons.folder(!collapsed);
                 Line::from(Span::styled(
                     format!("    {arrow} {name}"),
                     theme.muted_text(),
@@ -65,7 +66,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                 let count = stats.overdue + stats.due_today;
                 let mut spans = vec![
                     Span::raw("  "),
-                    Span::styled("⊙ ", theme.due_today()),
+                    Span::styled(format!("{} ", icons.today), theme.due_today()),
                     Span::styled("Today", theme.normal_text()),
                 ];
                 if count > 0 {
@@ -78,19 +79,12 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                 let project = &state.projects[*i];
                 let indent = "  ".repeat(state.project_indent(project));
                 let dot = theme.project_dot(&project.color);
-                let is_parent = state
-                    .projects
-                    .iter()
-                    .any(|p| p.parent_id.as_deref() == Some(project.id.as_str()));
-
                 let icon = if project.is_inbox() {
-                    Span::styled(" ", theme.inbox_icon())
+                    Span::styled(format!("{} ", icons.inbox), theme.inbox_icon())
                 } else if project.is_favorite {
-                    Span::styled("★ ", theme.favorite_icon())
-                } else if is_parent {
-                    Span::styled(" ", dot)
+                    Span::styled(format!("{} ", icons.favourite), theme.favorite_icon())
                 } else {
-                    Span::styled("# ", dot)
+                    Span::styled(format!("{} ", icons.project), dot)
                 };
 
                 Line::from(vec![

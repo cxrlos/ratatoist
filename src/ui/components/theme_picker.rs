@@ -36,7 +36,7 @@ pub fn render(frame: &mut Frame, state: &State, selection: usize) {
             let swatches: Vec<Span> = t
                 .swatch()
                 .iter()
-                .map(|&c| Span::styled("● ", Style::default().fg(c)))
+                .map(|&c| Span::styled("■ ", Style::default().fg(c)))
                 .collect();
 
             let mut spans = vec![Span::styled(pad(&t.name, 20), theme.normal_text())];

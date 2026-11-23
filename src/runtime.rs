@@ -84,6 +84,7 @@ pub fn initial_state_from(
     let mut state = State::new(now);
     state.keymap = Keymap::new(config.keys.preset, &config.keys.overrides);
     state.sync_token = sync_token;
+    state.icon_set = config.icons;
     state.themes.extend(config.user_themes.iter().cloned());
     let mut lines = Vec::new();
     if let Some(name) = config.theme.as_deref() {

@@ -8,9 +8,10 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap};
 
-use crate::todoist::model::{Comment, Task};
+use crate::todoist::model::{Comment, Priority, Task};
 
 use crate::app::{State, UserRecord};
+use crate::ui::icons::Icons;
 use crate::ui::theme::Theme;
 use crate::ui::{dates, text};
 
@@ -58,6 +59,7 @@ pub fn render(
     selected_field: DetailField,
     today: NaiveDate,
     theme: &Theme,
+    icons: &Icons,
 ) {
     let block = block(theme);
     let inner = block.inner(area);
@@ -71,6 +73,7 @@ pub fn render(
         selected_field,
         today,
         theme,
+        icons,
     );
     let scroll = scroll.min(overflow(&lines, inner));
     frame.render_widget(paragraph(lines).scroll((scroll, 0)), inner);
@@ -91,6 +94,7 @@ pub fn max_scroll(state: &State, screen: Size) -> u16 {
         state.detail_field,
         state.today,
         theme,
+        state.icons(),
     );
     overflow(&lines, text_area(screen, theme))
 }
@@ -167,6 +171,7 @@ fn lines<'a>(
     selected_field: DetailField,
     today: NaiveDate,
     theme: &Theme,
+    icons: &Icons,
 ) -> Vec<Line<'a>> {
     let mut lines: Vec<Line> = Vec::new();
 
@@ -198,7 +203,10 @@ fn lines<'a>(
             },
         ),
         Span::styled(
-            format!("● {priority_label}"),
+            format!(
+                "{} {priority_label}",
+                icons.priority(Priority::from_api(task.priority))
+            ),
             theme.priority_style(task.priority),
         ),
         field_hint(priority_active, theme),
@@ -212,7 +220,11 @@ fn lines<'a>(
     };
     if let Some(due) = &task.due {
         let formatted = dates::format_due(due, today, theme);
-        let recurring_marker = if due.is_recurring { " ↻" } else { "" };
+        let recurring_marker = if due.is_recurring {
+            format!(" {}", icons.recurring)
+        } else {
+            String::new()
+        };
         let due_display = format!("{}{}  ({})", formatted.text, recurring_marker, due.date);
         lines.push(Line::from(vec![
             Span::styled("Due       ", due_style),
@@ -230,7 +242,7 @@ fn lines<'a>(
     if task.checked {
         lines.push(Line::from(vec![
             Span::styled("Status    ", theme.muted_text()),
-            Span::styled("✓ completed", theme.success()),
+            Span::styled(format!("{} completed", icons.completed), theme.success()),
         ]));
     }
 

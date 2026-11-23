@@ -2,7 +2,8 @@
 //! `docs/config.md` documents every key.
 //!
 //! ```toml
-//! [ui]                       # no settings yet
+//! [ui]
+//! icons = "unicode"          # or "nerd", for a patched Nerd Font
 //!
 //! [keys]
 //! preset = "standard"        # or "vim", the default
@@ -39,6 +40,7 @@ use toml::de::{DeTable, DeValue};
 use toml_parser::parser::{Event, EventKind};
 
 use crate::keys::{self, Change, Context, KeySequence, Override, Preset, Target};
+use crate::ui::icons::IconSet;
 use crate::ui::theme::{Theme, slug};
 
 /// The config file's name inside the config folder.
@@ -50,6 +52,8 @@ pub const FILE: &str = "config.toml";
 pub struct Config {
     /// `[theme] name`: a built-in theme or one from `themes/`, by its name.
     pub theme: Option<String>,
+    /// `[ui] icons`.
+    pub icons: IconSet,
     /// `[sync] idle-timeout`.
     pub idle_timeout: Option<Duration>,
     /// `[keys]`: the preset and the changes to its keys.
@@ -206,7 +210,7 @@ pub fn parse(text: &str, user_themes: &[Theme]) -> Config {
             }
             match name_str {
                 "ui" => {
-                    reader.section::<Empty>(name_str, value, read_nothing);
+                    config.icons = reader.section("ui", value, read_ui).icons;
                 }
                 "keys" => config.keys = reader.keys(value),
                 "theme" => {
@@ -292,12 +296,24 @@ fn table_at(headers: &[(usize, String)], offset: usize) -> Option<String> {
 /// key the section does not have.
 type Setting = Option<Result<(), String>>;
 
-/// `[ui]`, which takes no settings yet.
 #[derive(Default)]
-struct Empty;
+struct UiSection {
+    icons: IconSet,
+}
 
-fn read_nothing(_: &mut Empty, _: &str, _: &Spanned<DeValue>) -> Setting {
-    None
+fn read_ui(ui: &mut UiSection, key: &str, value: &Spanned<DeValue>) -> Setting {
+    if key != "icons" {
+        return None;
+    }
+    Some(
+        match value.get_ref().as_str().and_then(IconSet::from_name) {
+            Some(icons) => {
+                ui.icons = icons;
+                Ok(())
+            }
+            None => Err("`ui.icons` must be \"unicode\" or \"nerd\"".to_owned()),
+        },
+    )
 }
 
 #[derive(Default)]

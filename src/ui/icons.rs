@@ -120,6 +120,37 @@ const UNICODE: Icons = Icons {
     today: "◆",
 };
 
-/// The Nerd Font set. Until its glyphs are chosen it repeats the Unicode
-/// ones.
-const NERD: Icons = UNICODE;
+/// The Nerd Font set: Font Awesome glyphs, each one cell wide, named by
+/// their `nf-` class.
+const NERD: Icons = Icons {
+    // nf-fa-circle_o
+    open: "\u{f10c}",
+    // nf-fa-check_circle
+    completed: "\u{f058}",
+    // nf-fa-angle_double_up, angle_up, angle_down, minus
+    priorities: ["\u{f102}", "\u{f106}", "\u{f107}", "\u{f068}"],
+    // nf-fa-repeat
+    recurring: "\u{f01e}",
+    // nf-fa-inbox
+    inbox: "\u{f01c}",
+    // nf-fa-hashtag
+    project: "\u{f292}",
+    // nf-fa-star
+    favourite: "\u{f005}",
+    // nf-fa-folder_open, folder
+    folder_open: "\u{f07c}",
+    folder_closed: "\u{f07b}",
+    // nf-fa-caret_down, caret_right
+    fold_open: "\u{f0d7}",
+    fold_closed: "\u{f0da}",
+    // nf-fa-comment_o
+    comments: "\u{f0e5}",
+    // nf-fa-angle_right
+    focus: "\u{f105}",
+    // nf-fa-times
+    failed: "\u{f00d}",
+    // nf-fa-exclamation_triangle
+    overdue: "\u{f071}",
+    // nf-fa-calendar
+    today: "\u{f073}",
+};
