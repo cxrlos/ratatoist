@@ -24,7 +24,7 @@ pub enum Action {
     FocusRight,
     /// Open the focused task's detail.
     Open,
-    /// Open the task list of the focused project, label or Analytics row.
+    /// Open the task list of the focused project or label.
     OpenList,
     /// Close the top overlay, or step back: from the detail to its list,
     /// from a filtered list to the whole list, from an opened list to the

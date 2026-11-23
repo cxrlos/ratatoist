@@ -249,17 +249,15 @@ pub enum Screen {
     Upcoming,
     Projects,
     Labels,
-    Analytics,
 }
 
 impl Screen {
-    pub const ALL: [Screen; 6] = [
+    pub const ALL: [Screen; 5] = [
         Screen::Inbox,
         Screen::Today,
         Screen::Upcoming,
         Screen::Projects,
         Screen::Labels,
-        Screen::Analytics,
     ];
 
     /// Its name in the tab row.
@@ -270,7 +268,6 @@ impl Screen {
             Screen::Upcoming => "Upcoming",
             Screen::Projects => "Projects",
             Screen::Labels => "Labels",
-            Screen::Analytics => "Analytics",
         }
     }
 }

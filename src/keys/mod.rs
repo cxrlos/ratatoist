@@ -19,8 +19,8 @@ pub use registry::{
 pub enum Context {
     /// Everywhere outside an overlay.
     Global,
-    /// A task list: Inbox, Today, Upcoming, or a list opened from Projects,
-    /// Labels or Analytics.
+    /// A task list: Inbox, Today, Upcoming, or a list opened from Projects
+    /// or Labels.
     List,
     /// A task's detail.
     Detail,
@@ -28,20 +28,17 @@ pub enum Context {
     Browse,
     /// The Projects screen, ahead of [`Context::Browse`] there.
     Projects,
-    /// The Analytics screen.
-    Analytics,
     /// An overlay such as the cheatsheet, which takes every key.
     Overlay,
 }
 
 impl Context {
-    pub const ALL: [Context; 7] = [
+    pub const ALL: [Context; 6] = [
         Context::Global,
         Context::List,
         Context::Detail,
         Context::Browse,
         Context::Projects,
-        Context::Analytics,
         Context::Overlay,
     ];
 
@@ -53,7 +50,6 @@ impl Context {
             Context::Detail => "detail",
             Context::Browse => "browse",
             Context::Projects => "projects",
-            Context::Analytics => "analytics",
             Context::Overlay => "overlay",
         }
     }
@@ -71,7 +67,6 @@ impl Context {
             Context::Detail => "Task detail",
             Context::Browse => "Projects and Labels",
             Context::Projects => "Projects",
-            Context::Analytics => "Analytics",
             Context::Overlay => "Overlays",
         }
     }

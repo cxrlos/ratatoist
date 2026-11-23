@@ -163,16 +163,11 @@ const GLOBAL: &[Context] = &[Context::Global];
 const LIST: &[Context] = &[Context::List];
 const DETAIL: &[Context] = &[Context::Detail];
 const PANES: &[Context] = &[Context::List, Context::Detail];
-/// Moves go through every list: tasks, the detail's rows, the Projects and
-/// Labels screens and the Analytics rows.
-const MOVES: &[Context] = &[
-    Context::List,
-    Context::Detail,
-    Context::Browse,
-    Context::Analytics,
-];
+/// Moves go through every list: tasks, the detail's rows, and the Projects
+/// and Labels screens.
+const MOVES: &[Context] = &[Context::List, Context::Detail, Context::Browse];
 /// The screens whose rows open a task list.
-const OPENS: &[Context] = &[Context::Browse, Context::Analytics];
+const OPENS: &[Context] = &[Context::Browse];
 /// The rows that fold: subtasks and group headers, and folders.
 const FOLDS: &[Context] = &[Context::List, Context::Browse];
 const PROJECTS: &[Context] = &[Context::Projects];
@@ -182,7 +177,6 @@ const CLOSES: &[Context] = &[
     Context::List,
     Context::Detail,
     Context::Browse,
-    Context::Analytics,
     Context::Overlay,
 ];
 
@@ -389,7 +383,7 @@ pub static ACTIONS: &[ActionSpec] = &[
     ActionSpec {
         action: Action::OpenList,
         id: "open-list",
-        description: "Open the focused project's, label's or row's tasks",
+        description: "Open the focused project's or label's tasks",
         label: "open its tasks",
         group: Group::Move,
         hint: does("open"),
@@ -827,18 +821,6 @@ pub static ACTIONS: &[ActionSpec] = &[
         available: |state| state.screen != Screen::Labels,
     },
     ActionSpec {
-        action: Action::ShowScreen(Screen::Analytics),
-        id: "show-analytics",
-        description: "Show Analytics",
-        label: "screens",
-        group: Group::App,
-        hint: None,
-        contexts: GLOBAL,
-        overlays: &[],
-        default_keys: &[&[Key::char('6')]],
-        available: |state| state.screen != Screen::Analytics,
-    },
-    ActionSpec {
         action: Action::Resync,
         id: "resync",
         description: "Sync everything again",
@@ -1149,7 +1131,7 @@ mod tests {
     /// Keys later milestones claim stay unbound outside overlays.
     #[test]
     fn reserved_keys_stay_unbound() {
-        let reserved = ['/', 'u', 't', 'L', 'm', 'D', 'F', 'V', 'o', 'y'];
+        let reserved = ['/', 'u', 't', 'L', 'm', 'D', 'F', 'V', 'o', 'y', '6'];
         for preset in Preset::ALL {
             for spec in ACTIONS.iter().filter(|spec| spec.contexts != OVERLAY) {
                 for keys in preset.default_keys(spec) {
