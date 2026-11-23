@@ -330,6 +330,99 @@ async fn a_429_that_never_clears_is_rate_limited_with_the_body_wait() {
     );
 }
 
+/// Collects everything a `tracing` subscriber writes.
+#[derive(Clone, Default)]
+struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedLogs {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl CapturedLogs {
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+    }
+}
+
+/// The process-wide trace-level log of this test binary. A scoped subscriber
+/// races tracing's global callsite cache against tests running in parallel,
+/// so this one is global and also sees every other test's calls.
+fn captured_logs() -> &'static CapturedLogs {
+    static LOGS: std::sync::OnceLock<CapturedLogs> = std::sync::OnceLock::new();
+    LOGS.get_or_init(|| {
+        let logs = CapturedLogs::default();
+        let writer = logs.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        tracing::subscriber::set_global_default(subscriber).unwrap();
+        logs
+    })
+}
+
+#[tokio::test]
+async fn no_client_call_logs_the_token_even_at_trace_level() {
+    let logs = captured_logs();
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("HYPOTHETICAL_user.json")))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/comments"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(fixture("HYPOTHETICAL_comments_page_2.json")),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/tasks/completed"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/sync"))
+        .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "0"))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/sync"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(fixture("HYPOTHETICAL_command_results.json")),
+        )
+        .mount(&server)
+        .await;
+    let client = client_for(&server);
+
+    client.user().await.unwrap();
+    client.comments("6Jf8VQXxpwv56VT2").await.unwrap();
+    let completed = client.completed_tasks(CompletedQuery::default()).await;
+    let synced = TodoistClient::sync(
+        &client,
+        write_request(vec![command("item_close", "6f3a9c4e")]),
+    )
+    .await;
+
+    assert_eq!(completed.unwrap_err(), ClientError::Unauthorized);
+    assert!(synced.is_ok(), "{synced:?}");
+    let text = logs.text();
+    assert!(text.contains("rate limited"), "nothing captured: {text}");
+    assert!(text.contains("sync complete"), "nothing captured: {text}");
+    assert!(!text.contains(TOKEN), "the token reached the log:\n{text}");
+}
+
 #[tokio::test]
 async fn a_401_is_unauthorized() {
     let server = MockServer::start().await;
