@@ -29,13 +29,21 @@ fn fixture(name: &str) -> Value {
     serde_json::from_str(&text).unwrap()
 }
 
-fn config_for(server: &MockServer) -> ClientConfig {
+/// Port 1 is privileged, so no test can listen there and a connection to it
+/// is refused at once.
+const UNREACHABLE: &str = "http://127.0.0.1:1";
+
+fn tiny_config(base_url: String) -> ClientConfig {
     ClientConfig {
-        base_url: server.uri(),
+        base_url,
         connect_timeout: Duration::from_millis(300),
-        request_timeout: Duration::from_secs(5),
+        request_timeout: Duration::from_secs(2),
         retry_unit: Duration::from_millis(10),
     }
+}
+
+fn config_for(server: &MockServer) -> ClientConfig {
+    tiny_config(server.uri())
 }
 
 fn client_with(config: ClientConfig) -> HttpClient {
@@ -235,15 +243,7 @@ async fn a_slow_response_times_out_as_a_network_error() {
 
 #[tokio::test]
 async fn an_unreachable_server_is_a_network_error() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let client = client_with(ClientConfig {
-        base_url: format!("http://{address}"),
-        connect_timeout: Duration::from_millis(300),
-        request_timeout: Duration::from_secs(2),
-        retry_unit: Duration::from_millis(10),
-    });
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
 
     let error = client.user().await.unwrap_err();
 
@@ -362,12 +362,7 @@ async fn a_401_whose_body_is_cut_off_is_still_unauthorized() {
             .await
             .unwrap();
     });
-    let client = client_with(ClientConfig {
-        base_url: format!("http://{address}"),
-        connect_timeout: Duration::from_millis(300),
-        request_timeout: Duration::from_secs(2),
-        retry_unit: Duration::from_millis(10),
-    });
+    let client = client_with(tiny_config(format!("http://{address}")));
 
     let error = client.user().await.unwrap_err();
 
@@ -574,7 +569,7 @@ async fn live_events_report_the_connection_and_each_message() {
         socket.close(None).await.unwrap();
         origin
     });
-    let client = client_with(ClientConfig::default());
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
 
     let messages: Vec<LiveMessage> = tokio::time::timeout(
         Duration::from_secs(5),
