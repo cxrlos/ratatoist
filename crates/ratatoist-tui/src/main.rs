@@ -32,6 +32,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    eprintln!("ratatoist-tui has moved to ratatoist: cargo install ratatoist");
     let cli = Cli::parse();
 
     let _log_guard = logging::init(cli.debug)?;
