@@ -11,6 +11,8 @@ use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::model::Priority;
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
+use ratatoist::ui;
+use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 /// `,` runs choose-theme, which has no default key; the palette runs it
@@ -460,7 +462,16 @@ fn the_project_picker_at_80x24() {
     send(&mut app, [key('a')]);
     send(&mut app, typed("Prune the roses"));
     send(&mut app, [press(KeyCode::BackTab), enter()]);
-    assert_snapshot!(app.backend());
+    assert_snapshot!(drawn(&app));
+}
+
+/// The app's state drawn on a fresh terminal of the same size, so a cell
+/// hidden behind a wide character carries nothing from an earlier frame.
+fn drawn(app: &App<TestBackend>) -> TestBackend {
+    let area = app.backend().buffer().area;
+    let mut terminal = Terminal::new(TestBackend::new(area.width, area.height)).unwrap();
+    terminal.draw(|frame| ui::draw(frame, app.state())).unwrap();
+    terminal.backend().clone()
 }
 
 #[test]
