@@ -13,7 +13,7 @@ ratatoist supports Linux and macOS, and one Todoist account at a time. Issues la
 - [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny) for dependency checks
 - [`gitleaks`](https://github.com/gitleaks/gitleaks) for the secret scan
 
-ratatoist has no token-free demo mode yet, so running it needs a Todoist account. Use a second account made for development, as described in [Testing against a free Todoist account](#testing-against-a-free-todoist-account), never the one you plan your life in.
+`cargo run -- --demo` runs ratatoist on a fictional demo account, with no token, keyring or network; that is enough for most UI changes, and its writes last only for the session. A change to the Todoist client also needs a real account: use a second one made for development, as described in [Testing against a free Todoist account](#testing-against-a-free-todoist-account), never the one you plan your life in.
 
 ## Testing against a free Todoist account
 
