@@ -40,12 +40,17 @@ impl TextField {
     }
 
     /// Inserts pasted `text` at the cursor. The field holds one line, so
-    /// each line break becomes a space.
+    /// each line break or tab becomes a space; other control characters,
+    /// which would corrupt the terminal when drawn, are dropped.
     pub fn paste(&mut self, text: &str) {
         let line: String = text
             .replace("\r\n", " ")
             .chars()
-            .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+            .filter_map(|c| match c {
+                '\n' | '\r' | '\t' => Some(' '),
+                c if c.is_control() => None,
+                c => Some(c),
+            })
             .collect();
         self.text.insert_str(self.cursor, &line);
         self.cursor += line.len();
@@ -187,5 +192,13 @@ mod tests {
         field.paste("1\r\n2\n3");
         assert_eq!(field.text(), "a1 2 3b");
         assert_eq!(field.after_cursor(), "b");
+    }
+
+    #[test]
+    fn a_paste_turns_tabs_into_spaces_and_drops_other_control_characters() {
+        let mut field = TextField::new("");
+        field.paste("a\tb\u{1b}[31mc\u{7}");
+        assert_eq!(field.text(), "a b[31mc");
+        assert_eq!(field.after_cursor(), "");
     }
 }
