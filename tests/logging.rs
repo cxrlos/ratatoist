@@ -19,6 +19,8 @@ use tracing_subscriber::EnvFilter;
 const FAKE_TOKEN: &str = "0123456789abcdef_fake_token_never_in_a_log";
 /// Set to the log directory to make [`logs_when_asked`] start logging.
 const LOG_DIR: &str = "RATATOIST_TEST_LOG_DIR";
+/// Set to make [`handshakes_when_asked`] open a WebSocket.
+const HANDSHAKE: &str = "RATATOIST_TEST_HANDSHAKE";
 const INFO_LINE: &str = "an info line from the logging test";
 const DEBUG_LINE: &str = "a debug line from the logging test";
 
@@ -79,6 +81,25 @@ fn the_token_never_reaches_a_trace_log() {
     assert!(!logged.contains(FAKE_TOKEN), "{logged}");
 }
 
+/// The WebSocket URL carries the token as a query parameter, and at trace
+/// tungstenite logs the whole upgrade request. tungstenite logs through the
+/// `log` crate, which reaches the file only through the bridge [`logging::init`]
+/// installs, so this runs [`handshakes_when_asked`] in a child process.
+#[test]
+fn the_token_in_a_websocket_url_never_reaches_a_trace_log() {
+    let dir = TempDir::new();
+
+    log_in_a_child(
+        "handshakes_when_asked",
+        &dir.0,
+        &[("RATATOIST_LOG", "trace"), (HANDSHAKE, "1")],
+    );
+
+    let logged = logged(&dir.0);
+    assert!(logged.contains("tungstenite::"), "{logged}");
+    assert!(!logged.contains(FAKE_TOKEN), "{logged}");
+}
+
 #[test]
 fn logs_roll_daily_and_keep_seven_files() {
     let dir = TempDir::new();
@@ -116,16 +137,42 @@ fn logs_when_asked() {
     drop(guard);
 }
 
-/// Runs [`logs_when_asked`] in a child process logging to `dir`, with only
-/// the environment variables `env` set besides PATH.
-fn log_in_a_child(dir: &Path, env: &[(&str, &str)]) -> Output {
+/// Passes at once unless [`HANDSHAKE`] and [`LOG_DIR`] are set, when it
+/// starts logging there as main does and opens a WebSocket to a local
+/// listener with the fake token in the URL, as the app's refresh does.
+#[test]
+fn handshakes_when_asked() {
+    let (Some(dir), Some(_)) = (std::env::var_os(LOG_DIR), std::env::var_os(HANDSHAKE)) else {
+        return;
+    };
+    let guard = logging::init(Path::new(&dir)).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "ws://{}/updates?token={FAKE_TOKEN}",
+            listener.local_addr().unwrap()
+        );
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio_tungstenite::accept_async(stream).await.unwrap()
+        });
+        let (client, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        let server = server.await.unwrap();
+        drop((client, server));
+    });
+    drop(guard);
+}
+
+/// Runs the test `name` (one of the `*_when_asked` tests) in a child process
+/// logging to `dir`, with only the environment variables `env` set besides
+/// PATH.
+fn log_in_a_child(name: &str, dir: &Path, env: &[(&str, &str)]) -> Output {
     let output = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "logs_when_asked",
-            "--exact",
-            "--nocapture",
-            "--test-threads=1",
-        ])
+        .args([name, "--exact", "--nocapture", "--test-threads=1"])
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env(LOG_DIR, dir)
@@ -141,7 +188,7 @@ fn logs_go_to_a_file_in_the_log_dir_at_info_by_default_and_never_to_the_terminal
     let dir = TempDir::new();
     let log_dir = dir.0.join("state").join("ratatoist");
 
-    let output = log_in_a_child(&log_dir, &[]);
+    let output = log_in_a_child("logs_when_asked", &log_dir, &[]);
 
     let names = file_names(&log_dir);
     assert_eq!(names.len(), 1, "{names:?}");
@@ -164,7 +211,7 @@ fn logs_go_to_a_file_in_the_log_dir_at_info_by_default_and_never_to_the_terminal
 fn ratatoist_log_raises_the_level() {
     let dir = TempDir::new();
 
-    log_in_a_child(&dir.0, &[("RATATOIST_LOG", "debug")]);
+    log_in_a_child("logs_when_asked", &dir.0, &[("RATATOIST_LOG", "debug")]);
 
     let logged = logged(&dir.0);
     assert!(logged.contains(DEBUG_LINE), "{logged}");
@@ -174,7 +221,7 @@ fn ratatoist_log_raises_the_level() {
 fn rust_log_is_ignored() {
     let dir = TempDir::new();
 
-    log_in_a_child(&dir.0, &[("RUST_LOG", "trace")]);
+    log_in_a_child("logs_when_asked", &dir.0, &[("RUST_LOG", "trace")]);
 
     let logged = logged(&dir.0);
     assert!(logged.contains(INFO_LINE), "{logged}");
@@ -185,7 +232,11 @@ fn rust_log_is_ignored() {
 fn an_invalid_ratatoist_log_is_reported_and_info_is_used() {
     let dir = TempDir::new();
 
-    log_in_a_child(&dir.0, &[("RATATOIST_LOG", "ratatoist=loud")]);
+    log_in_a_child(
+        "logs_when_asked",
+        &dir.0,
+        &[("RATATOIST_LOG", "ratatoist=loud")],
+    );
 
     let logged = logged(&dir.0);
     assert!(logged.contains("ignoring RATATOIST_LOG"), "{logged}");

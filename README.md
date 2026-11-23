@@ -107,7 +107,7 @@ ratatoist
 <details>
 <summary><strong>Developer experience</strong></summary>
 
-- Logs live in `$XDG_STATE_HOME/ratatoist/` (by default `~/.local/state/ratatoist/`, on macOS too), one file a day for a week; set the level with `RATATOIST_LOG`, for example `RATATOIST_LOG=debug`
+- Logs live in `$XDG_STATE_HOME/ratatoist/` (by default `~/.local/state/ratatoist/`, on macOS too), one file a day (named by the UTC date) for a week; set the level with `RATATOIST_LOG`, for example `RATATOIST_LOG=debug`
 - Error popups with context and suggestions
 - Dimmed background overlay on popups
 - Keybinding cheatsheet (`?`)

@@ -191,6 +191,22 @@ impl Pty {
         );
     }
 
+    /// Asserts the only file ratatoist left under HOME is one day's log in
+    /// `$XDG_STATE_HOME/ratatoist/`.
+    fn assert_only_a_log_in_the_state_dir(&self) {
+        let files = files_under(&self.home.0);
+        let logs = self.home.0.join("state").join("ratatoist");
+        assert_eq!(files.len(), 1, "{files:?}");
+        let name = files[0]
+            .strip_prefix(&logs)
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        assert!(
+            name.starts_with("ratatoist.") && name.ends_with(".log"),
+            "{files:?}"
+        );
+    }
+
     /// Asserts no shell startup file exists in the program's HOME.
     fn assert_no_shell_rc_files(&self) {
         for name in SHELL_RC_FILES {
@@ -209,6 +225,20 @@ impl Drop for Pty {
             let _ = self.child.kill();
         }
     }
+}
+
+/// Every file under `dir`, at any depth.
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(files_under(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
 }
 
 /// A fresh directory under the system temp directory, removed on drop.
@@ -240,6 +270,7 @@ fn quitting_leaves_the_terminal_cooked_on_the_main_screen() {
     pty.wait_until("ratatoist exits", Pty::exited);
     pty.assert_restored();
     pty.assert_no_shell_rc_files();
+    pty.assert_only_a_log_in_the_state_dir();
 }
 
 #[test]
