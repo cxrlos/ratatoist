@@ -7,7 +7,7 @@ use tracing::error;
 
 use super::Effect;
 use super::failure::{ErrorKind, Failure, LoadError};
-use super::state::{State, SyncHealth, UserRecord};
+use super::state::{Pane, State, SyncHealth, UserRecord};
 use crate::todoist::ClientError;
 use crate::todoist::model::{Folder, Project, Task};
 use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
@@ -156,6 +156,7 @@ impl State {
     }
 
     pub(crate) fn apply_sync_delta(&mut self, resp: SyncResponse, effects: &mut Vec<Effect>) {
+        let focused = self.selected_task().map(|task| task.id.clone());
         if resp.full_sync {
             if let Some(projects) = resp.projects {
                 self.projects = projects
@@ -270,7 +271,7 @@ impl State {
                 }
             }
             if let Some(notes) = resp.notes {
-                let open_task_id = self.selected_task().map(|t| t.id.clone());
+                let open_task_id = focused.clone();
                 let mut affected_task: Option<String> = None;
                 for note in notes {
                     let tid = note
@@ -305,7 +306,34 @@ impl State {
 
         self.take_sync_token(resp.sync_token, effects);
         self.last_sync_at = Some(self.now);
-        self.clamp_selected_task();
+        self.keep_focus_on(focused, effects);
+    }
+
+    /// Focuses the task `focused` again when it is still visible, else the
+    /// nearest row. When the detail shows and now shows another task, its
+    /// comments load as opening it would.
+    fn keep_focus_on(&mut self, focused: Option<String>, effects: &mut Vec<Effect>) {
+        let position = focused
+            .as_ref()
+            .and_then(|id| self.visible_tasks().iter().position(|task| &task.id == id));
+        match position {
+            Some(position) => self.selected_task = position,
+            None => self.clamp_selected_task(),
+        }
+        let detail_shows = self.shows_panes() || self.active_pane == Pane::Detail;
+        let now = self.selected_task().map(|task| task.id.clone());
+        if !detail_shows || focused.is_none() || now == focused {
+            return;
+        }
+        let Some(task_id) = now else {
+            return;
+        };
+        self.detail_scroll = 0;
+        match self.comments_by_task.get(&task_id) {
+            Some(cached) => self.comments = cached.clone(),
+            None => self.comments.clear(),
+        }
+        self.fetch_comments(task_id, effects);
     }
 
     fn take_sync_token(&mut self, token: String, effects: &mut Vec<Effect>) {

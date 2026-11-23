@@ -548,7 +548,8 @@ fn an_edit_from_the_list_changes_the_task_it_opened_on_after_a_sync_reorders_the
         send(&mut app, [open]);
 
         send(&mut app, [a_task_lands_at_the_top_of_the_inbox()]);
-        assert_ne!(selected(&app), "t-call");
+        assert_eq!(app.state().selected_task, 2);
+        assert_eq!(selected(&app), "t-call");
         let effects = send(&mut app, submit);
 
         let sent = commands(&effects);
@@ -559,7 +560,8 @@ fn an_edit_from_the_list_changes_the_task_it_opened_on_after_a_sync_reorders_the
             .or_else(|| sent[0].args.get("item_id"));
         assert_eq!(target.and_then(|id| id.as_str()), Some("t-call"));
         let shown = &app.state().comments;
-        assert!(shown.iter().all(|comment| comment.content != "On my way"));
+        let on_shown_task = shown.iter().any(|comment| comment.content == "On my way");
+        assert_eq!(on_shown_task, sent[0].r#type == "note_add");
     }
 }
 

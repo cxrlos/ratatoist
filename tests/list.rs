@@ -420,6 +420,68 @@ fn folds_on_subtasks_survive_a_sync_delta() {
     assert_eq!(focused_id(&app), "t-tiles");
 }
 
+/// A delta with one task for `project_id`: added with `child_order`, or
+/// deleted when `deleted`.
+fn task_delta(id: &str, project_id: &str, child_order: i64, deleted: bool) -> Box<SyncResponse> {
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "delta-1",
+        "items": [{
+            "id": id,
+            "content": "A task a delta brings",
+            "checked": false,
+            "is_deleted": deleted,
+            "child_order": child_order,
+            "priority": 1,
+            "project_id": project_id
+        }]
+    });
+    Box::new(serde_json::from_value(delta).unwrap())
+}
+
+fn fetches_comments(effects: &[Effect]) -> bool {
+    effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::FetchComments { .. }))
+}
+
+#[test]
+fn a_task_a_delta_inserts_above_keeps_the_focus_on_the_same_task() {
+    let mut app = sized(120, 36);
+    send(&mut app, [key('1'), key('j')]);
+    let focused = focused_id(&app);
+    let row = app.state().selected_task;
+
+    let effects = app
+        .handle(Event::Synced(Ok(task_delta("t-new", "p-inbox", -1, false))))
+        .unwrap();
+
+    let ids: Vec<String> = app
+        .state()
+        .visible_tasks()
+        .iter()
+        .map(|task| task.id.clone())
+        .collect();
+    assert_eq!(ids.first().map(String::as_str), Some("t-new"));
+    assert_eq!(focused_id(&app), focused);
+    assert_eq!(app.state().selected_task, row + 1);
+    assert!(!fetches_comments(&effects));
+}
+
+#[test]
+fn when_a_delta_removes_the_focused_task_the_detail_loads_the_next_one_s_comments() {
+    let mut app = sized(120, 36);
+    send(&mut app, [key('1'), key('j')]);
+    let focused = focused_id(&app);
+
+    let effects = app
+        .handle(Event::Synced(Ok(task_delta(&focused, "p-inbox", 0, true))))
+        .unwrap();
+
+    assert_ne!(focused_id(&app), focused);
+    assert!(fetches_comments(&effects));
+}
+
 #[test]
 fn zr_and_zm_unfold_and_fold_every_row() {
     let mut app = sized(119, 36);
