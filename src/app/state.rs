@@ -41,7 +41,8 @@ pub struct State {
     /// Rows the task detail is scrolled down by. Scroll keys keep it within
     /// the content at [`State::screen_size`].
     pub detail_scroll: u16,
-    /// The terminal size from the last resize, or `None` before the first.
+    /// The terminal size: read when the app starts, then from each resize.
+    /// `None` only for a `State` no terminal has shown.
     pub screen: Option<Size>,
     pub sort_mode: SortMode,
     pub comments: Vec<Comment>,
@@ -151,7 +152,7 @@ impl State {
         self.modals.last_mut()
     }
 
-    /// The terminal size, assuming 80x24 until the first resize says.
+    /// The terminal size, assuming 80x24 when no terminal has reported one.
     pub fn screen_size(&self) -> Size {
         self.screen.unwrap_or(Size::new(80, 24))
     }

@@ -338,6 +338,68 @@ fn a_taller_screen_lowers_the_scroll_limit() {
     assert_eq!(scroll_to_end(&mut state), tall);
 }
 
+/// The app at `columns` x `rows` with a long description and the detail
+/// open, told no size: the runtime sends no resize until the terminal
+/// changes size.
+fn long_detail_without_a_resize(columns: u16, rows: u16) -> App<TestBackend> {
+    let mut app = App::new(TestBackend::new(columns, rows), State::new(now())).unwrap();
+    app.handle(Event::Synced(Ok(response(FULL_SYNC)))).unwrap();
+    app.handle(Event::Synced(Ok(long_description()))).unwrap();
+    open_call_detail(&mut app);
+    app
+}
+
+#[test]
+fn a_screen_smaller_than_80x24_scrolls_to_the_end_without_a_resize() {
+    let mut app = long_detail_without_a_resize(70, 16);
+
+    send(&mut app, (0..40).map(|_| ctrl('d')));
+
+    assert!(shows(&app, "i edit  c comment"), "{:#?}", screen(&app));
+}
+
+#[test]
+fn ctrl_u_moves_at_once_on_a_large_screen_without_a_resize() {
+    let mut app = long_detail_without_a_resize(160, 50);
+    send(&mut app, (0..40).map(|_| ctrl('d')));
+    let at_end = screen(&app);
+
+    send(&mut app, [ctrl('u')]);
+
+    assert_ne!(screen(&app), at_end);
+}
+
+#[test]
+fn a_shorter_description_under_a_scrolled_detail_leaves_no_blank_tail() {
+    let mut app = long_detail_at_80x24();
+    send(&mut app, (0..20).map(|_| ctrl('d')));
+    let short = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "fixture-token-3",
+        "items": [{
+            "id": "t-call",
+            "content": "Call the dentist",
+            "description": (1..=30)
+                .map(|n| format!("Line {n} of the notes"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            "checked": false,
+            "child_order": 2,
+            "priority": 3,
+            "project_id": "p-inbox",
+            "due": { "date": "2026-11-22", "is_recurring": false, "string": "today" },
+            "added_at": "2026-11-19T08:30:00Z"
+        }]
+    });
+
+    app.handle(Event::Synced(Ok(response(&short.to_string()))))
+        .unwrap();
+
+    assert!(shows(&app, "Line 30 of the notes"), "{:#?}", screen(&app));
+    assert!(shows(&app, "i edit  c comment"), "{:#?}", screen(&app));
+    assert!(!shows(&app, "Line 31 of the notes"));
+}
+
 #[test]
 fn the_hint_bar_names_the_scroll_keys() {
     let mut app = sized(80, 24);
