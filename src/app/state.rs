@@ -233,8 +233,12 @@ impl State {
     }
 
     /// What the sync indicator shows: `synced 4s ago`, or what is wrong.
-    /// `None` before anything has synced or failed.
+    /// `None` before anything has synced or failed, and while an error
+    /// screen fills the body, which already says what is wrong.
     pub fn indicator(&self) -> Option<Indicator> {
+        if self.load_error.is_some() {
+            return None;
+        }
         let problem = match self.sync_health {
             SyncHealth::Offline => Some("offline"),
             SyncHealth::Failing => Some("sync failing"),

@@ -296,6 +296,22 @@ fn token_rejected_at_120x36() {
 }
 
 #[test]
+fn the_error_screens_hide_the_sync_indicator() {
+    let mut state = State::new(now());
+    state.token_source = Some(Source::Keyring);
+    let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
+
+    send(&mut app, [Event::Synced(Err(ClientError::Unauthorized))]);
+
+    assert_eq!(app.state().load_error, Some(LoadError::TokenRejected));
+    assert!(app.state().indicator().is_none());
+    let tab_row: String = (0..120)
+        .map(|x| app.backend().buffer()[(x, 0)].symbol().to_owned())
+        .collect();
+    assert!(!tab_row.contains("sync"));
+}
+
+#[test]
 fn a_forbidden_first_sync_shows_the_token_rejected_screen() {
     let mut app = started(80, 24);
 
