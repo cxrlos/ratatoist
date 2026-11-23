@@ -12,12 +12,12 @@ use super::{Action, ListFilter, Modal, Pane, Screen, State};
 use crate::keys::{self, ACTIONS, ActionSpec};
 use crate::todoist::model::{Project, Task};
 
-/// The open palette: what has been typed, and the highlighted row among the
+/// The open palette: what has been typed, and the palette_highlight row among the
 /// matches.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Palette {
     pub query: String,
-    /// The highlighted match, counted from the best one.
+    /// The palette_highlight match, counted from the best one.
     pub selected: usize,
 }
 
@@ -91,21 +91,27 @@ pub fn palette_matches<'a>(state: &'a State, query: &str) -> Vec<PaletteEntry<'a
     found.into_iter().map(|(_, entry)| entry).collect()
 }
 
+/// `selected` as an index into `matches` matches: a highlight left past
+/// the end, as when a sync drops matches while the palette is open, is on
+/// the last one.
+pub fn palette_highlight(selected: usize, matches: usize) -> usize {
+    selected.min(matches.saturating_sub(1))
+}
+
 /// Moves the highlight one match down or up, within the matches.
 pub(super) fn step(state: &mut State, action: Action) -> bool {
     let Some(Modal::Palette(palette)) = state.top_modal() else {
         return false;
     };
-    let last = palette_matches(state, &palette.query)
-        .len()
-        .saturating_sub(1);
+    let matches = palette_matches(state, &palette.query).len();
     let Some(Modal::Palette(palette)) = state.top_modal_mut() else {
         return false;
     };
     let before = palette.selected;
+    let current = palette_highlight(palette.selected, matches);
     palette.selected = match action {
-        Action::ScrollDown => palette.selected.saturating_add(1).min(last),
-        _ => palette.selected.saturating_sub(1),
+        Action::ScrollDown => palette_highlight(current.saturating_add(1), matches),
+        _ => current.saturating_sub(1),
     };
     palette.selected != before
 }
@@ -114,37 +120,37 @@ pub(super) fn step(state: &mut State, action: Action) -> bool {
 pub fn palette_can_step_down(state: &State) -> bool {
     match state.top_modal() {
         Some(Modal::Palette(palette)) => {
-            palette.selected + 1 < palette_matches(state, &palette.query).len()
+            let matches = palette_matches(state, &palette.query).len();
+            palette_highlight(palette.selected, matches) + 1 < matches
         }
         _ => false,
     }
 }
 
-/// Whether a match is highlighted for Enter to take.
+/// Whether a match is palette_highlight for Enter to take.
 pub fn palette_has_selection(state: &State) -> bool {
     match state.top_modal() {
-        Some(Modal::Palette(palette)) => {
-            palette.selected < palette_matches(state, &palette.query).len()
-        }
+        Some(Modal::Palette(palette)) => !palette_matches(state, &palette.query).is_empty(),
         _ => false,
     }
 }
 
-/// The highlighted match, as what Enter does with it.
+/// The palette_highlight match, as what Enter does with it.
 enum Chosen {
     Action(Action),
     Task(String),
     Project(usize),
 }
 
-/// Runs the highlighted action on what is under the palette, jumps to the
-/// highlighted task, or opens the highlighted project's list. With nothing
-/// highlighted the palette stays open.
+/// Runs the palette_highlight action on what is under the palette, jumps to the
+/// palette_highlight task, or opens the palette_highlight project's list. With nothing
+/// palette_highlight the palette stays open.
 pub(super) fn accept(state: &mut State) -> Update {
     let Some(Modal::Palette(palette)) = state.top_modal() else {
         return Update::default();
     };
-    let chosen = match palette_matches(state, &palette.query).get(palette.selected) {
+    let matches = palette_matches(state, &palette.query);
+    let chosen = match matches.get(palette_highlight(palette.selected, matches.len())) {
         Some(PaletteEntry::Action(spec)) => Chosen::Action(spec.action),
         Some(PaletteEntry::Task(task)) => Chosen::Task(task.id.clone()),
         Some(PaletteEntry::Project(project)) => {

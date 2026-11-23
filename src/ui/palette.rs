@@ -41,7 +41,8 @@ pub fn render(state: &State, palette: &Palette, frame: &mut Frame, area: Rect) {
         PaletteEntry::Task(task) => task_line(state, task, width),
         PaletteEntry::Project(project) => project_line(state, project, width),
     });
-    render_list(state, lines.collect(), palette.selected, frame, list);
+    let selected = app::palette_highlight(palette.selected, entries.len());
+    render_list(state, lines.collect(), selected, frame, list);
 }
 
 /// The keys that run `spec` on the screen under the overlay or, when none

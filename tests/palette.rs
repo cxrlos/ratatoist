@@ -305,6 +305,30 @@ fn palette_typing_prio_at_80x24() {
 }
 
 #[test]
+fn a_highlight_past_the_matches_takes_the_last_one() {
+    let mut state = sized(120, 36).state().clone();
+    state.modals.push(Modal::Palette(Palette {
+        query: "roadmap".to_owned(),
+        selected: 40,
+    }));
+    let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
+    assert!(matches!(
+        app::palette_matches(app.state(), "roadmap").last(),
+        Some(PaletteEntry::Task(task)) if task.id == "t-roadmap"
+    ));
+    let accept = ratatoist::keys::spec(Action::Accept).unwrap();
+    assert!(accept.availability(app.state()).can_run());
+    assert!(!app::palette_can_step_down(app.state()));
+
+    send(&mut app, [press(KeyCode::Enter)]);
+
+    assert_eq!(
+        app.state().selected_task().map(|task| task.id.as_str()),
+        Some("t-roadmap")
+    );
+}
+
+#[test]
 fn palette_with_no_query_at_80x24() {
     let mut app = list(80, 24);
     send(&mut app, [key(':')]);
