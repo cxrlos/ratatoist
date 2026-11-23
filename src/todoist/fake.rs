@@ -10,6 +10,12 @@ use super::{ClientError, CompletedQuery, LiveMessage, TodoistClient};
 #[derive(Debug, Clone, Default)]
 pub struct FakeClient;
 
+impl FakeClient {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
 impl TodoistClient for FakeClient {
     async fn sync(&self, request: SyncRequest) -> Result<SyncResponse, ClientError> {
         Ok(SyncResponse::empty(request.sync_token == "*"))

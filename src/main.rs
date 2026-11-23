@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
     let _log_guard = logging::init(&paths::state_dir()?)?;
 
     if cli.demo {
-        run_app(FakeClient, &config, cli.idle_forcer).await
+        run_app(FakeClient::new(), &config, cli.idle_forcer).await
     } else {
         let resolved = auth::resolve()?;
         let client = HttpClient::new(&resolved.token)?;
