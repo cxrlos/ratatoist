@@ -65,7 +65,7 @@ pub fn handle_key(state: &mut State, key: KeyEvent) -> KeyAction {
         Some(Modal::Help) => {
             return match key.code {
                 KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') => KeyAction::ToggleHelp,
-                _ => KeyAction::Consumed,
+                _ => KeyAction::None,
             };
         }
         Some(Modal::PriorityPicker { .. }) => return handle_priority_picker(state, key),
@@ -207,7 +207,7 @@ fn handle_form_nav(state: &mut State, key: KeyEvent) -> KeyAction {
         KeyCode::Char('k') | KeyCode::Up => KeyAction::FormFieldUp,
         KeyCode::Enter | KeyCode::Char('i') | KeyCode::Char(' ') => KeyAction::FormEditField,
         KeyCode::Tab => KeyAction::SubmitForm,
-        _ => KeyAction::Consumed,
+        _ => KeyAction::None,
     }
 }
 
@@ -230,7 +230,7 @@ fn handle_theme_picker(state: &mut State, key: KeyEvent) -> KeyAction {
             KeyAction::Consumed
         }
         KeyCode::Enter | KeyCode::Char(' ') => KeyAction::SelectTheme,
-        _ => KeyAction::Consumed,
+        _ => KeyAction::None,
     }
 }
 
@@ -278,7 +278,7 @@ fn handle_priority_picker(state: &mut State, key: KeyEvent) -> KeyAction {
             KeyAction::SelectPriority
         }
         KeyCode::Enter | KeyCode::Char(' ') => KeyAction::SelectPriority,
-        _ => KeyAction::Consumed,
+        _ => KeyAction::None,
     }
 }
 

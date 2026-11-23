@@ -200,11 +200,22 @@ fn the_cheatsheet_closes_on_esc_and_swallows_other_keys() {
 }
 
 #[test]
-fn draws_nothing_without_events() {
-    let app = app();
-    let frames = app.frames_drawn();
+fn an_unbound_key_under_an_overlay_does_not_redraw() {
+    let cheatsheet = || vec![key('?')];
+    let theme_picker = || vec![key(','), key('j'), press(KeyCode::Enter)];
+    let priority_picker = || vec![key('l'), press(KeyCode::Enter), key('j'), key('i')];
+    for open in [cheatsheet(), theme_picker(), priority_picker()] {
+        let mut app = app();
+        send(&mut app, open);
+        let overlay = app.state().top_modal().cloned();
+        assert!(overlay.is_some());
+        let frames = app.frames_drawn();
 
-    assert_eq!(app.frames_drawn(), frames);
+        send(&mut app, [key('y'), press(KeyCode::F(5))]);
+
+        assert_eq!(app.frames_drawn(), frames, "under {overlay:?}");
+        assert_eq!(app.state().top_modal().cloned(), overlay);
+    }
 }
 
 #[test]
