@@ -42,12 +42,7 @@ async fn start(cli: Cli) -> Result<()> {
     if cli.demo {
         // The demo account is fictional: its sync token and settings must
         // never replace the real ones.
-        run_app(
-            demo::client(runtime::initial_state(&config, None).today),
-            &config,
-            None,
-        )
-        .await
+        run_app(demo::client(runtime::today()), &config, None).await
     } else {
         let resolved = auth::resolve()?;
         let client = HttpClient::new(&resolved.token)?;

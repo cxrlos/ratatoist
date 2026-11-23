@@ -8,7 +8,7 @@ use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDate};
 use crossterm::event::Event as TerminalEvent;
 use futures_util::{Stream, StreamExt};
 use ratatui::backend::Backend;
@@ -138,6 +138,11 @@ where
             _ = ticks.tick() => Some(Event::Tick { now: clock() }),
         };
     }
+}
+
+/// Today's date on the wall clock.
+pub fn today() -> NaiveDate {
+    clock().date_naive()
 }
 
 /// The wall clock: the one read the `disallowed_methods` lint lets through.
