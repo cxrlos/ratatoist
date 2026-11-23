@@ -239,6 +239,22 @@ fn each_edit_in_the_shown_detail_draws_in_place_without_a_popup_title() {
 }
 
 #[test]
+fn a_prompt_never_draws_in_place_while_the_lists_load_or_cannot() {
+    let app = edit_in_the_detail(120, 36, 'e');
+    let editing = app.state().clone();
+    assert!(ratatoist::ui::list::prompt_in_place(&editing, 120).is_some());
+
+    let mut loading = editing.clone();
+    loading.loading = true;
+    let mut failed = editing;
+    failed.load_error = Some(ratatoist::app::LoadError::NoToken);
+
+    for state in [loading, failed] {
+        assert!(ratatoist::ui::list::prompt_in_place(&state, 120).is_none());
+    }
+}
+
+#[test]
 fn a_comment_in_place_goes_under_new_comment_at_the_end_of_the_thread() {
     let mut app = edit_in_the_detail(120, 36, 'c');
     send(&mut app, "zq".chars().map(key));

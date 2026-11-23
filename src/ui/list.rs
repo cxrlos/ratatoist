@@ -90,12 +90,16 @@ pub fn panes(state: &State, area: Rect) -> (Placed, Placed) {
 
 /// The prompt on top, when it edits the task whose detail shows on a body
 /// `width` columns wide: then the detail draws it in place of the field.
+/// Never while loading or on an error screen, when the body shows no
+/// detail.
 pub fn prompt_in_place(state: &State, width: u16) -> Option<&Prompt> {
     let Some(Modal::Prompt(prompt)) = state.top_modal() else {
         return None;
     };
-    let detail_shows = state.active_pane == Pane::Detail
-        || (state.active_pane == Pane::Tasks && width >= state.wide_layout_columns);
+    let detail_shows = !state.loading
+        && state.load_error.is_none()
+        && (state.active_pane == Pane::Detail
+            || (state.active_pane == Pane::Tasks && width >= state.wide_layout_columns));
     let shown = state.selected_task().map(|task| task.id.as_str());
     (detail_shows && shown == Some(prompt.task_id.as_str())).then_some(prompt)
 }
