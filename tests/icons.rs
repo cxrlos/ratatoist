@@ -228,3 +228,11 @@ fn fold_and_comment_alternatives_in_a_real_row() {
     }
     assert_snapshot!(rows.join("\n"));
 }
+
+#[test]
+fn the_unicode_focus_marker_is_a_single_angle_quote_unlike_a_closed_folder() {
+    let icons = IconSet::Unicode.icons();
+
+    assert_eq!(icons.focus, "\u{203a}");
+    assert_ne!(icons.focus, icons.folder_closed);
+}

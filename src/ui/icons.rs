@@ -114,7 +114,7 @@ const UNICODE: Icons = Icons {
     fold_open: "▿",
     fold_closed: "▹",
     comments: "✉",
-    focus: "▸",
+    focus: "›",
     failed: "✘",
     overdue: "▲",
     today: "◆",

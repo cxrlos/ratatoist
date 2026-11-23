@@ -36,7 +36,7 @@ The Unicode set, which any terminal font has:
 | Folder open, closed | `▾` `▸` |
 | Subtasks shown, folded | `▿` `▹` |
 | Comment count | `✉` |
-| Focused row, failed write | `▸` `✘` |
+| Focused row, failed write | `›` `✘` |
 | Overdue, today | `▲` `◆` |
 
 The Nerd set uses the Font Awesome glyphs of the same meaning, one cell each. Within a set every priority and every task state has its own shape, so none of them relies on colour.
