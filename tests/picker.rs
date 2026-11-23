@@ -116,6 +116,21 @@ fn shows(app: &App<TestBackend>, text: &str) -> bool {
     screen(app).iter().any(|line| line.contains(text))
 }
 
+/// The screen line that carries `✓`.
+fn marked_line(app: &App<TestBackend>) -> String {
+    let lines: Vec<String> = screen(app)
+        .into_iter()
+        .filter(|line| line.contains('✓'))
+        .collect();
+    assert_eq!(lines.len(), 1, "one line carries the mark");
+    lines[0].clone()
+}
+
+/// Whether the `✓` is drawn on the row of the value in force.
+fn marks_current(app: &App<TestBackend>) -> bool {
+    current(app).is_some_and(|label| marked_line(app).contains(&format!(" {label} ")))
+}
+
 fn focused(state: &State) -> String {
     state
         .selected_task()
@@ -137,7 +152,7 @@ fn p_opens_the_priority_picker_on_the_focused_task() {
         Some(Priority::from_api(task.priority).label())
     );
     assert!(shows(&app, "> type to filter"));
-    assert!(shows(&app, " ✓"));
+    assert!(marks_current(&app));
 }
 
 #[test]
@@ -219,6 +234,7 @@ fn vs_opens_the_sort_picker_with_the_current_sort_marked() {
     assert_eq!(picker(&app).title, "Sort Inbox by");
     assert_eq!(labels(&app), ["Order", "Priority", "Due date", "Created"]);
     assert_eq!(current(&app).as_deref(), Some("Order"));
+    assert!(marks_current(&app));
     send(&mut app, typed("date"));
     assert_eq!(labels(&app), ["Due date"]);
 }
@@ -238,6 +254,7 @@ fn choosing_a_sort_keeps_focus_on_the_same_task() {
 
     send(&mut app, [key('v'), key('s')]);
     assert_eq!(current(&app).as_deref(), Some("Priority"));
+    assert!(marks_current(&app));
 }
 
 #[test]
@@ -263,6 +280,7 @@ fn f_opens_the_list_filter_picker_with_open_marked() {
         ]
     );
     assert_eq!(current(&app).as_deref(), Some("Open"));
+    assert!(marks_current(&app));
     send(&mut app, typed("due"));
     assert_eq!(labels(&app), ["Overdue", "Due today", "Due this week"]);
 }
@@ -270,7 +288,8 @@ fn f_opens_the_list_filter_picker_with_open_marked() {
 #[test]
 fn choosing_a_list_filter_narrows_the_list_and_keeps_focus_on_the_same_task() {
     let mut app = demo();
-    send(&mut app, [key('j'), key('j')]);
+    send(&mut app, [key('j'), key('j'), key('j')]);
+    let row = app.state().selected_task;
     let task = app.state().selected_task().cloned().unwrap();
     let priority = Priority::from_api(task.priority);
     let wanted = ListFilter::Priority(priority);
@@ -289,6 +308,8 @@ fn choosing_a_list_filter_narrows_the_list_and_keeps_focus_on_the_same_task() {
             .all(|t| Priority::from_api(t.priority) == priority)
     );
     assert_eq!(focused(app.state()), task.id);
+    assert_ne!(app.state().selected_task, 0, "the task is not first");
+    assert_ne!(app.state().selected_task, row, "the task moved in the list");
 }
 
 #[test]
@@ -336,6 +357,7 @@ fn the_add_forms_project_field_opens_the_project_picker() {
 
     assert_eq!(picker(&app).title, "Project of Prune the roses");
     assert_eq!(current(&app).as_deref(), Some("Inbox"));
+    assert!(marks_current(&app));
     assert!(labels(&app).contains(&"Garden".to_owned()));
     send(&mut app, typed("gard"));
     assert_eq!(labels(&app), ["Garden"]);
@@ -376,6 +398,7 @@ fn choose_theme_applies_the_theme_and_names_the_line_that_keeps_it() {
     send(&mut app, [key(',')]);
     assert_eq!(picker(&app).title, "Theme for this session");
     assert_eq!(current(&app), Some(before));
+    assert!(marks_current(&app));
     send(&mut app, typed("nord"));
     assert_eq!(labels(&app), ["Nord"]);
     send(&mut app, [enter()]);
@@ -388,6 +411,19 @@ fn choose_theme_applies_the_theme_and_names_the_line_that_keeps_it() {
              [theme] name = \"nord\""
         )
     );
+}
+
+#[test]
+fn a_number_chooses_a_theme() {
+    let mut app = demo_with(80, 24, THEME_ON_COMMA);
+    send(&mut app, [key(',')]);
+    let second = labels(&app)[1].clone();
+    assert_ne!(app.state().theme().name, second);
+
+    send(&mut app, [key('2')]);
+
+    assert!(app.state().modals.is_empty());
+    assert_eq!(app.state().theme().name, second);
 }
 
 #[test]
