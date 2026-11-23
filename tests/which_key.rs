@@ -8,8 +8,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
 use ratatoist::app::{App, Event, Modal, State};
 use ratatoist::keys::Key;
+use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::sync::SyncResponse;
 use ratatui::backend::TestBackend;
+use ratatui::style::Color;
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
 
@@ -129,4 +131,49 @@ fn which_key_after_z_at_80x24() {
     send(&mut app, [key('z')]);
 
     assert_snapshot!(text(&app));
+}
+
+/// The foreground of the key in the popup's line for `description`.
+fn key_fg(app: &App<TestBackend>, description: &str) -> Option<Color> {
+    let rows = screen(app);
+    let (y, line) = rows
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.contains(description))?;
+    let x = line[..line.find(description)?].chars().count() - 3;
+    let cell = app
+        .backend()
+        .buffer()
+        .cell((u16::try_from(x).ok()?, u16::try_from(y).ok()?))?;
+    Some(cell.fg)
+}
+
+#[test]
+fn a_continuation_that_cannot_run_now_is_muted() {
+    let config = ratatoist::config::parse("[keys.list]\ntoggle-complete = \"gx\"\n", &[]);
+    assert_eq!(config.warnings, Vec::<String>::new());
+    let mut state = list(120, 36).state().clone();
+    state.keymap = initial_state_from(
+        &config,
+        &UiSettings::default(),
+        "*".to_owned(),
+        now(),
+        false,
+    )
+    .keymap;
+    let with_tasks = state.clone();
+    state.tasks.clear();
+    let complete = "Complete the task, or reopen it";
+
+    let mut empty = App::new(TestBackend::new(120, 36), state).unwrap();
+    send(&mut empty, [key('g')]);
+    assert_eq!(
+        key_fg(&empty, complete),
+        Some(empty.state().theme().muted),
+        "no task to complete"
+    );
+
+    let mut app = App::new(TestBackend::new(120, 36), with_tasks).unwrap();
+    send(&mut app, [key('g')]);
+    assert_eq!(key_fg(&app, complete), Some(app.state().theme().accent));
 }

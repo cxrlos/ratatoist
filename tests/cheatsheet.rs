@@ -11,9 +11,10 @@ use ratatoist::app::{App, Event, Modal};
 use ratatoist::keys::{self, ACTIONS, Context, Group};
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::sync::SyncResponse;
+use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::layout::Size;
-use ratatui::style::Color;
+use ratatui::style::{Color, Modifier, Style};
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
 const STANDARD_PRESET: &str = "[keys]\npreset = \"standard\"\n";
@@ -157,10 +158,24 @@ fn every_action_with_a_key_is_listed_in_its_group() {
             {
                 continue;
             }
+            let keys: Vec<String> = app
+                .state()
+                .keymap
+                .keys_for(spec.action, &contexts)
+                .iter()
+                .map(ToString::to_string)
+                .collect();
             let title = spec.group.title().unwrap_or(context.title());
             let pane = panes.iter().find(|(name, _)| name == title);
+            let listed = |line: &String| {
+                let Some((shown, _)) = line.split_once(&format!("  {}", spec.label)) else {
+                    return false;
+                };
+                let shown: Vec<&str> = shown.trim().split(['/', ',']).collect();
+                keys.iter().all(|key| shown.contains(&key.as_str()))
+            };
             assert!(
-                pane.is_some_and(|(_, lines)| lines.iter().any(|l| l.contains(spec.label))),
+                pane.is_some_and(|(_, lines)| lines.iter().any(listed)),
                 "{} under {title}",
                 spec.id
             );
@@ -281,6 +296,40 @@ fn the_cheatsheet_hides_what_is_behind_it() {
         (left + 1..right).any(|x| before[x] != ' ' && after[x] == ' ')
     });
     assert!(blanked, "{}", over.join("\n"));
+}
+
+#[test]
+fn the_cheatsheet_resets_the_style_of_the_cells_behind_it() {
+    let app = on_the_list("", 120, 36);
+    let state = app.state().clone();
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal
+        .draw(|frame| {
+            let area = frame.area();
+            let marked = Style::new().add_modifier(Modifier::REVERSED);
+            frame.buffer_mut().set_style(area, marked);
+            ratatoist::ui::cheatsheet::render(&state, 0, frame, area);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let top = (0..36)
+        .find(|&y| (0..120).any(|x| buffer[(x, y)].symbol() == "┌"))
+        .unwrap();
+    let left = (0..120)
+        .find(|&x| buffer[(x, top)].symbol() == "┌")
+        .unwrap();
+    let right = (0..120)
+        .rfind(|&x| buffer[(x, top)].symbol() == "┐")
+        .unwrap();
+    let bottom = (top..36)
+        .find(|&y| buffer[(left, y)].symbol() == "└")
+        .unwrap();
+    for y in top..=bottom {
+        for x in left..=right {
+            assert!(!buffer[(x, y)].modifier.contains(Modifier::REVERSED));
+        }
+    }
 }
 
 #[test]
