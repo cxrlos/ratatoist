@@ -30,6 +30,10 @@ The built-in themes are Catppuccin Mocha, Dracula, Gruvbox Dark, Material Dark, 
 | --- | --- | --- | --- |
 | `idle-timeout` | Whole seconds, 0 to 86400. 0 turns idle detection off. | 300 | How long without a key press before the session counts as idle. |
 
+## `config.toml` and the Settings pane
+
+The Settings pane saves the theme and idle timeout you pick there to `ui_settings.json` in the same folder. At startup a value set in `config.toml` wins over the saved one; `ui_settings.json` only fills in what `config.toml` leaves out, or a `[theme] name` that matches no theme. So if I set `[theme] name` in `config.toml`, a theme picked in the Settings pane lasts only until the next start.
+
 ## `[ui]` and `[keys]`
 
 Both tables are accepted and take no settings yet. A key inside them is reported as unknown.
@@ -49,7 +53,7 @@ config.toml:5:16: `sync.idle-timeout` must be a whole number of seconds from 0 t
 - A syntax error resets only the section it is in; the other sections still apply. A syntax error before the first `[section]` header resets the whole file to its defaults.
 - A bad value resets its whole section to its defaults.
 - An unknown key or table is reported and ignored.
-- A `[theme] name` that matches no theme is reported, and the default theme is used.
+- A `[theme] name` that matches no theme is reported, and the theme saved by the Settings pane, or else the default, is used.
 - A theme file that fails to load is reported as `themes/FILE.json:LINE:COL: problem; the theme is skipped`.
 
 ratatoist still starts in every case, and the file is never rewritten.
