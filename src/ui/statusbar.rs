@@ -3,27 +3,27 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::app::legacy::{App, InputMode, Pane, VimState};
+use crate::app::{InputMode, Pane, State, VimState};
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = app.theme();
+pub fn render(frame: &mut Frame, state: &State, area: Rect) {
+    let theme = state.theme();
 
-    let mode_style = match app.input_mode {
+    let mode_style = match state.input_mode {
         InputMode::Vim(VimState::Normal) => theme.mode_normal(),
         InputMode::Vim(VimState::Insert) => theme.mode_insert(),
         InputMode::Standard => theme.mode_standard(),
     };
 
-    let mode_label = format!(" {} ", app.input_mode.label());
+    let mode_label = format!(" {} ", state.input_mode.label());
 
-    let project_name = app.selected_project_name();
-    let task_count = app.visible_tasks().len();
+    let project_name = state.selected_project_name();
+    let task_count = state.visible_tasks().len();
 
-    let breadcrumb = match app.active_pane {
+    let breadcrumb = match state.active_pane {
         Pane::Projects => format!("  {project_name}"),
         Pane::Tasks => format!("  {project_name} ▸ {task_count} tasks"),
         Pane::Detail => {
-            let task_name = app
+            let task_name = state
                 .selected_task()
                 .map(|t| t.content.as_str())
                 .unwrap_or("Task");
@@ -33,11 +33,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         Pane::StatsDock => format!("  {project_name} ▸ weekly progress"),
     };
 
-    let (ws_dot, ws_label, dot_style) = if app.websocket_connected {
-        if app.is_idle() {
+    let (ws_dot, ws_label, dot_style) = if state.websocket_connected {
+        if state.is_idle() {
             (
                 "◌",
-                format!("Idle (last sync @ {})", app.sync_age_label()),
+                format!("Idle (last sync @ {})", state.sync_age_label()),
                 theme.muted_text(),
             )
         } else {

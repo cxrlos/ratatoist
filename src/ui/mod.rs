@@ -14,35 +14,35 @@ pub const LOGO: &str = r#"
 "#;
 
 use ratatui::Frame;
-use ratatui::widgets::Paragraph;
 
-use crate::app::State;
-use crate::app::legacy::App;
+use crate::app::{Modal, State};
 
-pub fn draw(frame: &mut Frame, app: &App) {
-    layout::render(frame, app);
-
-    if app.show_theme_picker {
-        components::theme_picker::render(frame, app);
-    } else if app.show_priority_picker {
-        components::priority_picker::render(frame, app.priority_selection, app.theme());
-    } else if let Some(form) = &app.task_form {
-        components::task_form::render(frame, app, form);
-    } else if app.show_input {
-        components::input_popup::render(frame, app);
+/// Draws the whole screen from `state`: the splash until the first sync
+/// answers, then the panes, the top overlay and any error.
+pub fn draw(frame: &mut Frame, state: &State) {
+    if state.loading {
+        splash::render(frame, 0.3, "syncing data...", state.theme());
+        return;
     }
 
-    if app.show_help {
-        components::cheatsheet::render(frame, &app.input_mode, app.theme());
+    layout::render(frame, state);
+
+    match state.top_modal() {
+        Some(Modal::ThemePicker { selection }) => {
+            components::theme_picker::render(frame, state, *selection);
+        }
+        Some(Modal::PriorityPicker { selection }) => {
+            components::priority_picker::render(frame, *selection, state.theme());
+        }
+        Some(Modal::TaskForm(form)) => components::task_form::render(frame, state, form),
+        Some(Modal::Input(target)) => components::input_popup::render(frame, state, *target),
+        Some(Modal::Help) => {
+            components::cheatsheet::render(frame, &state.input_mode, state.theme());
+        }
+        None => {}
     }
 
-    if let Some(error) = &app.error {
-        components::error_popup::render(frame, error, app.theme());
+    if let Some(error) = &state.error {
+        components::error_popup::render(frame, error, state.theme());
     }
-}
-
-/// Draws the event-driven core's screen.
-pub fn draw_state(frame: &mut Frame, state: &State) {
-    let _ = state;
-    frame.render_widget(Paragraph::new(LOGO), frame.area());
 }

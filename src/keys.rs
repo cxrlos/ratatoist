@@ -1,8 +1,10 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+//! Key dispatch for the Vim (Normal, Insert) and Standard modes. A key moves
+//! the cursor or opens an overlay directly; anything with more to it comes
+//! back as a [`KeyAction`] for [`crate::app::update`] to carry out.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::legacy::{App, DOCK_ITEMS, InputMode, Pane, ProjectNavItem, VimState};
+use crate::app::{DOCK_ITEMS, InputMode, Modal, Pane, ProjectNavItem, State, VimState};
 
 pub enum KeyAction {
     Quit,
@@ -39,97 +41,87 @@ pub enum KeyAction {
     CloseThemePicker,
     TodayViewSelected,
     ToggleOverdueSection,
+    CycleIdleTimeout,
     Consumed,
     None,
 }
 
-static PENDING_Z: AtomicBool = AtomicBool::new(false);
-
-fn take_pending_z() -> bool {
-    PENDING_Z.swap(false, Ordering::Relaxed)
+/// Keys while the first sync runs: only quitting works.
+pub fn handle_key_while_loading(key: KeyEvent) -> KeyAction {
+    let ctrl_c = key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c');
+    if ctrl_c || key.code == KeyCode::Char('q') {
+        KeyAction::Quit
+    } else {
+        KeyAction::None
+    }
 }
 
-fn set_pending_z() {
-    PENDING_Z.store(true, Ordering::Relaxed);
-}
-
-pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
+pub fn handle_key(state: &mut State, key: KeyEvent) -> KeyAction {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return KeyAction::Quit;
     }
 
-    if app.show_help {
-        return match key.code {
-            KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') => KeyAction::ToggleHelp,
-            _ => KeyAction::Consumed,
-        };
-    }
-
-    if app.show_priority_picker {
-        return handle_priority_picker(app, key);
-    }
-
-    if let Some(form) = &app.task_form {
-        if form.editing {
-            return handle_input(app, key);
+    match state.top_modal() {
+        Some(Modal::Help) => {
+            return match key.code {
+                KeyCode::Char('?') | KeyCode::Esc | KeyCode::Char('q') => KeyAction::ToggleHelp,
+                _ => KeyAction::Consumed,
+            };
         }
-        return handle_form_nav(app, key);
+        Some(Modal::PriorityPicker { .. }) => return handle_priority_picker(state, key),
+        Some(Modal::TaskForm(form)) if form.editing => return handle_input(state, key),
+        Some(Modal::TaskForm(_)) => return handle_form_nav(state, key),
+        Some(Modal::Input(_)) => return handle_input(state, key),
+        Some(Modal::ThemePicker { .. }) => return handle_theme_picker(state, key),
+        None => {}
     }
 
-    if app.show_input {
-        return handle_input(app, key);
+    if matches!(state.active_pane, Pane::Settings) {
+        return handle_settings(state, key);
     }
 
-    if app.show_theme_picker {
-        return handle_theme_picker(app, key);
+    if matches!(state.active_pane, Pane::Detail) {
+        return handle_detail(state, key);
     }
 
-    if matches!(app.active_pane, Pane::Settings) {
-        return handle_settings(app, key);
+    if state.dock_focus.is_some() {
+        return handle_dock_nav(state, key);
     }
 
-    if matches!(app.active_pane, Pane::Detail) {
-        return handle_detail(app, key);
-    }
-
-    if app.dock_focus.is_some() {
-        return handle_dock_nav(app, key);
-    }
-
-    match app.input_mode {
-        InputMode::Vim(state) => handle_vim(app, key, state),
-        InputMode::Standard => handle_standard(app, key),
+    match state.input_mode {
+        InputMode::Vim(vim) => handle_vim(state, key, vim),
+        InputMode::Standard => handle_standard(state, key),
     }
 }
 
-fn handle_dock_nav(app: &mut App, key: KeyEvent) -> KeyAction {
-    let focus = app.dock_focus.unwrap_or(0);
+fn handle_dock_nav(state: &mut State, key: KeyEvent) -> KeyAction {
+    let focus = state.dock_focus.unwrap_or(0);
 
     match key.code {
         KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => {
             if focus + 1 >= DOCK_ITEMS.len() {
-                app.dock_focus = None;
-                app.active_pane = Pane::Projects;
+                state.dock_focus = None;
+                state.active_pane = Pane::Projects;
             } else {
-                app.dock_focus = Some(focus + 1);
+                state.dock_focus = Some(focus + 1);
             }
             KeyAction::Consumed
         }
         KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => {
             if focus == 0 {
-                app.dock_focus = None;
-                app.active_pane = Pane::Tasks;
+                state.dock_focus = None;
+                state.active_pane = Pane::Tasks;
             } else {
-                app.dock_focus = Some(focus - 1);
+                state.dock_focus = Some(focus - 1);
             }
             KeyAction::Consumed
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            app.dock_focus = Some((focus + 1) % DOCK_ITEMS.len());
+            state.dock_focus = Some((focus + 1) % DOCK_ITEMS.len());
             KeyAction::Consumed
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.dock_focus = Some(if focus == 0 {
+            state.dock_focus = Some(if focus == 0 {
                 DOCK_ITEMS.len() - 1
             } else {
                 focus - 1
@@ -138,46 +130,44 @@ fn handle_dock_nav(app: &mut App, key: KeyEvent) -> KeyAction {
         }
         KeyCode::Enter | KeyCode::Char(' ') => {
             let item = DOCK_ITEMS[focus];
-            app.dock_filter = if app.dock_filter == Some(item) {
+            state.dock_filter = if state.dock_filter == Some(item) {
                 None
             } else {
                 Some(item)
             };
-            app.dock_focus = None;
-            app.active_pane = Pane::Tasks;
-            let visible_len = app.visible_tasks().len();
-            app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+            state.dock_focus = None;
+            state.active_pane = Pane::Tasks;
+            let visible_len = state.visible_tasks().len();
+            state.selected_task = state.selected_task.min(visible_len.saturating_sub(1));
             KeyAction::Consumed
         }
         KeyCode::Esc => {
-            app.dock_focus = None;
-            app.dock_filter = None;
-            app.active_pane = Pane::Projects;
-            let visible_len = app.visible_tasks().len();
-            app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+            state.dock_focus = None;
+            state.dock_filter = None;
+            state.active_pane = Pane::Projects;
+            let visible_len = state.visible_tasks().len();
+            state.selected_task = state.selected_task.min(visible_len.saturating_sub(1));
             KeyAction::Consumed
         }
         _ => KeyAction::Consumed,
     }
 }
 
-fn handle_input(app: &mut App, key: KeyEvent) -> KeyAction {
-    let in_form = app.task_form.is_some();
+fn handle_input(state: &mut State, key: KeyEvent) -> KeyAction {
+    let form_field = match state.top_modal() {
+        Some(Modal::TaskForm(form)) => Some(form.active_field),
+        _ => None,
+    };
 
     match key.code {
         KeyCode::Esc => {
-            if in_form {
-                let on_content = app
-                    .task_form
-                    .as_ref()
-                    .map(|f| f.active_field == 0)
-                    .unwrap_or(false);
-                if on_content {
+            if let Some(field) = form_field {
+                if field == 0 {
                     KeyAction::CancelInput
                 } else {
                     KeyAction::FormEscNormal
                 }
-            } else if matches!(app.input_mode, InputMode::Standard) {
+            } else if matches!(state.input_mode, InputMode::Standard) {
                 KeyAction::CancelInput
             } else {
                 KeyAction::SubmitInput
@@ -185,31 +175,30 @@ fn handle_input(app: &mut App, key: KeyEvent) -> KeyAction {
         }
         KeyCode::Enter => KeyAction::SubmitInput,
         KeyCode::Backspace => {
-            app.input_buffer.pop();
+            state.input_buffer.pop();
             KeyAction::Consumed
         }
         KeyCode::Char(c) => {
-            app.input_buffer.push(c);
+            state.input_buffer.push(c);
             KeyAction::Consumed
         }
         _ => KeyAction::Consumed,
     }
 }
 
-fn handle_form_nav(app: &mut App, key: KeyEvent) -> KeyAction {
+fn handle_form_nav(state: &mut State, key: KeyEvent) -> KeyAction {
     match key.code {
         KeyCode::Char('q') => KeyAction::CancelInput,
         KeyCode::Esc => {
-            if let Some(form) = &mut app.task_form {
+            if let Some(Modal::TaskForm(form)) = state.modals.last_mut() {
                 if form.active_field == 0 {
                     return KeyAction::CancelInput;
                 }
                 form.active_field = 0;
                 form.editing = true;
-                app.input_buffer = form.content.clone();
-                app.show_input = true;
-                if let InputMode::Vim(_) = app.input_mode {
-                    app.input_mode = InputMode::Vim(VimState::Insert);
+                state.input_buffer = form.content.clone();
+                if let InputMode::Vim(_) = state.input_mode {
+                    state.input_mode = InputMode::Vim(VimState::Insert);
                 }
             }
             KeyAction::Consumed
@@ -222,21 +211,22 @@ fn handle_form_nav(app: &mut App, key: KeyEvent) -> KeyAction {
     }
 }
 
-fn handle_theme_picker(app: &mut App, key: KeyEvent) -> KeyAction {
+fn handle_theme_picker(state: &mut State, key: KeyEvent) -> KeyAction {
+    let count = state.themes.len();
+    let Some(Modal::ThemePicker { selection }) = state.modals.last_mut() else {
+        return KeyAction::Consumed;
+    };
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => KeyAction::CloseThemePicker,
         KeyCode::Char('j') | KeyCode::Down => {
-            app.theme_selection = (app.theme_selection + 1) % app.themes.len().max(1);
+            *selection = (*selection + 1) % count.max(1);
             KeyAction::Consumed
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            if app.themes.is_empty() {
+            if count == 0 {
                 return KeyAction::Consumed;
             }
-            app.theme_selection = app
-                .theme_selection
-                .checked_sub(1)
-                .unwrap_or(app.themes.len() - 1);
+            *selection = selection.checked_sub(1).unwrap_or(count - 1);
             KeyAction::Consumed
         }
         KeyCode::Enter | KeyCode::Char(' ') => KeyAction::SelectTheme,
@@ -244,14 +234,17 @@ fn handle_theme_picker(app: &mut App, key: KeyEvent) -> KeyAction {
     }
 }
 
-fn handle_priority_picker(app: &mut App, key: KeyEvent) -> KeyAction {
+fn handle_priority_picker(state: &mut State, key: KeyEvent) -> KeyAction {
+    if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+        state.modals.pop();
+        return KeyAction::Consumed;
+    }
+    let Some(Modal::PriorityPicker { selection }) = state.modals.last_mut() else {
+        return KeyAction::Consumed;
+    };
     match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => {
-            app.show_priority_picker = false;
-            KeyAction::Consumed
-        }
         KeyCode::Char('j') | KeyCode::Down => {
-            app.priority_selection = match app.priority_selection {
+            *selection = match *selection {
                 4 => 3,
                 3 => 2,
                 2 => 1,
@@ -260,7 +253,7 @@ fn handle_priority_picker(app: &mut App, key: KeyEvent) -> KeyAction {
             KeyAction::Consumed
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.priority_selection = match app.priority_selection {
+            *selection = match *selection {
                 1 => 2,
                 2 => 3,
                 3 => 4,
@@ -269,19 +262,19 @@ fn handle_priority_picker(app: &mut App, key: KeyEvent) -> KeyAction {
             KeyAction::Consumed
         }
         KeyCode::Char('1') => {
-            app.priority_selection = 4;
+            *selection = 4;
             KeyAction::SelectPriority
         }
         KeyCode::Char('2') => {
-            app.priority_selection = 3;
+            *selection = 3;
             KeyAction::SelectPriority
         }
         KeyCode::Char('3') => {
-            app.priority_selection = 2;
+            *selection = 2;
             KeyAction::SelectPriority
         }
         KeyCode::Char('4') => {
-            app.priority_selection = 1;
+            *selection = 1;
             KeyAction::SelectPriority
         }
         KeyCode::Enter | KeyCode::Char(' ') => KeyAction::SelectPriority,
@@ -289,7 +282,7 @@ fn handle_priority_picker(app: &mut App, key: KeyEvent) -> KeyAction {
     }
 }
 
-fn handle_detail(_app: &mut App, key: KeyEvent) -> KeyAction {
+fn handle_detail(_state: &mut State, key: KeyEvent) -> KeyAction {
     match key.code {
         KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => {
             KeyAction::CloseDetail
@@ -305,31 +298,28 @@ fn handle_detail(_app: &mut App, key: KeyEvent) -> KeyAction {
     }
 }
 
-fn handle_settings(app: &mut App, key: KeyEvent) -> KeyAction {
+fn handle_settings(state: &mut State, key: KeyEvent) -> KeyAction {
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => KeyAction::ToggleSettings,
 
         KeyCode::Char('j') | KeyCode::Down => {
-            app.settings_selection = (app.settings_selection + 1) % settings_item_count();
+            state.settings_selection = (state.settings_selection + 1) % settings_item_count();
             KeyAction::Consumed
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            if app.settings_selection == 0 {
-                app.settings_selection = settings_item_count() - 1;
+            if state.settings_selection == 0 {
+                state.settings_selection = settings_item_count() - 1;
             } else {
-                app.settings_selection -= 1;
+                state.settings_selection -= 1;
             }
             KeyAction::Consumed
         }
 
         KeyCode::Enter | KeyCode::Char(' ') => {
-            match app.settings_selection {
+            match state.settings_selection {
                 0 => return KeyAction::ToggleMode,
                 1 => return KeyAction::OpenThemePicker,
-                2 => {
-                    app.cycle_idle_timeout();
-                    return KeyAction::Consumed;
-                }
+                2 => return KeyAction::CycleIdleTimeout,
                 _ => {}
             }
             KeyAction::Consumed
@@ -343,17 +333,17 @@ fn settings_item_count() -> usize {
     3
 }
 
-fn handle_vim(app: &mut App, key: KeyEvent, state: VimState) -> KeyAction {
-    match state {
-        VimState::Normal => handle_vim_normal(app, key),
-        VimState::Insert => handle_vim_insert(app, key),
+fn handle_vim(state: &mut State, key: KeyEvent, vim: VimState) -> KeyAction {
+    match vim {
+        VimState::Normal => handle_vim_normal(state, key),
+        VimState::Insert => handle_vim_insert(state, key),
     }
 }
 
-fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
-    if take_pending_z() {
+fn handle_vim_normal(state: &mut State, key: KeyEvent) -> KeyAction {
+    if std::mem::take(&mut state.pending_z) {
         return match key.code {
-            KeyCode::Char('a') if matches!(app.active_pane, Pane::Tasks) => {
+            KeyCode::Char('a') if matches!(state.active_pane, Pane::Tasks) => {
                 KeyAction::ToggleCollapse
             }
             KeyCode::Char('R') => KeyAction::OpenAllFolds,
@@ -369,70 +359,72 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('R') => KeyAction::ForceResync,
 
         KeyCode::Char('z') => {
-            set_pending_z();
+            state.pending_z = true;
             KeyAction::Consumed
         }
 
-        KeyCode::Char('x') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CompleteTask,
-        KeyCode::Char('a') if matches!(app.active_pane, Pane::Tasks) => KeyAction::StartInput,
-        KeyCode::Char('f') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
-        KeyCode::Char('o') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleSort,
-        KeyCode::Char('s') if matches!(app.active_pane, Pane::Projects) => KeyAction::StarProject,
+        KeyCode::Char('x') if matches!(state.active_pane, Pane::Tasks) => KeyAction::CompleteTask,
+        KeyCode::Char('a') if matches!(state.active_pane, Pane::Tasks) => KeyAction::StartInput,
+        KeyCode::Char('f') if matches!(state.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
+        KeyCode::Char('o') if matches!(state.active_pane, Pane::Tasks) => KeyAction::CycleSort,
+        KeyCode::Char('s') if matches!(state.active_pane, Pane::Projects) => KeyAction::StarProject,
 
-        KeyCode::Char('j') | KeyCode::Down => move_in_pane(app, 1),
-        KeyCode::Char('k') | KeyCode::Up => move_in_pane(app, -1),
+        KeyCode::Char('j') | KeyCode::Down => move_in_pane(state, 1),
+        KeyCode::Char('k') | KeyCode::Up => move_in_pane(state, -1),
 
-        KeyCode::Char('g') => jump_to_edge(app, true),
-        KeyCode::Char('G') => jump_to_edge(app, false),
+        KeyCode::Char('g') => jump_to_edge(state, true),
+        KeyCode::Char('G') => jump_to_edge(state, false),
 
         KeyCode::Char('l') | KeyCode::Right | KeyCode::Tab => {
-            match app.active_pane {
-                Pane::Projects => app.active_pane = Pane::Tasks,
+            match state.active_pane {
+                Pane::Projects => state.active_pane = Pane::Tasks,
                 Pane::Tasks => {
-                    app.dock_focus = Some(0);
-                    app.active_pane = Pane::StatsDock;
+                    state.dock_focus = Some(0);
+                    state.active_pane = Pane::StatsDock;
                 }
                 _ => {}
             }
             KeyAction::Consumed
         }
         KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => {
-            match app.active_pane {
-                Pane::Tasks => app.active_pane = Pane::Projects,
+            match state.active_pane {
+                Pane::Tasks => state.active_pane = Pane::Projects,
                 Pane::Projects => {
-                    app.dock_focus = Some(DOCK_ITEMS.len() - 1);
-                    app.active_pane = Pane::StatsDock;
+                    state.dock_focus = Some(DOCK_ITEMS.len() - 1);
+                    state.active_pane = Pane::StatsDock;
                 }
                 _ => {}
             }
             KeyAction::Consumed
         }
 
-        KeyCode::Enter => match app.active_pane {
+        KeyCode::Enter => match state.active_pane {
             Pane::Projects => {
-                app.active_pane = Pane::Tasks;
+                state.active_pane = Pane::Tasks;
                 KeyAction::Consumed
             }
             Pane::Tasks => KeyAction::OpenDetail,
             _ => KeyAction::Consumed,
         },
 
-        KeyCode::Char(' ') if matches!(app.active_pane, Pane::Tasks) && app.today_view_active => {
+        KeyCode::Char(' ')
+            if matches!(state.active_pane, Pane::Tasks) && state.today_view_active =>
+        {
             KeyAction::ToggleOverdueSection
         }
-        KeyCode::Char(' ') if matches!(app.active_pane, Pane::Tasks) => KeyAction::ToggleCollapse,
-        KeyCode::Char(' ') if matches!(app.active_pane, Pane::Projects) => {
+        KeyCode::Char(' ') if matches!(state.active_pane, Pane::Tasks) => KeyAction::ToggleCollapse,
+        KeyCode::Char(' ') if matches!(state.active_pane, Pane::Projects) => {
             KeyAction::ToggleFolderCollapse
         }
 
         KeyCode::Esc => {
-            if matches!(app.active_pane, Pane::Tasks) {
-                if app.dock_filter.is_some() {
-                    app.dock_filter = None;
-                    let visible_len = app.visible_tasks().len();
-                    app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+            if matches!(state.active_pane, Pane::Tasks) {
+                if state.dock_filter.is_some() {
+                    state.dock_filter = None;
+                    let visible_len = state.visible_tasks().len();
+                    state.selected_task = state.selected_task.min(visible_len.saturating_sub(1));
                 } else {
-                    app.active_pane = Pane::Projects;
+                    state.active_pane = Pane::Projects;
                 }
                 KeyAction::Consumed
             } else {
@@ -444,7 +436,7 @@ fn handle_vim_normal(app: &mut App, key: KeyEvent) -> KeyAction {
     }
 }
 
-fn handle_vim_insert(_app: &mut App, key: KeyEvent) -> KeyAction {
+fn handle_vim_insert(_state: &mut State, key: KeyEvent) -> KeyAction {
     match key.code {
         KeyCode::Esc => KeyAction::CancelInput,
         KeyCode::Enter => KeyAction::SubmitInput,
@@ -452,11 +444,13 @@ fn handle_vim_insert(_app: &mut App, key: KeyEvent) -> KeyAction {
     }
 }
 
-fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
+fn handle_standard(state: &mut State, key: KeyEvent) -> KeyAction {
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         return match key.code {
-            KeyCode::Char('a') if matches!(app.active_pane, Pane::Tasks) => KeyAction::StartInput,
-            KeyCode::Char('x') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CompleteTask,
+            KeyCode::Char('a') if matches!(state.active_pane, Pane::Tasks) => KeyAction::StartInput,
+            KeyCode::Char('x') if matches!(state.active_pane, Pane::Tasks) => {
+                KeyAction::CompleteTask
+            }
             _ => KeyAction::None,
         };
     }
@@ -466,40 +460,40 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
         KeyCode::Char('?') => KeyAction::ToggleHelp,
         KeyCode::Char(',') => KeyAction::ToggleSettings,
         KeyCode::Char('R') => KeyAction::ForceResync,
-        KeyCode::Char('f') if matches!(app.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
+        KeyCode::Char('f') if matches!(state.active_pane, Pane::Tasks) => KeyAction::CycleFilter,
 
-        KeyCode::Down => move_in_pane(app, 1),
-        KeyCode::Up => move_in_pane(app, -1),
+        KeyCode::Down => move_in_pane(state, 1),
+        KeyCode::Up => move_in_pane(state, -1),
 
-        KeyCode::Home => jump_to_edge(app, true),
-        KeyCode::End => jump_to_edge(app, false),
+        KeyCode::Home => jump_to_edge(state, true),
+        KeyCode::End => jump_to_edge(state, false),
 
         KeyCode::Right | KeyCode::Tab => {
-            match app.active_pane {
-                Pane::Projects => app.active_pane = Pane::Tasks,
+            match state.active_pane {
+                Pane::Projects => state.active_pane = Pane::Tasks,
                 Pane::Tasks => {
-                    app.dock_focus = Some(0);
-                    app.active_pane = Pane::StatsDock;
+                    state.dock_focus = Some(0);
+                    state.active_pane = Pane::StatsDock;
                 }
                 _ => {}
             }
             KeyAction::Consumed
         }
         KeyCode::Left | KeyCode::BackTab => {
-            match app.active_pane {
-                Pane::Tasks => app.active_pane = Pane::Projects,
+            match state.active_pane {
+                Pane::Tasks => state.active_pane = Pane::Projects,
                 Pane::Projects => {
-                    app.dock_focus = Some(DOCK_ITEMS.len() - 1);
-                    app.active_pane = Pane::StatsDock;
+                    state.dock_focus = Some(DOCK_ITEMS.len() - 1);
+                    state.active_pane = Pane::StatsDock;
                 }
                 _ => {}
             }
             KeyAction::Consumed
         }
 
-        KeyCode::Enter => match app.active_pane {
+        KeyCode::Enter => match state.active_pane {
             Pane::Projects => {
-                app.active_pane = Pane::Tasks;
+                state.active_pane = Pane::Tasks;
                 KeyAction::Consumed
             }
             Pane::Tasks => KeyAction::OpenDetail,
@@ -507,13 +501,13 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
         },
 
         KeyCode::Esc => {
-            if matches!(app.active_pane, Pane::Tasks) {
-                if app.dock_filter.is_some() {
-                    app.dock_filter = None;
-                    let visible_len = app.visible_tasks().len();
-                    app.selected_task = app.selected_task.min(visible_len.saturating_sub(1));
+            if matches!(state.active_pane, Pane::Tasks) {
+                if state.dock_filter.is_some() {
+                    state.dock_filter = None;
+                    let visible_len = state.visible_tasks().len();
+                    state.selected_task = state.selected_task.min(visible_len.saturating_sub(1));
                 } else {
-                    app.active_pane = Pane::Projects;
+                    state.active_pane = Pane::Projects;
                 }
                 KeyAction::Consumed
             } else {
@@ -525,10 +519,10 @@ fn handle_standard(app: &mut App, key: KeyEvent) -> KeyAction {
     }
 }
 
-fn move_in_pane(app: &mut App, delta: i32) -> KeyAction {
-    match app.active_pane {
+fn move_in_pane(state: &mut State, delta: i32) -> KeyAction {
+    match state.active_pane {
         Pane::Projects => {
-            let nav = app.visible_nav_items();
+            let nav = state.visible_nav_items();
             if nav.is_empty() {
                 return KeyAction::Consumed;
             }
@@ -536,20 +530,20 @@ fn move_in_pane(app: &mut App, delta: i32) -> KeyAction {
                 .iter()
                 .position(|item| match item {
                     ProjectNavItem::Project(i) => {
-                        !app.today_view_active
-                            && app.folder_cursor.is_none()
-                            && *i == app.selected_project
+                        !state.today_view_active
+                            && state.folder_cursor.is_none()
+                            && *i == state.selected_project
                     }
-                    ProjectNavItem::Folder(fi) => app.folder_cursor == Some(*fi),
+                    ProjectNavItem::Folder(fi) => state.folder_cursor == Some(*fi),
                     ProjectNavItem::TodayView => {
-                        app.today_view_active && app.folder_cursor.is_none()
+                        state.today_view_active && state.folder_cursor.is_none()
                     }
                 })
                 .unwrap_or(0) as i32;
             let next_pos = pos + delta;
             if next_pos >= nav.len() as i32 {
-                app.dock_focus = Some(0);
-                app.active_pane = Pane::StatsDock;
+                state.dock_focus = Some(0);
+                state.active_pane = Pane::StatsDock;
                 return KeyAction::Consumed;
             }
             if next_pos < 0 {
@@ -557,61 +551,61 @@ fn move_in_pane(app: &mut App, delta: i32) -> KeyAction {
             }
             match nav[next_pos as usize] {
                 ProjectNavItem::Project(i) => {
-                    app.folder_cursor = None;
-                    app.selected_project = i;
+                    state.folder_cursor = None;
+                    state.selected_project = i;
                     KeyAction::ProjectChanged
                 }
                 ProjectNavItem::Folder(fi) => {
-                    app.folder_cursor = Some(fi);
+                    state.folder_cursor = Some(fi);
                     KeyAction::Consumed
                 }
                 ProjectNavItem::TodayView => {
-                    app.folder_cursor = None;
+                    state.folder_cursor = None;
                     KeyAction::TodayViewSelected
                 }
             }
         }
         Pane::Tasks => {
-            let visible = app.visible_tasks();
+            let visible = state.visible_tasks();
             let visible_len = visible.len();
             if visible_len == 0 {
                 return KeyAction::Consumed;
             }
-            let current = app.selected_task as i32;
+            let current = state.selected_task as i32;
             let mut next = (current + delta).rem_euclid(visible_len as i32) as usize;
             // Skip context rows (dimmed active parents shown in Done filter).
             for _ in 0..visible_len {
-                if !app.is_context_task(visible[next]) {
+                if !state.is_context_task(visible[next]) {
                     break;
                 }
                 next = ((next as i32) + delta).rem_euclid(visible_len as i32) as usize;
             }
-            app.selected_task = next;
+            state.selected_task = next;
             KeyAction::Consumed
         }
         _ => KeyAction::Consumed,
     }
 }
 
-fn jump_to_edge(app: &mut App, top: bool) -> KeyAction {
-    match app.active_pane {
+fn jump_to_edge(state: &mut State, top: bool) -> KeyAction {
+    match state.active_pane {
         Pane::Projects => {
-            let nav = app.visible_nav_items();
+            let nav = state.visible_nav_items();
             let item = if top { nav.first() } else { nav.last() };
             match item {
                 Some(ProjectNavItem::Project(i)) => {
                     let i = *i;
-                    app.folder_cursor = None;
-                    if app.selected_project != i {
-                        app.selected_project = i;
+                    state.folder_cursor = None;
+                    if state.selected_project != i {
+                        state.selected_project = i;
                         return KeyAction::ProjectChanged;
                     }
                 }
                 Some(ProjectNavItem::Folder(fi)) => {
-                    app.folder_cursor = Some(*fi);
+                    state.folder_cursor = Some(*fi);
                 }
                 Some(ProjectNavItem::TodayView) => {
-                    app.folder_cursor = None;
+                    state.folder_cursor = None;
                     return KeyAction::TodayViewSelected;
                 }
                 None => {}
@@ -619,8 +613,8 @@ fn jump_to_edge(app: &mut App, top: bool) -> KeyAction {
             KeyAction::Consumed
         }
         Pane::Tasks => {
-            let visible_len = app.visible_tasks().len();
-            app.selected_task = if top {
+            let visible_len = state.visible_tasks().len();
+            state.selected_task = if top {
                 0
             } else {
                 visible_len.saturating_sub(1)

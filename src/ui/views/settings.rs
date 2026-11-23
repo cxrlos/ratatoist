@@ -3,10 +3,10 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding};
 
-use crate::app::legacy::App;
+use crate::app::State;
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
-    let theme = app.theme();
+pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
+    let theme = state.theme();
 
     let block = Block::default()
         .title(" Settings ")
@@ -28,22 +28,22 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let mode_label = app.input_mode.label();
+    let mode_label = state.input_mode.label();
     let mode_item = ListItem::new(Line::from(vec![
         Span::styled("Mode  ", theme.muted_text()),
         Span::styled(mode_label, theme.key_hint()),
     ]));
 
-    let theme_name = &app.themes[app.theme_idx].name;
+    let theme_name = &state.themes[state.theme_idx].name;
     let theme_item = ListItem::new(Line::from(vec![
         Span::styled("Theme ", theme.muted_text()),
         Span::styled(theme_name, theme.key_hint()),
     ]));
 
-    let idle_label = if app.idle_timeout_secs < 60 {
-        format!("{}s", app.idle_timeout_secs)
+    let idle_label = if state.idle_timeout_secs < 60 {
+        format!("{}s", state.idle_timeout_secs)
     } else {
-        format!("{}m", app.idle_timeout_secs / 60)
+        format!("{}m", state.idle_timeout_secs / 60)
     };
     let idle_item = ListItem::new(Line::from(vec![
         Span::styled("Idle  ", theme.muted_text()),
@@ -60,6 +60,6 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
 
     let list = List::new(items).highlight_style(highlight_style);
 
-    let mut state = ListState::default().with_selected(Some(app.settings_selection));
-    frame.render_stateful_widget(list, inner, &mut state);
+    let mut list_state = ListState::default().with_selected(Some(state.settings_selection));
+    frame.render_stateful_widget(list, inner, &mut list_state);
 }

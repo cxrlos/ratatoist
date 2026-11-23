@@ -4,13 +4,19 @@
 
 mod effect;
 mod event;
-pub mod legacy;
+mod modal;
 mod state;
+mod sync;
 mod update;
+mod view;
 
 pub use effect::Effect;
 pub use event::Event;
-pub use state::State;
+pub use modal::{InputTarget, Modal, TaskForm};
+pub use state::{
+    AppError, DEFAULT_IDLE_TIMEOUT_SECS, DOCK_ITEMS, DockItem, InputMode, OverviewStats, Pane,
+    ProjectEntry, ProjectNavItem, SortMode, State, TaskFilter, UserRecord, VimState,
+};
 pub use update::{Update, update};
 
 use ratatui::Terminal;
@@ -62,7 +68,7 @@ impl<B: Backend> App<B> {
 
     fn draw(&mut self) -> Result<(), B::Error> {
         let state = &self.state;
-        self.terminal.draw(|frame| ui::draw_state(frame, state))?;
+        self.terminal.draw(|frame| ui::draw(frame, state))?;
         self.frames_drawn += 1;
         Ok(())
     }

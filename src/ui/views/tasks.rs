@@ -5,15 +5,15 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
-use crate::app::legacy::{App, InputMode};
+use crate::app::{InputMode, State};
 use crate::ui::dates;
 use crate::ui::theme::Theme;
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
-    let theme = app.theme();
-    let visible = app.visible_tasks();
+pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
+    let theme = state.theme();
+    let visible = state.visible_tasks();
 
-    if app.today_view_active && visible.is_empty() {
+    if state.today_view_active && visible.is_empty() {
         let lines = vec![
             ListItem::new(Line::default()),
             ListItem::new(Line::from(Span::styled(
@@ -25,8 +25,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
         return;
     }
 
-    if visible.is_empty() && !app.today_view_active && app.dock_filter.is_none() {
-        let hint = match app.input_mode {
+    if visible.is_empty() && !state.today_view_active && state.dock_filter.is_none() {
+        let hint = match state.input_mode {
             InputMode::Vim(_) => "press a to add a task",
             InputMode::Standard => "press Ctrl-a to add a task",
         };
@@ -54,23 +54,23 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
         return;
     }
 
-    let cross_project = app.today_view_active || app.dock_filter.is_some();
+    let cross_project = state.today_view_active || state.dock_filter.is_some();
 
     let mut items: Vec<ListItem> = Vec::new();
     let mut visual_selected: Option<usize> = None;
     let mut current_project_id: Option<String> = None;
     let mut last_section_id: Option<String> = None;
 
-    let today = dates::today_str();
-    let stats = if app.today_view_active {
-        Some(app.overview_stats())
+    let today = state.today_str();
+    let stats = if state.today_view_active {
+        Some(state.overview_stats())
     } else {
         None
     };
     let mut overdue_header_shown = false;
 
     for (task_idx, task) in visible.iter().enumerate() {
-        if app.today_view_active
+        if state.today_view_active
             && !overdue_header_shown
             && task
                 .due
@@ -78,7 +78,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
                 .is_some_and(|d| dates::date_part(&d.date) < today.as_str())
         {
             let overdue_count = stats.as_ref().map(|s| s.overdue).unwrap_or(0);
-            let arrow = if app.overdue_section_collapsed {
+            let arrow = if state.overdue_section_collapsed {
                 "▶"
             } else {
                 "▼"
@@ -97,7 +97,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
         if !cross_project && task.parent_id.is_none() && task.section_id != last_section_id {
             last_section_id = task.section_id.clone();
             if let Some(sid) = &task.section_id {
-                let name = app
+                let name = state
                     .sections
                     .iter()
                     .find(|s| &s.id == sid)
@@ -113,10 +113,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
             }
         }
 
-        if task_idx == app.selected_task {
+        if task_idx == state.selected_task {
             visual_selected = Some(items.len());
         }
-        items.push(build_task_item(task, app, theme, cross_project));
+        items.push(build_task_item(task, state, theme, cross_project));
     }
 
     let highlight_style = if is_active {
@@ -126,13 +126,13 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     };
 
     let list = List::new(items).highlight_style(highlight_style);
-    let mut state = ListState::default().with_selected(visual_selected);
-    frame.render_stateful_widget(list, area, &mut state);
+    let mut list_state = ListState::default().with_selected(visual_selected);
+    frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn build_task_item<'a>(
     task: &'a Task,
-    app: &App,
+    state: &State,
     theme: &Theme,
     show_project: bool,
 ) -> ListItem<'a> {
@@ -140,10 +140,10 @@ fn build_task_item<'a>(
     let depth = if show_project {
         0
     } else {
-        app.task_depth(task)
+        state.task_depth(task)
     };
-    let has_children = app.has_children(&task.id);
-    let collapsed = app.is_collapsed(&task.id);
+    let has_children = state.has_children(&task.id);
+    let collapsed = state.is_collapsed(&task.id);
 
     if depth > 0 {
         spans.push(Span::styled("  ".repeat(depth), theme.muted_text()));
@@ -160,7 +160,7 @@ fn build_task_item<'a>(
     };
     spans.push(Span::styled(tree_icon, theme.muted_text()));
 
-    if app.is_context_task(task) {
+    if state.is_context_task(task) {
         spans.push(Span::styled(&task.content, theme.muted_text()));
         return ListItem::new(Line::from(spans));
     }
@@ -181,7 +181,7 @@ fn build_task_item<'a>(
 
     if !task.labels.is_empty() && !task.checked {
         for label_name in &task.labels {
-            let color = app
+            let color = state
                 .labels
                 .iter()
                 .find(|l| &l.name == label_name)
@@ -208,7 +208,7 @@ fn build_task_item<'a>(
     if let Some(due) = &task.due
         && !task.checked
     {
-        let formatted = dates::format_due(due, theme);
+        let formatted = dates::format_due(due, state.today, theme);
         spans.push(Span::styled(
             format!("  {}", formatted.text),
             formatted.style,

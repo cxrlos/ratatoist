@@ -3,12 +3,12 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::app::legacy::{App, DOCK_ITEMS, InputMode, Pane};
+use crate::app::{DOCK_ITEMS, InputMode, Pane, State};
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect) {
-    let theme = app.theme();
+pub fn render(frame: &mut Frame, state: &State, area: Rect) {
+    let theme = state.theme();
 
-    if let Some(idx) = app.dock_focus {
+    if let Some(idx) = state.dock_focus {
         let item = DOCK_ITEMS[idx];
         let mut spans: Vec<Span> = Vec::new();
         spans.push(Span::styled(" ", theme.muted_text()));
@@ -27,7 +27,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let hints = match (&app.input_mode, &app.active_pane) {
+    let hints = match (&state.input_mode, &state.active_pane) {
         (_, Pane::StatsDock) => vec![("h/l", "navigate"), ("Enter", "filter"), ("Esc", "clear")],
         (_, Pane::Settings) => vec![
             ("j/k", "navigate"),

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::DateTime;
+use chrono::{DateTime, NaiveDate};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
 use crate::todoist::model::{Comment, Task};
 
-use crate::app::legacy::UserRecord;
+use crate::app::UserRecord;
 use crate::ui::dates;
 use crate::ui::theme::Theme;
 
@@ -23,6 +23,7 @@ pub fn render(
     area: Rect,
     scroll: u16,
     selected_field: usize,
+    today: NaiveDate,
     theme: &Theme,
 ) {
     let block = Block::default()
@@ -79,7 +80,7 @@ pub fn render(
         theme.muted_text()
     };
     if let Some(due) = &task.due {
-        let formatted = dates::format_due(due, theme);
+        let formatted = dates::format_due(due, today, theme);
         let recurring_marker = if due.is_recurring { " ↻" } else { "" };
         let due_display = format!("{}{}  ({})", formatted.text, recurring_marker, due.date);
         lines.push(Line::from(vec![

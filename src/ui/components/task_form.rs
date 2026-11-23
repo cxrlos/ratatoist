@@ -6,12 +6,12 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
 use crate::todoist::model::priority_label;
 
-use crate::app::legacy::{App, TaskForm};
+use crate::app::{State, TaskForm};
 
 use super::popup::{centered_rect, render_dim_overlay};
 
-pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
-    let theme = app.theme();
+pub fn render(frame: &mut Frame, state: &State, form: &TaskForm) {
+    let theme = state.theme();
     render_dim_overlay(frame, theme);
 
     let area = frame.area();
@@ -52,7 +52,8 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
         ),
         (
             "Project",
-            app.projects
+            state
+                .projects
                 .iter()
                 .find(|p| p.id == form.project_id)
                 .map(|p| p.name.clone())
@@ -87,7 +88,7 @@ pub fn render(frame: &mut Frame, app: &App, form: &TaskForm) {
     if form.editing {
         lines.push(Line::default());
         lines.push(Line::from(vec![
-            Span::styled(&app.input_buffer, theme.normal_text()),
+            Span::styled(&state.input_buffer, theme.normal_text()),
             Span::styled("_", theme.due_upcoming()),
         ]));
     }

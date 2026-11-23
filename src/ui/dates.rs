@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use ratatui::style::Style;
 
 use super::theme::Theme;
@@ -8,8 +9,9 @@ pub struct FormattedDue {
     pub style: Style,
 }
 
-pub fn format_due(due: &Due, theme: &Theme) -> FormattedDue {
-    let today = today_str();
+/// How `due` reads and looks on `today`.
+pub fn format_due(due: &Due, today: NaiveDate, theme: &Theme) -> FormattedDue {
+    let today = day_str(today);
     let date_str = &due.date;
 
     let days_away = days_between(&today, date_str);
@@ -62,18 +64,9 @@ pub fn date_part(due_date: &str) -> &str {
     due_date.split('T').next().unwrap_or(due_date)
 }
 
-pub fn today_str() -> String {
-    chrono::Local::now()
-        .date_naive()
-        .format("%Y-%m-%d")
-        .to_string()
-}
-
-pub fn offset_days_str(days: i64) -> String {
-    let today = chrono::Local::now().date_naive();
-    (today + chrono::Duration::days(days))
-        .format("%Y-%m-%d")
-        .to_string()
+/// `day` as Todoist writes a due date, `YYYY-MM-DD`.
+pub fn day_str(day: NaiveDate) -> String {
+    day.format("%Y-%m-%d").to_string()
 }
 
 fn parse_date(s: &str) -> Option<(i32, u32, u32)> {

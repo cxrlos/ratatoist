@@ -4,21 +4,21 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
-use crate::app::legacy::App;
+use crate::app::{InputTarget, State};
 
 use super::popup::{centered_rect, render_dim_overlay};
 
-pub fn render(frame: &mut Frame, app: &App) {
-    let theme = app.theme();
+pub fn render(frame: &mut Frame, state: &State, target: InputTarget) {
+    let theme = state.theme();
     render_dim_overlay(frame, theme);
 
     let area = frame.area();
     let popup_area = centered_rect(50, 20, area);
 
-    let title = if app.comment_input {
+    let title = if target == InputTarget::Comment {
         " Add Comment "
-    } else if app.editing_field {
-        match app.detail_field {
+    } else if target == InputTarget::Field {
+        match state.detail_field {
             0 => " Edit Content ",
             1 => " Edit Due Date ",
             2 => " Edit Description ",
@@ -43,10 +43,10 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     let mut lines = Vec::new();
 
-    if app.input_buffer.is_empty() {
-        let placeholder = if app.editing_field && app.detail_field == 2 {
+    if state.input_buffer.is_empty() {
+        let placeholder = if target == InputTarget::Field && state.detail_field == 2 {
             "e.g. tomorrow, next monday, 2026-03-15, 28/02/2026..."
-        } else if app.comment_input {
+        } else if target == InputTarget::Comment {
             "write a comment..."
         } else {
             "type task content (p1, @label, #project, due date parsed automatically)..."
@@ -57,7 +57,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         )));
     } else {
         lines.push(Line::from(vec![
-            Span::styled(&app.input_buffer, theme.normal_text()),
+            Span::styled(&state.input_buffer, theme.normal_text()),
             Span::styled("▎", theme.due_upcoming()),
         ]));
     }

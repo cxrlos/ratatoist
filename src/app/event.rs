@@ -7,6 +7,8 @@ use crate::todoist::{ClientError, LiveMessage};
 /// Everything that can change what ratatoist shows.
 #[derive(Debug)]
 pub enum Event {
+    /// The runtime has started: the first sync begins.
+    Start,
     Key(KeyEvent),
     Resize {
         width: u16,

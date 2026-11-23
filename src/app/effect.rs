@@ -24,5 +24,11 @@ pub enum Effect {
     },
     /// Save the sync token to disk. Nothing comes back.
     PersistSyncToken(String),
+    /// Save the theme and idle timeout chosen in Settings to
+    /// `ui_settings.json`. Nothing comes back.
+    SaveUiSettings {
+        theme: String,
+        idle_timeout_secs: u64,
+    },
     Quit,
 }
