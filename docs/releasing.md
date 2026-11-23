@@ -54,25 +54,25 @@ Done: squash merge only with the PR title as the commit message, delete branches
 | # | What | Why |
 |---|---|---|
 | 1 | Install the release-plz GitHub App (repository permissions Contents: read and write, Pull requests: read and write) on `cxrlos/ratatoist`, and store its App ID (or Client ID) as the secret `RELEASE_PLZ_APP_ID` and a private key as `RELEASE_PLZ_APP_PRIVATE_KEY` | With the default `GITHUB_TOKEN`, CI does not run on the release PR and the tag does not trigger dist |
-| 2 | Store a fine-grained PAT with Contents: read and write on `cxrlos/homebrew-tap` only as `HOMEBREW_TAP_TOKEN`, and prove it is non-empty and valid (below) | dist pushes the formula there; an empty secret only fails at the end of the first tagged run, after the release exists |
+| 2 | Create a fine-grained PAT with Contents: read and write on `cxrlos/homebrew-tap` only, prove it can read the tap, then store it as `HOMEBREW_TAP_TOKEN` through `gh`'s prompt (below), before any tag | dist pushes the formula there; an empty secret only fails at the end of the first tagged run, after the release exists |
 | 3 | Delete the old `CARGO_REGISTRY_TOKEN` secret | Publishing uses trusted publishing; no registry token is stored |
 | 4 | Add the check `plan` (the `plan` job of `release.yml`) to the required checks of the `main` ruleset, next to `fmt`, `clippy`, `test (ubuntu-latest)`, `test (macos-latest)`, `msrv (1.88)`, `cargo deny`, `package`, `gitleaks` and `PR title` | A `release.yml` that dist did not generate cannot merge |
 | 5 | Publish `0.6.0` to crates.io by hand (see below) | crates.io cannot trusted-publish a crate that does not exist yet |
 | 6 | On crates.io, add a trusted publisher for `ratatoist`: repository owner `cxrlos`, repository `ratatoist`, workflow `release-plz.yml`, no environment | Lets later releases publish with OIDC instead of a token |
 | 7 | Revoke the API token used in step 5 | It is no longer needed |
 
-To store the tap token (step 2) and prove it is non-empty before the first tag:
+To store the tap token (step 2), I prove it first, then store it through `gh`'s own prompt. Both happen before any tag is pushed, because dist only uses the token at the end of a tagged run, after the release already exists.
 
 ```bash
 read -rs TAP_TOKEN
-test -n "$TAP_TOKEN" && echo non-empty
-GH_TOKEN="$TAP_TOKEN" gh api repos/cxrlos/homebrew-tap --jq .full_name
-printf '%s' "$TAP_TOKEN" | gh secret set HOMEBREW_TAP_TOKEN -R cxrlos/ratatoist
+test -n "$TAP_TOKEN" \
+  && GH_TOKEN="$TAP_TOKEN" gh api repos/cxrlos/homebrew-tap --jq .full_name
 unset TAP_TOKEN
+gh secret set HOMEBREW_TAP_TOKEN -R cxrlos/ratatoist
 gh secret list -R cxrlos/ratatoist
 ```
 
-The second command prints `non-empty`, the third prints `cxrlos/homebrew-tap`, and the list shows `HOMEBREW_TAP_TOKEN` with today's date.
+`read -rs` waits for the token without echoing it. The second command prints `cxrlos/homebrew-tap` only for a non-empty token that can read the tap; the `test -n` matters, because with an empty `GH_TOKEN` the `gh api` call falls back to my own login and succeeds for the wrong reason. `gh secret set` without a value prompts for it (`? Paste your secret`), and I paste the same token there; I never pipe a shell variable into it, because a pipe from an empty variable stores an empty secret without an error, which is what broke the first Homebrew publish of 0.6.0. The list then shows `HOMEBREW_TAP_TOKEN` with today's date, which proves only that the secret exists, not that it holds a value: the `gh api` line above is the proof.
 
 To add the `plan` check (step 4), once a PR has run `release.yml`:
 
