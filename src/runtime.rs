@@ -62,7 +62,7 @@ pub fn initial_state(config: &Config, files: Option<&Path>) -> State {
     let sync_token = files
         .map(|dir| SyncState::load(dir).sync_token)
         .unwrap_or_else(|| "*".to_owned());
-    initial_state_from(config, &ui, sync_token, Local::now())
+    initial_state_from(config, &ui, sync_token, clock())
 }
 
 /// The first state from what was read. Where `config` and `ui` both set the
@@ -135,9 +135,15 @@ where
                 None => return Ok(()),
                 Some(read) => from_terminal(read?),
             },
-            _ = ticks.tick() => Some(Event::Tick { now: Local::now() }),
+            _ = ticks.tick() => Some(Event::Tick { now: clock() }),
         };
     }
+}
+
+/// The wall clock: the one read the `disallowed_methods` lint lets through.
+#[allow(clippy::disallowed_methods)]
+fn clock() -> DateTime<Local> {
+    Local::now()
 }
 
 fn from_terminal(event: TerminalEvent) -> Option<Event> {

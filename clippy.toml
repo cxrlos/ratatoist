@@ -1,2 +1,6 @@
 allow-expect-in-tests = true
 allow-unwrap-in-tests = true
+disallowed-methods = [
+    { path = "chrono::Local::now", reason = "only src/runtime.rs reads the clock and hands it to the app, so rendering and update stay pure functions of State" },
+    { path = "chrono::Utc::now", reason = "only src/runtime.rs reads the clock and hands it to the app, so rendering and update stay pure functions of State" },
+]

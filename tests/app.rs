@@ -7,7 +7,6 @@ use ratatoist::app::{App, Effect, Event, Modal, Pane, State, update};
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
 use ratatoist::todoist::{ClientError, LiveMessage};
 use ratatui::backend::TestBackend;
-use std::path::{Path, PathBuf};
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
 
@@ -574,43 +573,4 @@ fn the_done_filter_asks_for_the_project_s_completed_tasks() {
         effects.as_slice(),
         [Effect::FetchCompletedTasks(query)] if query.project_id.as_deref() == Some("p-inbox")
     ));
-}
-
-/// Rendering and updates stay pure: the wall clock is read only in
-/// `runtime.rs`, which feeds it in as `Event::Tick`.
-#[test]
-fn only_the_runtime_reads_the_clock() {
-    fn rust_files(dir: &Path, found: &mut Vec<PathBuf>) {
-        for entry in std::fs::read_dir(dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                rust_files(&path, found);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                found.push(path);
-            }
-        }
-    }
-
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let runtime = src.join("runtime.rs");
-    let mut files = Vec::new();
-    rust_files(&src, &mut files);
-
-    let offenders: Vec<String> = files
-        .iter()
-        .filter(|path| **path != runtime)
-        .flat_map(|path| {
-            let text = std::fs::read_to_string(path).unwrap();
-            text.lines()
-                .enumerate()
-                .filter(|(_, line)| line.contains("Local::now") || line.contains("Utc::now"))
-                .map(|(n, _)| format!("{}:{}", path.display(), n + 1))
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    assert!(
-        offenders.is_empty(),
-        "clock read outside runtime.rs: {offenders:?}"
-    );
 }
