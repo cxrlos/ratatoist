@@ -5,10 +5,7 @@ use std::collections::HashSet;
 
 use chrono::NaiveDate;
 
-use super::state::{
-    COUNTED_FILTERS, ListFilter, OverviewStats, Pane, ProjectEntry, ProjectNavItem, Screen, Sort,
-    State,
-};
+use super::state::{COUNTED_FILTERS, ListFilter, OverviewStats, Pane, Screen, Sort, State};
 use crate::todoist::model::{Priority, Project, Task};
 use crate::ui::dates::{self, DueBucket};
 
@@ -51,61 +48,6 @@ impl State {
         }
     }
 
-    pub fn project_list_entries(&self) -> Vec<ProjectEntry> {
-        let mut entries = Vec::new();
-        let mut in_personal = false;
-        let mut last_ws_id: Option<&str> = None;
-        let mut last_folder_id: Option<&str> = None;
-
-        for (i, p) in self.projects.iter().enumerate() {
-            let ws_id = p.workspace_id.as_deref();
-            let folder_id = p.folder_id.as_deref();
-
-            let folder_collapsed = folder_id
-                .map(|fid| self.collapsed_folders.contains(fid))
-                .unwrap_or(false);
-
-            if ws_id.is_none() {
-                if !in_personal {
-                    in_personal = true;
-                    entries.push(ProjectEntry::PersonalHeader);
-                }
-            } else {
-                if last_ws_id != ws_id {
-                    last_ws_id = ws_id;
-                    last_folder_id = None;
-                    entries.push(ProjectEntry::Separator);
-                    if let Some(wi) = self
-                        .workspaces
-                        .iter()
-                        .position(|w| Some(w.id.as_str()) == ws_id)
-                    {
-                        entries.push(ProjectEntry::WorkspaceHeader(wi));
-                    }
-                }
-                if last_folder_id != folder_id {
-                    last_folder_id = folder_id;
-                    if let Some(fid) = folder_id
-                        && let Some(fi) = self.folders.iter().position(|f| f.id.as_str() == fid)
-                    {
-                        entries.push(ProjectEntry::FolderHeader(fi));
-                    }
-                }
-            }
-
-            if !folder_collapsed {
-                entries.push(ProjectEntry::Project(i));
-            }
-        }
-
-        entries
-    }
-
-    pub fn project_indent(&self, project: &Project) -> usize {
-        let base = if project.folder_id.is_some() { 3 } else { 1 };
-        base + self.project_depth(&project.id)
-    }
-
     pub fn project_depth(&self, project_id: &str) -> usize {
         let mut depth = 0;
         let mut current = project_id;
@@ -121,16 +63,6 @@ impl State {
         depth
     }
 
-    pub fn visible_nav_items(&self) -> Vec<ProjectNavItem> {
-        self.project_list_entries()
-            .into_iter()
-            .filter_map(|e| match e {
-                ProjectEntry::FolderHeader(fi) => Some(ProjectNavItem::Folder(fi)),
-                ProjectEntry::Project(i) => Some(ProjectNavItem::Project(i)),
-                _ => None,
-            })
-            .collect()
-    }
     /// The project whose tasks the list shows: the Inbox on the Inbox
     /// screen and the opened project on the Projects screen. The other
     /// screens list tasks across projects.
@@ -145,9 +77,10 @@ impl State {
     /// The title of the task list's pane: the screen's name, or the
     /// project's where it lists one project.
     pub fn list_title(&self) -> String {
-        match self.list_project() {
-            Some(project) => project.name.clone(),
-            None => self.screen.title().to_owned(),
+        match (self.list_project(), &self.opened_label) {
+            (Some(project), _) => project.name.clone(),
+            (None, Some(label)) if self.screen == Screen::Labels => format!("@{label}"),
+            (None, _) => self.screen.title().to_owned(),
         }
     }
 
@@ -251,7 +184,7 @@ impl State {
         match self.screen {
             Screen::Today => self.today_rows(filter),
             Screen::Upcoming => self.upcoming_rows(filter),
-            Screen::Labels => Vec::new(),
+            Screen::Labels => self.label_list_rows(filter),
             Screen::Inbox | Screen::Projects => self.project_rows(filter),
         }
     }
@@ -296,10 +229,24 @@ impl State {
         rows
     }
 
+    /// The opened label's tasks under a header for each project.
+    fn label_list_rows(&self, filter: ListFilter) -> Vec<ListRow<'_>> {
+        let mut rows = Vec::new();
+        for (project, tasks) in self.label_tasks(filter) {
+            push_group(
+                &mut rows,
+                GroupKind::Project(project.name.clone()),
+                false,
+                tasks,
+            );
+        }
+        rows
+    }
+
     /// Whether `filter` keeps `task` in a list across projects (Today,
     /// Upcoming), which holds open tasks only: completed shows none of
     /// them, a due bucket or priority narrows them.
-    fn in_cross_project_list(&self, task: &Task, filter: ListFilter) -> bool {
+    pub(crate) fn in_cross_project_list(&self, task: &Task, filter: ListFilter) -> bool {
         filter != ListFilter::Completed && self.narrowed_to(task, filter)
     }
 

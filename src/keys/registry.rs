@@ -1002,8 +1002,9 @@ fn has_focused_task(state: &State) -> bool {
     state.active_pane != Pane::Browse && state.selected_task().is_some()
 }
 
+/// Whether the Projects tree focuses a project.
 fn has_focused_project(state: &State) -> bool {
-    state.projects.get(state.selected_project).is_some()
+    state.active_pane == Pane::Browse && state.tree_project().is_some()
 }
 
 /// Whether the list and the detail show side by side, so `h` and `l` have

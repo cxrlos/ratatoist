@@ -140,9 +140,10 @@ fn the_views_draw_glyphs_from_the_set_chosen() {
     let nerd = drawn(IconSet::Nerd);
     let icons = IconSet::Nerd.icons();
 
+    // The Inbox has its own screen, so its glyph shows in the palette and
+    // the project picker rather than the tree.
     for glyph in [
         icons.open,
-        icons.inbox,
         icons.project,
         icons.favourite,
         icons.overdue,

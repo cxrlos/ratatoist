@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Local, NaiveDate};
 use ratatui::layout::Size;
 
+use super::browse::TreeItem;
 use super::failure::{ErrorLog, Failure, LoadError};
 use super::modal::Modal;
 use super::release::ReleaseState;
@@ -111,8 +112,15 @@ pub struct State {
     pub idle_timeout_secs: u64,
     pub last_sync_at: Option<DateTime<Local>>,
     pub collapsed_folders: HashSet<String>,
-    pub folder_cursor: Option<usize>,
-    pub current_user_name: Option<String>,
+    /// The row the Projects tree focuses, when it is on one.
+    pub tree_focus: Option<TreeItem>,
+    /// The label the Labels screen focuses, by name.
+    pub label_focus: Option<String>,
+    /// The label whose tasks the list on the Labels screen shows.
+    pub opened_label: Option<String>,
+    /// Projects whose last write was rolled back, with why, until they
+    /// change again.
+    pub rolled_back_projects: HashMap<String, Failure>,
     pub overdue_section_collapsed: bool,
     pub last_activity: DateTime<Local>,
     pub(crate) pending_ws_sync: bool,
@@ -175,8 +183,10 @@ impl State {
             idle_timeout_secs: DEFAULT_IDLE_TIMEOUT_SECS,
             last_sync_at: None,
             collapsed_folders: HashSet::new(),
-            folder_cursor: None,
-            current_user_name: None,
+            tree_focus: None,
+            label_focus: None,
+            opened_label: None,
+            rolled_back_projects: HashMap::new(),
             overdue_section_collapsed: false,
             last_activity: now,
             pending_ws_sync: false,
@@ -489,17 +499,4 @@ impl UserRecord {
             .unwrap_or_else(|| id.clone());
         Self { id, name }
     }
-}
-
-pub enum ProjectEntry {
-    PersonalHeader,
-    WorkspaceHeader(usize),
-    FolderHeader(usize),
-    Project(usize),
-    Separator,
-}
-
-pub enum ProjectNavItem {
-    Folder(usize),
-    Project(usize),
 }

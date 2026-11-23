@@ -212,9 +212,6 @@ impl State {
             if let Some(user) = resp.user {
                 self.current_user_id = Some(user.id.clone());
                 self.websocket_url = user.websocket_url;
-                if let Some(name) = &user.full_name {
-                    self.current_user_name = Some(name.clone());
-                }
                 self.user_names
                     .entry(user.id.clone())
                     .or_insert_with(|| UserRecord::new(user.id, user.full_name, user.email));
@@ -395,12 +392,16 @@ impl State {
         }
     }
 
-    /// Restores what the write with `uuid` changed, and marks its task with
-    /// `failure`.
+    /// Restores what the write with `uuid` changed, and marks its task or
+    /// project with `failure`.
     fn roll_back(&mut self, uuid: &str, failure: &Failure) {
         let Some(op) = self.temp_id_pending.remove(uuid) else {
             return;
         };
+        if let OptimisticOp::ProjectUpdated { project_id, .. } = &op {
+            self.rolled_back_projects
+                .insert(project_id.clone(), failure.clone());
+        }
         if let Some(task_id) = self.revert_optimistic(op) {
             self.pending_due.remove(&task_id);
             self.rolled_back.insert(task_id, failure.clone());

@@ -22,12 +22,6 @@ pub fn render_loading(theme: &Theme, title: &str, frame: &mut Frame, area: Rect)
     );
 }
 
-/// The body of a screen that is not built yet.
-pub fn render_not_built(theme: &Theme, title: &str, frame: &mut Frame, area: Rect) {
-    let line = format!("The {title} screen is not built yet.");
-    render_line(theme, title, &line, frame, area);
-}
-
 /// One muted line in a pane titled `title`.
 fn render_line(theme: &Theme, title: &str, line: &str, frame: &mut Frame, area: Rect) {
     let block = Block::bordered()

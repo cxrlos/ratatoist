@@ -3,6 +3,7 @@
 //! when an event changed the screen.
 
 mod action;
+mod browse;
 mod confirm;
 mod effect;
 mod event;
@@ -19,6 +20,7 @@ mod update;
 mod view;
 
 pub use action::{Action, Editable};
+pub use browse::{LabelRow, TreeItem, TreeRow};
 pub use confirm::{Confirm, Confirmed};
 pub use effect::Effect;
 pub use event::Event;
@@ -33,7 +35,7 @@ pub use prompt::{Prompt, PromptField, open_prompt};
 pub use release::ReleaseState;
 pub use state::{
     COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_WIDE_LAYOUT_COLUMNS, Indicator, ListFilter,
-    OverviewStats, Pane, ProjectEntry, ProjectNavItem, Screen, Sort, State, SyncHealth, UserRecord,
+    OverviewStats, Pane, Screen, Sort, State, SyncHealth, UserRecord,
 };
 pub use text_field::TextField;
 pub use update::{Update, perform, update};

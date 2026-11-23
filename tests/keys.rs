@@ -374,7 +374,8 @@ fn moves_in_the_detail_scroll_it_and_keep_the_focused_task() {
 fn s_marks_the_project_as_a_favourite() {
     let mut app = vim();
 
-    let effects = send(&mut app, [key('4'), key('s')]);
+    // Home, the first project, is a favourite already; the next is not.
+    let effects = send(&mut app, [key('4'), key('j'), key('s')]);
 
     let command = &commands(&effects)[0];
     assert_eq!(command.r#type, "project_update");

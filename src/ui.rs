@@ -1,5 +1,6 @@
 //! Rendering: a pure function of [`State`].
 
+pub mod browse;
 pub mod cheatsheet;
 pub mod components;
 pub mod confirm;
@@ -18,7 +19,6 @@ pub mod style;
 pub mod text;
 pub mod theme;
 mod upcoming;
-pub mod views;
 pub mod which_key;
 
 use ratatui::Frame;
@@ -92,8 +92,8 @@ fn render_body(state: &State, frame: &mut Frame, area: Rect) {
         return;
     }
     match (state.screen, state.active_pane) {
-        (Screen::Projects, Pane::Browse) => views::projects::render_block(frame, state, area),
-        (Screen::Labels, _) => error::render_not_built(state.theme(), title, frame, area),
+        (Screen::Labels, Pane::Browse) => browse::render_labels(state, frame, area),
+        (_, Pane::Browse) => browse::render_projects(state, frame, area),
         _ => list::render(state, frame, area),
     }
 }

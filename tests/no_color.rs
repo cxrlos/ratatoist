@@ -99,8 +99,8 @@ fn the_main_screen_draws_no_colour_and_reverses_the_focused_row() {
     let buffer = app.backend().buffer();
 
     assert_colourless(buffer);
-    assert!(reversed(buffer, "Inbox    ", 3, 20));
-    assert!(!reversed(buffer, "Reading", 3, 20));
+    assert!(reversed(buffer, "★ Home", 3, 12));
+    assert!(!reversed(buffer, "Reading", 3, 12));
 }
 
 #[test]

@@ -365,16 +365,15 @@ fn upcoming_groups_the_next_seven_days_by_day() {
 fn projects_enter_opens_the_project_and_esc_returns_to_the_same_row() {
     let mut app = app();
     send(&mut app, [key('4'), key('j'), key('j')]);
-    let focused = app.state().selected_project;
+    let focused = app.state().tree_project().unwrap().clone();
 
     send(&mut app, [press(KeyCode::Enter)]);
     assert_eq!(app.state().active_pane, Pane::Tasks);
-    let name = app.state().projects[focused].name.clone();
-    assert!(rows(&app)[1].contains(&name));
+    assert!(rows(&app)[1].contains(&focused.name));
 
     send(&mut app, [press(KeyCode::Esc)]);
     assert_eq!(app.state().active_pane, Pane::Browse);
-    assert_eq!(app.state().selected_project, focused);
+    assert_eq!(app.state().tree_project().map(|p| &p.id), Some(&focused.id));
 }
 
 #[test]

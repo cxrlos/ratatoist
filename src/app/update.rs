@@ -10,7 +10,7 @@ use super::modal::{Modal, TaskForm};
 use super::palette::{self, Palette};
 use super::picker::{self, Choice, PickerKind, open_picker};
 use super::prompt::{PromptField, open_prompt};
-use super::state::{ListFilter, Pane, ProjectNavItem, Screen};
+use super::state::{ListFilter, Pane, Screen};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
 use super::text_field::TextField;
 use super::{Action, Editable, Effect, Event, State};
@@ -453,10 +453,7 @@ impl State {
                 open_picker(self, PickerKind::Sort);
                 true
             }
-            Action::ToggleFavourite => {
-                self.star_selected_project(effects);
-                true
-            }
+            Action::ToggleFavourite => self.toggle_favourite(effects),
         }
     }
 
@@ -503,8 +500,8 @@ impl State {
                 self.keep_focus(|state| state.list_filter = ListFilter::default());
                 true
             }
-            Pane::Tasks if self.screen == Screen::Projects => {
-                self.active_pane = Pane::Browse;
+            Pane::Tasks if matches!(self.screen, Screen::Projects | Screen::Labels) => {
+                self.back_to_browse();
                 true
             }
             Pane::Tasks | Pane::Browse => false,
@@ -658,11 +655,7 @@ impl State {
                 }
                 true
             }
-            Pane::Browse if self.screen == Screen::Projects => {
-                self.move_in_projects(action);
-                true
-            }
-            Pane::Browse => false,
+            Pane::Browse => self.move_in_browse(action),
         }
     }
 
@@ -697,7 +690,7 @@ impl State {
     }
 
     /// Half the rows of the list on screen, the step of a half-page move.
-    fn half_page(&self) -> usize {
+    pub(crate) fn half_page(&self) -> usize {
         (crate::ui::list_rows(self, self.screen_size()) / 2).max(1)
     }
 
@@ -734,43 +727,6 @@ impl State {
         self.selected_task = next;
     }
 
-    /// Moves through the Projects tree: folders and projects.
-    fn move_in_projects(&mut self, action: Action) {
-        let nav = self.visible_nav_items();
-        if nav.is_empty() {
-            return;
-        }
-        let last = nav.len() - 1;
-        let current = nav
-            .iter()
-            .position(|item| match item {
-                ProjectNavItem::Project(i) => {
-                    self.folder_cursor.is_none() && *i == self.selected_project
-                }
-                ProjectNavItem::Folder(fi) => self.folder_cursor == Some(*fi),
-            })
-            .unwrap_or(0);
-        let next = match action {
-            Action::MoveDown => (current + 1).min(last),
-            Action::MoveUp => current.saturating_sub(1),
-            Action::MoveToTop => 0,
-            Action::MoveToBottom => last,
-            Action::HalfPageDown => current.saturating_add(self.half_page()).min(last),
-            _ => current.saturating_sub(self.half_page()),
-        };
-        match nav[next] {
-            ProjectNavItem::Project(i) => {
-                let changed = self.folder_cursor.is_some() || self.selected_project != i;
-                self.folder_cursor = None;
-                self.selected_project = i;
-                if changed {
-                    self.switch_to_project_tasks();
-                }
-            }
-            ProjectNavItem::Folder(fi) => self.folder_cursor = Some(fi),
-        }
-    }
-
     /// From the detail to the list beside it. Below the wide layout only
     /// one of them shows, so neither has a pane beside it.
     fn focus_left(&mut self) -> bool {
@@ -788,20 +744,6 @@ impl State {
             return false;
         }
         self.open_detail(effects);
-        true
-    }
-
-    /// Opens the focused project's tasks from the Projects tree.
-    fn open_list(&mut self) -> bool {
-        if self.screen != Screen::Projects
-            || self.active_pane != Pane::Browse
-            || self.folder_cursor.is_some()
-            || self.projects.get(self.selected_project).is_none()
-        {
-            return false;
-        }
-        self.active_pane = Pane::Tasks;
-        self.selected_task = 0;
         true
     }
 
@@ -832,7 +774,7 @@ impl State {
                 state.overdue_section_collapsed = !state.overdue_section_collapsed;
             }),
             (Pane::Tasks, Screen::Inbox | Screen::Projects) => self.toggle_collapse(),
-            (Pane::Browse, Screen::Projects) => self.toggle_folder_collapse(),
+            (Pane::Browse, Screen::Projects) => return self.toggle_folder(),
             _ => return false,
         }
         true
@@ -869,11 +811,6 @@ impl State {
             self.comments.clear();
         }
         self.fetch_comments(task_id, effects);
-    }
-
-    fn switch_to_project_tasks(&mut self) {
-        self.selected_task = 0;
-        self.detail_scroll = 0;
     }
 
     fn complete_selected_task(&mut self, effects: &mut Vec<Effect>) {
@@ -1142,53 +1079,6 @@ impl State {
     fn edit_target(&mut self) -> Option<Task> {
         let id = self.edit_task.take()?;
         self.tasks.iter().find(|t| t.id == id).cloned()
-    }
-
-    fn star_selected_project(&mut self, effects: &mut Vec<Effect>) {
-        let Some(project) = self.projects.get(self.selected_project) else {
-            return;
-        };
-        let pid = project.id.clone();
-        let before = project.clone();
-        let new_fav = !project.is_favorite;
-
-        if let Some(p) = self.projects.iter_mut().find(|p| p.id == pid) {
-            p.is_favorite = new_fav;
-        }
-        self.sort_projects();
-
-        let command = SyncCommand {
-            r#type: "project_update".to_string(),
-            temp_id: None,
-            uuid: new_uuid(),
-            args: serde_json::json!({ "id": pid, "is_favorite": new_fav }),
-        };
-        let op = OptimisticOp::ProjectUpdated {
-            project_id: pid,
-            before: Box::new(before),
-        };
-        self.send_command(command, Some(op), effects);
-    }
-
-    fn toggle_folder_collapse(&mut self) {
-        let fid = if let Some(fi) = self.folder_cursor {
-            self.folders.get(fi).map(|f| f.id.clone())
-        } else {
-            self.projects
-                .get(self.selected_project)
-                .and_then(|p| p.folder_id.clone())
-        };
-        let Some(fid) = fid else {
-            return;
-        };
-        if self.collapsed_folders.contains(&fid) {
-            self.collapsed_folders.remove(&fid);
-        } else {
-            self.collapsed_folders.insert(fid.clone());
-        }
-        if let Some(fi) = self.folders.iter().position(|f| f.id == fid) {
-            self.folder_cursor = Some(fi);
-        }
     }
 
     fn apply_priority(&mut self, new_priority: u8, effects: &mut Vec<Effect>) {
