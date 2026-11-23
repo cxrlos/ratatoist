@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, NaiveDate};
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect, Size};
@@ -307,7 +307,7 @@ fn lines<'a>(
                 let resolved = user_names
                     .get(&user_id)
                     .map(|r| r.display.as_str())
-                    .unwrap_or_else(|| &user_id[..user_id.len().min(8)]);
+                    .unwrap_or_else(|| take_chars(&user_id, 8));
                 let display_name = if is_me {
                     format!("{resolved} (you)")
                 } else {
@@ -347,8 +347,7 @@ fn lines<'a>(
                     let hint = file_type.map(|t| format!(" ({t})")).unwrap_or_default();
                     format!("[+] {name}{hint}")
                 } else if let Some(url) = file_url {
-                    let short = if url.len() > 50 { &url[..50] } else { url };
-                    format!("[+] {short}")
+                    format!("[+] {}", take_chars(url, 50))
                 } else {
                     format!("[+] {resource_type} attachment")
                 };
@@ -404,13 +403,24 @@ fn field_hint(active: bool, theme: &Theme) -> Span<'static> {
     }
 }
 
+/// The first `count` characters of `text`, cut on a character boundary.
+fn take_chars(text: &str, count: usize) -> &str {
+    match text.char_indices().nth(count) {
+        Some((end, _)) => text.get(..end).unwrap_or(text),
+        None => text,
+    }
+}
+
+/// A comment's time as `YYYY-MM-DD HH:MM`, from RFC 3339 or from an ISO
+/// time without an offset (`2024-01-15T14:30:00`); anything else shows as
+/// sent, up to 16 characters.
 fn format_comment_time(timestamp: &str) -> String {
-    if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
-        return dt.format("%Y-%m-%d %H:%M").to_string();
+    const SHOWN: &str = "%Y-%m-%d %H:%M";
+    if let Ok(time) = DateTime::parse_from_rfc3339(timestamp) {
+        return time.format(SHOWN).to_string();
     }
-    // Fallback: ISO strings that aren't full RFC 3339 (e.g. "2024-01-15T14:30:00")
-    if timestamp.len() >= 16 {
-        return format!("{} {}", &timestamp[..10], &timestamp[11..16]);
+    if let Ok(time) = NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H:%M:%S%.f") {
+        return time.format(SHOWN).to_string();
     }
-    timestamp.to_string()
+    take_chars(timestamp, 16).to_owned()
 }

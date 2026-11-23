@@ -132,9 +132,12 @@ fn load_user_themes(dir: &Path) -> (Vec<Theme>, Vec<String>) {
             .and_then(|json| {
                 serde_json::from_str::<Base16Scheme>(&json)
                     .map_err(|error| format!("{name}:{}:{}: {error}", error.line(), error.column()))
+            })
+            .and_then(|scheme| {
+                Theme::from_scheme(&scheme).map_err(|error| format!("{name}: {error}"))
             });
         match loaded {
-            Ok(scheme) => themes.push(Theme::from_scheme(&scheme)),
+            Ok(theme) => themes.push(theme),
             Err(warning) => warnings.push(format!("{warning}; the theme is skipped")),
         }
     }
@@ -407,8 +410,7 @@ impl Reader<'_> {
         };
         let before = self.text.get(..offset).unwrap_or(self.text);
         let line = before.matches('\n').count() + 1;
-        let line_start = before.rfind('\n').map_or(0, |newline| newline + 1);
-        let column = before[line_start..].chars().count() + 1;
+        let column = before.rsplit('\n').next().unwrap_or(before).chars().count() + 1;
         self.warnings
             .push((offset, format!("{FILE}:{line}:{column}: {message}")));
     }

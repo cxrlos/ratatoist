@@ -84,6 +84,7 @@ impl Legacy {
     pub(super) fn remove(self) -> Result<String, String> {
         let shown = self.path.display().to_string();
         let mut kept = String::with_capacity(self.text.len());
+        // `lines` starts and ends on line boundaries; see `line_start`.
         kept.push_str(&self.text[..self.lines.start]);
         kept.push_str(&self.text[self.lines.end..]);
         let temporary = self
@@ -114,6 +115,9 @@ fn mentions_api_token(text: &str) -> bool {
     })
 }
 
+// The byte slices here and in `remove` are safe: `offset` comes from a TOML
+// span, which starts and ends on a token, and the cuts land on a `\n` or the
+// text's ends, all character boundaries.
 fn line_start(text: &str, offset: usize) -> usize {
     text[..offset].rfind('\n').map_or(0, |newline| newline + 1)
 }

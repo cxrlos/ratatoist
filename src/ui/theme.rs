@@ -59,12 +59,20 @@ pub struct Theme {
     pub maroon: Color,
 }
 
-fn parse_hex(hex: &str) -> Color {
-    let h = hex.trim_start_matches('#');
-    let r = u8::from_str_radix(&h[0..2], 16).unwrap_or(0);
-    let g = u8::from_str_radix(&h[2..4], 16).unwrap_or(0);
-    let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(0);
-    Color::Rgb(r, g, b)
+/// `#rgb` or `#rrggbb`, in either case; `#rgb` doubles each digit. The `#`
+/// is optional, as Base16 files (the built-ins too) leave it out.
+fn parse_hex(hex: &str) -> Result<Color, String> {
+    let digits: Option<Vec<u8>> = hex
+        .strip_prefix('#')
+        .unwrap_or(hex)
+        .chars()
+        .map(|c| c.to_digit(16).and_then(|d| u8::try_from(d).ok()))
+        .collect();
+    match digits.as_deref() {
+        Some(&[r, g, b]) => Ok(Color::Rgb(r * 17, g * 17, b * 17)),
+        Some(&[r1, r0, g1, g0, b1, b0]) => Ok(Color::Rgb(r1 * 16 + r0, g1 * 16 + g0, b1 * 16 + b0)),
+        _ => Err(format!("`{hex}` is not a #rgb or #rrggbb colour")),
+    }
 }
 
 /// Maps a Todoist color name to a semantic slot in the active theme.
@@ -82,26 +90,31 @@ pub fn color_scheme(name: &str) -> &'static str {
 }
 
 impl Theme {
-    pub fn from_scheme(s: &Base16Scheme) -> Self {
-        Self {
+    /// The theme a Base16 scheme describes, or which key holds a colour
+    /// that is not `#rgb` or `#rrggbb`.
+    pub fn from_scheme(s: &Base16Scheme) -> Result<Self, String> {
+        let colour = |key: &str, value: &str| {
+            parse_hex(value).map_err(|problem| format!("{key}: {problem}"))
+        };
+        Ok(Self {
             name: s.name.clone(),
-            base: parse_hex(&s.base00),
-            surface: parse_hex(&s.base01),
-            overlay: parse_hex(&s.base02),
-            muted: parse_hex(&s.base03),
-            subtle: parse_hex(&s.base04),
-            text: parse_hex(&s.base05),
-            bg_alt: parse_hex(&s.base06),
-            fg_alt: parse_hex(&s.base07),
-            red: parse_hex(&s.base08),
-            orange: parse_hex(&s.base09),
-            yellow: parse_hex(&s.base0a),
-            green: parse_hex(&s.base0b),
-            cyan: parse_hex(&s.base0c),
-            blue: parse_hex(&s.base0d),
-            purple: parse_hex(&s.base0e),
-            maroon: parse_hex(&s.base0f),
-        }
+            base: colour("base00", &s.base00)?,
+            surface: colour("base01", &s.base01)?,
+            overlay: colour("base02", &s.base02)?,
+            muted: colour("base03", &s.base03)?,
+            subtle: colour("base04", &s.base04)?,
+            text: colour("base05", &s.base05)?,
+            bg_alt: colour("base06", &s.base06)?,
+            fg_alt: colour("base07", &s.base07)?,
+            red: colour("base08", &s.base08)?,
+            orange: colour("base09", &s.base09)?,
+            yellow: colour("base0A", &s.base0a)?,
+            green: colour("base0B", &s.base0b)?,
+            cyan: colour("base0C", &s.base0c)?,
+            blue: colour("base0D", &s.base0d)?,
+            purple: colour("base0E", &s.base0e)?,
+            maroon: colour("base0F", &s.base0f)?,
+        })
     }
 
     pub fn builtin() -> Vec<Self> {
@@ -119,7 +132,7 @@ impl Theme {
         ]
         .iter()
         .filter_map(|src| serde_json::from_str::<Base16Scheme>(src).ok())
-        .map(|s| Self::from_scheme(&s))
+        .filter_map(|s| Self::from_scheme(&s).ok())
         .collect()
     }
 
@@ -133,8 +146,9 @@ impl Theme {
             if path.extension().and_then(|e| e.to_str()) == Some("json")
                 && let Ok(src) = std::fs::read_to_string(&path)
                 && let Ok(scheme) = serde_json::from_str::<Base16Scheme>(&src)
+                && let Ok(theme) = Self::from_scheme(&scheme)
             {
-                themes.push(Self::from_scheme(&scheme));
+                themes.push(theme);
             }
         }
         themes.sort_by(|a, b| a.name.cmp(&b.name));

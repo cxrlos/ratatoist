@@ -344,8 +344,8 @@ impl AppError {
 }
 
 fn parse_api_error(raw: &str, context: &str) -> (String, String, Option<String>) {
-    if let Some(json_start) = raw.find('{')
-        && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw[json_start..])
+    if let Some(json) = raw.find('{').and_then(|json_start| raw.get(json_start..))
+        && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json)
     {
         let error_msg = parsed["error"]
             .as_str()
