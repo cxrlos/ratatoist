@@ -2,7 +2,6 @@
 
 pub mod browse;
 pub mod cheatsheet;
-pub mod components;
 pub mod confirm;
 pub mod dates;
 pub mod detail;
@@ -16,6 +15,7 @@ pub mod picker;
 pub mod prompt;
 pub mod release;
 pub mod style;
+pub mod task_form;
 pub mod text;
 pub mod theme;
 mod upcoming;
@@ -54,7 +54,7 @@ pub fn draw(frame: &mut Frame, state: &State) {
         match modal {
             Modal::Picker(picker) => picker::render(state, picker, frame, body_area),
             Modal::Confirm(confirm) => confirm::render(state, confirm, frame, body_area),
-            Modal::Form(form) => components::task_form::render(frame, state, form),
+            Modal::Form(form) => task_form::render(state, form, frame, body_area),
             // A prompt on the task whose detail shows draws in the detail.
             Modal::Prompt(prompt) if list::prompt_in_place(state, body_area.width).is_none() => {
                 prompt::render(state, prompt, frame, body_area);
@@ -66,8 +66,6 @@ pub fn draw(frame: &mut Frame, state: &State) {
             Modal::Palette(palette) => palette::render(state, palette, frame, body_area),
         }
     }
-    // After the overlays, so a legacy one that dims the whole frame leaves
-    // the bar's keys in their own colours.
     hints::render(state, frame, bar_area);
 }
 

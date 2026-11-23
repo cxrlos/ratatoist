@@ -15,6 +15,7 @@ mod prompt;
 mod release;
 mod state;
 mod sync;
+mod task_form;
 mod text_field;
 mod update;
 mod view;
@@ -25,7 +26,7 @@ pub use confirm::{Confirm, Confirmed};
 pub use effect::Effect;
 pub use event::Event;
 pub use failure::{ERROR_LOG_CAP, ErrorKind, ErrorLog, Failure, LoadError};
-pub use modal::{Modal, TaskForm};
+pub use modal::Modal;
 pub use palette::{
     Palette, PaletteEntry, palette_can_step_down, palette_has_selection, palette_highlight,
     palette_matches,
@@ -37,6 +38,7 @@ pub use state::{
     COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_WIDE_LAYOUT_COLUMNS, Indicator, ListFilter,
     OverviewStats, Pane, Screen, Sort, State, SyncHealth, UserRecord,
 };
+pub use task_form::{FormField, TaskForm};
 pub use text_field::TextField;
 pub use update::{Update, perform, update};
 pub use view::{Group, GroupKind, ListRow};

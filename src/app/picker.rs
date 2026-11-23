@@ -5,6 +5,7 @@
 
 use super::modal::Modal;
 use super::state::{ListFilter, Sort, State};
+use super::task_form::FormField;
 use crate::todoist::model::Priority;
 use crate::ui::theme;
 
@@ -250,7 +251,7 @@ fn priority_entries(state: &State) -> (String, Vec<Entry>, Option<usize>) {
 /// The add-task form's task, by its content once it has some.
 fn form_subject(state: &State) -> String {
     let content = match state.top_modal() {
-        Some(Modal::Form(form)) if form.editing() && form.active_field == 0 => {
+        Some(Modal::Form(form)) if form.field == FormField::Content => {
             state.input.text().trim().to_owned()
         }
         Some(Modal::Form(form)) => form.content.trim().to_owned(),

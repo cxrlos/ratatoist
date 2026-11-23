@@ -230,7 +230,7 @@ fn no_view_or_component_writes_a_key_hint() {
         include_str!("../src/ui/list.rs"),
         include_str!("../src/ui/browse.rs"),
         include_str!("../src/ui/prompt.rs"),
-        include_str!("../src/ui/components/task_form.rs"),
+        include_str!("../src/ui/task_form.rs"),
         include_str!("../src/ui/picker.rs"),
         include_str!("../src/ui/confirm.rs"),
     ];

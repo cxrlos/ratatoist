@@ -48,13 +48,20 @@ impl ActionSpec {
     }
 
     /// Where the bottom bar shows it on `state`: its hint, but with the word
-    /// the open prompt uses for Enter, as `send` for a comment.
+    /// the open prompt uses for Enter, as `send` for a comment, and `add` on
+    /// a text row of the add-task form.
     pub fn hint_in(&self, state: &State) -> Option<Hint> {
         match (self.action, state.top_modal()) {
             (Action::Accept, Some(Modal::Prompt(prompt))) => self.hint.map(|hint| Hint {
                 word: prompt.field.verb(),
                 ..hint
             }),
+            (Action::Accept, Some(Modal::Form(form))) if form.editing() => {
+                self.hint.map(|hint| Hint {
+                    word: "add",
+                    ..hint
+                })
+            }
             _ => self.hint,
         }
     }

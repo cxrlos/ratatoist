@@ -2,6 +2,7 @@ use super::confirm::Confirm;
 use super::palette::Palette;
 use super::picker::Picker;
 use super::prompt::Prompt;
+use super::task_form::TaskForm;
 use crate::keys::Key;
 
 /// One overlay over the main screen. [`super::State::modals`] keeps them as
@@ -25,35 +26,4 @@ pub enum Modal {
     Form(TaskForm),
     /// The one-line prompt for a comment or a field of a task.
     Prompt(Prompt),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaskForm {
-    pub content: String,
-    pub priority: u8,
-    pub due_string: String,
-    pub project_id: String,
-    pub active_field: usize,
-}
-
-impl TaskForm {
-    pub fn new(project_id: String) -> Self {
-        Self {
-            content: String::new(),
-            priority: 1,
-            due_string: String::new(),
-            project_id,
-            active_field: 0,
-        }
-    }
-
-    pub fn field_count() -> usize {
-        4
-    }
-
-    /// Whether the active field takes typed text, in
-    /// [`super::State::input`]: the content and the due date do.
-    pub fn editing(&self) -> bool {
-        matches!(self.active_field, 0 | 2)
-    }
 }

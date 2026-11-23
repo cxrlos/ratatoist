@@ -6,16 +6,17 @@ use tracing::info;
 
 use super::confirm;
 use super::failure::{ErrorKind, Failure};
-use super::modal::{Modal, TaskForm};
+use super::modal::Modal;
 use super::palette::{self, Palette};
 use super::picker::{self, Choice, PickerKind, open_picker};
 use super::prompt::{PromptField, open_prompt};
 use super::state::{ListFilter, Pane, Screen};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
+use super::task_form::{FormField, TODAY, TaskForm};
 use super::text_field::TextField;
 use super::{Action, Editable, Effect, Event, State};
 use crate::keys::{self, Key, Resolution};
-use crate::todoist::model::{Comment, Task};
+use crate::todoist::model::{Comment, Due, Task};
 use crate::todoist::sync::SyncCommand;
 use crate::todoist::{CompletedQuery, LiveMessage};
 use crate::ui;
@@ -428,7 +429,7 @@ impl State {
                 true
             }
             Action::AddTask => {
-                self.start_input();
+                self.open_form();
                 true
             }
             Action::Edit(field) => self.edit(field),
@@ -536,7 +537,7 @@ impl State {
         }
         match self.modals.last_mut() {
             Some(Modal::Picker(picker)) => picker.select_by(step),
-            Some(Modal::Form(_)) => self.move_form_field(if step > 0 { 1 } else { -1 }),
+            Some(Modal::Form(_)) => self.move_form_field(step.signum()),
             _ => false,
         }
     }
@@ -858,13 +859,20 @@ impl State {
         self.send_command(command, op, effects);
     }
 
-    fn start_input(&mut self) {
+    /// Opens the add-task form on the project in view, else the Inbox, due
+    /// today on Today.
+    fn open_form(&mut self) {
         let project_id = self
             .list_project()
             .or_else(|| self.projects.iter().find(|p| p.is_inbox()))
             .map(|p| p.id.clone())
             .unwrap_or_default();
-        self.modals.push(Modal::Form(TaskForm::new(project_id)));
+        let due_string = match self.screen {
+            Screen::Today => TODAY.to_owned(),
+            _ => String::new(),
+        };
+        self.modals
+            .push(Modal::Form(TaskForm::new(project_id, due_string)));
         self.input = TextField::default();
     }
 
@@ -887,16 +895,16 @@ impl State {
         self.cancel_input();
     }
 
-    /// Enter in the add-task form: on a text field it adds the task; on the
-    /// priority or the project it opens that picker.
+    /// Enter in the add-task form: on a text row it adds the task; on the
+    /// priority or the project it opens that row's picker.
     fn accept_form(&mut self, effects: &mut Vec<Effect>) -> bool {
         let Some(Modal::Form(form)) = self.top_modal() else {
             return false;
         };
-        match form.active_field {
-            1 => open_picker(self, PickerKind::Priority),
-            3 => open_picker(self, PickerKind::Project),
-            _ => {
+        match form.field {
+            FormField::Priority => open_picker(self, PickerKind::Priority),
+            FormField::Project => open_picker(self, PickerKind::Project),
+            FormField::Content | FormField::Due => {
                 self.commit_form_field();
                 self.submit_task_form(effects);
             }
@@ -904,74 +912,86 @@ impl State {
         true
     }
 
-    /// Keeps the typed text in the form's active text field.
+    /// Keeps the typed text in the form's focused text row.
     fn commit_form_field(&mut self) {
         let text = self.input.text().to_owned();
         if let Some(Modal::Form(form)) = self.modals.last_mut() {
-            match form.active_field {
-                0 => form.content = text,
-                2 => form.due_string = text,
-                _ => {}
+            match form.field {
+                FormField::Content => form.content = text,
+                FormField::Due => form.due_string = text,
+                FormField::Priority | FormField::Project => {}
             }
         }
     }
 
-    /// Moves the add-task form to the field `step` away, wrapping, keeping
-    /// what was typed and loading the next text field's text.
-    fn move_form_field(&mut self, step: i32) -> bool {
-        self.commit_form_field();
+    /// Focuses `field` of the add-task form, loading its text into the
+    /// input when it takes text.
+    fn focus_form_field(&mut self, field: FormField) {
         let Some(Modal::Form(form)) = self.modals.last_mut() else {
+            return;
+        };
+        form.field = field;
+        self.input = match field {
+            FormField::Content => TextField::new(form.content.clone()),
+            FormField::Due => TextField::new(form.due_string.clone()),
+            FormField::Priority | FormField::Project => TextField::default(),
+        };
+    }
+
+    /// Moves the add-task form to the row `step` away, wrapping, keeping
+    /// what was typed.
+    fn move_form_field(&mut self, step: isize) -> bool {
+        self.commit_form_field();
+        let Some(Modal::Form(form)) = self.top_modal() else {
             return false;
         };
-        let count = TaskForm::field_count();
-        form.active_field = if step > 0 {
-            (form.active_field + 1) % count
-        } else {
-            form.active_field.checked_sub(1).unwrap_or(count - 1)
-        };
-        self.input = match form.active_field {
-            0 => TextField::new(form.content.clone()),
-            2 => TextField::new(form.due_string.clone()),
-            _ => TextField::default(),
-        };
+        let field = form.field.step(step);
+        self.focus_form_field(field);
         true
     }
 
+    /// Adds the form's task: at once as a row with a temp id, which the
+    /// answer to `item_add` replaces with the real one. Empty content keeps
+    /// the form open on the content row with the reason.
     fn submit_task_form(&mut self, effects: &mut Vec<Effect>) {
-        let Some(Modal::Form(form)) = self.modals.last().cloned() else {
+        let Some(Modal::Form(form)) = self.modals.last_mut() else {
             return;
         };
         let content = form.content.trim().to_owned();
-        let due_string = form.due_string.trim().to_owned();
-
-        if content.is_empty() {
-            self.cancel_input();
+        if let Some(reason) = PromptField::Content.refusal(&content) {
+            form.error = Some(reason);
+            self.focus_form_field(FormField::Content);
             return;
         }
-
-        let project_id = form.project_id.clone();
+        let form = form.clone();
+        let due_string = form.due_string.trim().to_owned();
         let temp_id = self.new_temp_id();
 
-        let optimistic = Task {
+        // The one due string known without Todoist: Today's default, so the
+        // row shows on Today at once.
+        let due = due_string.eq_ignore_ascii_case(TODAY).then(|| Due {
+            date: self.today.format("%Y-%m-%d").to_string(),
+            string: Some(due_string.clone()),
+            ..Due::default()
+        });
+        self.tasks.push(Task {
             id: temp_id.clone(),
             content: content.clone(),
-            project_id: project_id.clone(),
+            project_id: form.project_id.clone(),
             priority: form.priority,
+            due,
             ..Task::default()
-        };
-        self.tasks.push(optimistic);
+        });
 
-        // Content goes verbatim; the API parses any inline natural-language
-        // dates or priorities.
         let mut args = serde_json::json!({
             "content": content,
-            "project_id": project_id,
+            "project_id": form.project_id,
         });
         if !due_string.is_empty() {
             args["due_string"] = serde_json::Value::String(due_string);
         }
         if form.priority > 1 {
-            args["priority"] = serde_json::Value::Number(serde_json::Number::from(form.priority));
+            args["priority"] = serde_json::Value::from(form.priority);
         }
 
         let command = SyncCommand {

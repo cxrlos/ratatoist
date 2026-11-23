@@ -77,12 +77,18 @@ pub fn render(state: &State, prompt: &Prompt, frame: &mut Frame, area: Rect) {
 /// cursor in view, cutting the start with `…`. An empty line shows the
 /// field's placeholder, muted.
 pub fn input_line(state: &State, prompt: &Prompt, room: usize) -> Line<'static> {
+    typed_line(state, prompt.field.placeholder(), room)
+}
+
+/// [`input_line`] for any field: [`State::input`] with its cursor, or
+/// `placeholder` when it is empty.
+pub fn typed_line(state: &State, placeholder: &str, room: usize) -> Line<'static> {
     let theme = state.theme();
     let room = room.saturating_sub(text::width(MARK));
     let mark = Span::styled(MARK, style::muted(theme));
     let cursor_style = theme.selection;
     if state.input.is_empty() {
-        let placeholder = text::fit(prompt.field.placeholder(), room);
+        let placeholder = text::fit(placeholder, room);
         let mut chars = placeholder.chars();
         let first = chars.next().map_or_else(|| " ".to_owned(), String::from);
         return Line::from(vec![
@@ -111,6 +117,24 @@ pub fn input_line(state: &State, prompt: &Prompt, room: usize) -> Line<'static> 
         Span::styled(left, style::base(theme)),
         Span::styled(under, cursor_style),
         Span::styled(right, style::base(theme)),
+    ])
+}
+
+/// A field's line while it is not being typed in: `> ` and `text` cut to
+/// `room` cells, or `placeholder`, muted, when it is empty.
+pub fn kept_line(state: &State, text: &str, placeholder: &str, room: usize) -> Line<'static> {
+    let theme = state.theme();
+    let room = room.saturating_sub(text::width(MARK));
+    let mark = Span::styled(MARK, style::muted(theme));
+    if text.is_empty() {
+        return Line::from(vec![
+            mark,
+            Span::styled(text::fit(placeholder, room), style::muted(theme)),
+        ]);
+    }
+    Line::from(vec![
+        mark,
+        Span::styled(text::fit(text, room), style::base(theme)),
     ])
 }
 
