@@ -250,6 +250,11 @@ impl HttpClient {
     ) -> Result<Attempt<T>, ClientError> {
         let response = request.send().await.map_err(transport_error)?;
         let status = response.status();
+        // The status alone settles a 401, so a body that fails to arrive
+        // cannot turn it into a network error.
+        if status == StatusCode::UNAUTHORIZED {
+            return Err(ClientError::Unauthorized);
+        }
         let retry_after = response
             .headers()
             .get(RETRY_AFTER)
@@ -257,9 +262,6 @@ impl HttpClient {
             .and_then(|s| s.trim().parse::<u64>().ok());
         let body = response.bytes().await.map_err(transport_error)?;
 
-        if status == StatusCode::UNAUTHORIZED {
-            return Err(ClientError::Unauthorized);
-        }
         if status == StatusCode::TOO_MANY_REQUESTS {
             let from_body = serde_json::from_slice::<serde_json::Value>(&body)
                 .ok()

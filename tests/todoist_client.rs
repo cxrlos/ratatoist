@@ -347,6 +347,34 @@ async fn a_401_is_unauthorized() {
 }
 
 #[tokio::test]
+async fn a_401_whose_body_is_cut_off_is_still_unauthorized() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = [0u8; 4096];
+        let _ = stream.read(&mut request).await;
+        // Promises 100 bytes of body, sends 5, then hangs up.
+        stream
+            .write_all(b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 100\r\n\r\nshort")
+            .await
+            .unwrap();
+    });
+    let client = client_with(ClientConfig {
+        base_url: format!("http://{address}"),
+        connect_timeout: Duration::from_millis(300),
+        request_timeout: Duration::from_secs(2),
+        retry_unit: Duration::from_millis(10),
+    });
+
+    let error = client.user().await.unwrap_err();
+
+    assert_eq!(error, ClientError::Unauthorized);
+}
+
+#[tokio::test]
 async fn another_status_is_an_http_error_with_the_body() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
