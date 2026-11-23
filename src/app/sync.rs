@@ -32,34 +32,36 @@ pub enum OptimisticOp {
     },
 }
 
-/// Everything the first, full sync reads.
+/// What a full sync reads: at startup and on a forced re-sync.
+const FULL_SYNC_RESOURCES: [&str; 9] = [
+    "items",
+    "projects",
+    "sections",
+    "labels",
+    "notes",
+    "collaborators",
+    "workspaces",
+    "folders",
+    "user",
+];
+
+/// What an incremental sync reads.
+const INCREMENTAL_SYNC_RESOURCES: [&str; 5] = ["items", "projects", "sections", "labels", "notes"];
+
+/// Everything, from sync token `*`.
 pub(crate) fn full_sync_request() -> SyncRequest {
     SyncRequest {
         sync_token: "*".to_string(),
-        resource_types: [
-            "items",
-            "projects",
-            "sections",
-            "labels",
-            "notes",
-            "collaborators",
-            "workspaces",
-            "folders",
-            "user",
-        ]
-        .map(String::from)
-        .to_vec(),
+        resource_types: FULL_SYNC_RESOURCES.map(String::from).to_vec(),
         commands: vec![],
     }
 }
 
-/// An incremental read from `sync_token` (`*` reads everything).
+/// What changed since `sync_token`.
 pub(crate) fn incremental_sync_request(sync_token: &str) -> SyncRequest {
     SyncRequest {
         sync_token: sync_token.to_owned(),
-        resource_types: ["items", "projects", "sections", "labels", "notes"]
-            .map(String::from)
-            .to_vec(),
+        resource_types: INCREMENTAL_SYNC_RESOURCES.map(String::from).to_vec(),
         commands: vec![],
     }
 }
@@ -413,14 +415,15 @@ impl State {
     }
 
     /// Recovery path for a suspected desync: abandon any in-flight optimistic
-    /// state and refetch everything. Dropping `temp_id_pending` is deliberate:
-    /// the incoming full sync replaces the task list wholesale, so a late command
-    /// result must not revert against it.
+    /// state and read everything the startup sync reads. Dropping
+    /// `temp_id_pending` is deliberate: the incoming full sync replaces the
+    /// task list wholesale, so a late command result must not revert against it.
     pub(crate) fn force_full_resync(&mut self, effects: &mut Vec<Effect>) {
         self.temp_id_pending.clear();
-        self.sync_token = "*".to_string();
+        let request = full_sync_request();
+        self.sync_token = request.sync_token.clone();
         effects.push(Effect::PersistSyncToken(self.sync_token.clone()));
-        effects.push(Effect::Sync(incremental_sync_request(&self.sync_token)));
+        effects.push(Effect::Sync(request));
     }
 
     pub(crate) fn fetch_comments(&mut self, task_id: String, effects: &mut Vec<Effect>) {
