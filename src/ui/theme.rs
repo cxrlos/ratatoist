@@ -432,19 +432,11 @@ impl Theme {
         Style::new().fg(self.due.later)
     }
 
-    pub fn mode_normal(&self) -> Style {
-        self.dock_focused_item()
-    }
-
     pub fn mode_insert(&self) -> Style {
         self.selection.fg(self.text).add_modifier(Modifier::BOLD)
     }
 
-    pub fn mode_standard(&self) -> Style {
-        self.dock_focused_item()
-    }
-
-    /// The glyph and label of a priority, from the API's number.
+    /// The colour of a priority, from the API's number.
     pub fn priority_style(&self, priority: u8) -> Style {
         Style::new().fg(self.priority(Priority::from_api(priority)))
     }

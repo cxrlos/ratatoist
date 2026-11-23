@@ -1,4 +1,4 @@
-//! The styles lrat draws with, each from a role of the [`Theme`].
+//! The styles ratatoist draws with, each from a role of the [`Theme`].
 
 use ratatui::style::{Modifier, Style};
 
@@ -9,7 +9,7 @@ pub fn base(theme: &Theme) -> Style {
     Style::new().fg(theme.text).bg(theme.background)
 }
 
-/// Keys and other things the viewer can act on now.
+/// Keys and other things the user can act on now.
 pub fn accent(theme: &Theme) -> Style {
     Style::new().fg(theme.accent).add_modifier(Modifier::BOLD)
 }
