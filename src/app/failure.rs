@@ -174,7 +174,18 @@ impl fmt::Display for Failure {
 pub struct ErrorLog(VecDeque<Failure>);
 
 impl ErrorLog {
+    /// Adds `failure` as the newest entry, or, when the newest entry is the
+    /// same failure (kind, action and message), moves that entry's time to
+    /// `failure`'s, so a failure that repeats takes one entry.
     pub fn record(&mut self, failure: Failure) {
+        if let Some(newest) = self.0.back_mut()
+            && newest.kind == failure.kind
+            && newest.action == failure.action
+            && newest.message == failure.message
+        {
+            newest.at = failure.at;
+            return;
+        }
         if self.0.len() == ERROR_LOG_CAP {
             self.0.pop_front();
         }

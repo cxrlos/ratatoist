@@ -241,23 +241,35 @@ async fn a_full_sync_keeps_the_mark_until_the_task_changes() {
     assert!(!row_with(&app, "Renamed elsewhere").unwrap().contains('✘'));
 }
 
+fn offline_comments() -> Event {
+    Event::Comments {
+        task_id: "t-any".to_owned(),
+        fetch_seq: 0,
+        result: Err(offline()),
+    }
+}
+
 #[test]
-fn an_offline_comments_fetch_logs_each_time_and_never_writes_a_notice() {
+fn an_offline_comments_fetch_never_writes_a_notice() {
     let mut app = app();
 
-    for _ in 0..2 {
-        send(
-            &mut app,
-            [Event::Comments {
-                task_id: "t-any".to_owned(),
-                fetch_seq: 0,
-                result: Err(offline()),
-            }],
-        );
-    }
+    send(&mut app, [offline_comments(), offline_comments()]);
 
-    assert_eq!(app.state().failures.len(), 2);
+    assert!(!app.state().failures.is_empty());
     assert!(!shows(&app, "Could not"));
+}
+
+#[test]
+fn a_repeated_failure_updates_the_newest_entry_instead_of_adding_one() {
+    let mut app = app();
+    send(&mut app, [offline_comments()]);
+    let later = now() + chrono::Duration::minutes(5);
+
+    send(&mut app, [Event::Tick { now: later }, offline_comments()]);
+
+    let failures = &app.state().failures;
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures.newest().map(|failure| failure.at), Some(later));
 }
 
 #[test]
