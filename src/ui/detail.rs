@@ -247,7 +247,15 @@ fn due_pieces(state: &State, task: &Task) -> Pieces {
         pieces.push((format!(" ({})", day.format("%a %b %-d")), muted));
     }
     if due.is_recurring {
-        pieces.push((format!(" {}", state.icons().recurring), muted));
+        let rule = due.string.as_deref().filter(|rule| !rule.is_empty());
+        let recurring = state.icons().recurring;
+        pieces.push((
+            rule.map_or_else(
+                || format!(" {recurring}"),
+                |rule| format!(" {recurring} {rule}"),
+            ),
+            muted,
+        ));
     }
     pieces
 }
