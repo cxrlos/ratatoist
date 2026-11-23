@@ -49,7 +49,7 @@ impl SyncResponse {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum SyncCommandResult {
     Ok(String),
@@ -69,7 +69,7 @@ impl SyncCommandResult {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SyncCommandError {
     pub error_code: i32,
     pub error: String,

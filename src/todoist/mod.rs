@@ -3,6 +3,7 @@
 
 pub mod fake;
 pub mod http;
+mod live;
 pub mod model;
 pub mod sync;
 
@@ -12,7 +13,7 @@ use std::time::Duration;
 use futures_util::Stream;
 
 pub use fake::FakeClient;
-pub use http::HttpClient;
+pub use http::{ClientConfig, HttpClient};
 use model::{Comment, Task, UserInfo};
 use sync::{SyncRequest, SyncResponse};
 
@@ -78,10 +79,4 @@ pub enum ClientError {
     Decode(String),
     #[error("{0}")]
     Other(String),
-}
-
-impl ClientError {
-    pub(crate) fn from_anyhow(error: &anyhow::Error) -> Self {
-        Self::Other(format!("{error:#}"))
-    }
 }

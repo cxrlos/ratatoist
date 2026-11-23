@@ -1,0 +1,23 @@
+{
+  "results": [
+    {
+      "id": "6Jf8VQXxpwv56VN2",
+      "posted_uid": "1000001",
+      "item_id": "6Jf8VQXxpwv56VT2",
+      "project_id": null,
+      "content": "It did. Skipped.",
+      "file_attachment": {
+        "resource_type": "file",
+        "file_name": "tray.jpg",
+        "file_size": 20480,
+        "file_type": "image/jpeg",
+        "file_url": "https://files.example.com/tray.jpg"
+      },
+      "uids_to_notify": ["1000002"],
+      "is_deleted": false,
+      "posted_at": "2026-11-19T07:35:00.000000Z",
+      "reactions": {}
+    }
+  ],
+  "next_cursor": null
+}

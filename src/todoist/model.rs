@@ -149,6 +149,24 @@ pub struct CompletedRecord {
     pub item_object: Option<Task>,
 }
 
+impl CompletedRecord {
+    /// The full task when Todoist sent one, otherwise a checked task built
+    /// from the record.
+    pub fn into_task(self) -> Task {
+        self.item_object.unwrap_or_else(|| Task {
+            id: self.task_id,
+            content: self.content,
+            checked: true,
+            completed_at: Some(self.completed_at),
+            project_id: self.project_id,
+            section_id: self.section_id,
+            note_count: self.note_count,
+            user_id: self.user_id,
+            ..Default::default()
+        })
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Workspace {
     pub id: String,

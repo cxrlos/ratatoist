@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "id": "6Jf8VQXxpwv56VN1",
+      "posted_uid": "1000002",
+      "item_id": "6Jf8VQXxpwv56VT2",
+      "project_id": null,
+      "content": "Skip it if it rained overnight.",
+      "file_attachment": null,
+      "uids_to_notify": [],
+      "is_deleted": false,
+      "posted_at": "2026-11-18T20:00:00.000000Z",
+      "reactions": null
+    }
+  ],
+  "next_cursor": "hypothetical-cursor-2"
+}

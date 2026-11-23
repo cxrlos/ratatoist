@@ -1,0 +1,20 @@
+{
+  "id": "1000001",
+  "full_name": "Wren Example",
+  "email": "wren@example.com",
+  "inbox_project_id": "6Jf8VQXxpwv56VQ7",
+  "tz_info": { "timezone": "Europe/Lisbon", "gmt_string": "+00:00", "hours": 0, "minutes": 0, "is_dst": 0 },
+  "websocket_url": "wss://ws.example.com/ws?token=hypothetical",
+  "premium_status": "current_personal_plan",
+  "lang": "en",
+  "start_day": 1,
+  "next_week": 1,
+  "time_format": 0,
+  "date_format": 0,
+  "daily_goal": 5,
+  "weekly_goal": 30,
+  "karma": 1250.0,
+  "karma_trend": "up",
+  "is_premium": true,
+  "joined_at": "2025-01-04T10:00:00.000000Z"
+}
