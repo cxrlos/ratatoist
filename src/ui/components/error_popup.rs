@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
 use crate::app::AppError;
+use crate::ui::text;
 use crate::ui::theme::Theme;
 
 use super::popup::{centered_rect, render_dim_overlay};
@@ -15,7 +16,8 @@ pub fn render(frame: &mut Frame, error: &AppError, theme: &Theme) {
     let area = frame.area();
     let popup_area = centered_rect(55, 35, area);
 
-    let title = format!(" {} ", error.title);
+    let room = usize::from(popup_area.width.saturating_sub(4));
+    let title = format!(" {} ", text::fit(&error.title, room));
 
     let block = Block::default()
         .title(title)
@@ -54,4 +56,35 @@ pub fn render(frame: &mut Frame, error: &AppError, theme: &Theme) {
     let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
 
     frame.render_widget(paragraph, popup_area);
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::render;
+    use crate::app::AppError;
+    use crate::ui::theme::Theme;
+
+    #[test]
+    fn a_title_wider_than_the_popup_ends_in_an_ellipsis() {
+        let error = AppError {
+            title: "週末の買い物リストを同期できませんでした".into(),
+            message: "message".into(),
+            suggestion: None,
+            recoverable: true,
+        };
+        let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+        terminal
+            .draw(|frame| render(frame, &error, &Theme::builtin()[0]))
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let top = (0..12)
+            .map(|y| (0..40).map(|x| buffer[(x, y)].symbol()).collect::<String>())
+            .find(|row| row.contains('╭'))
+            .unwrap();
+        assert!(top.contains('…'));
+    }
 }
