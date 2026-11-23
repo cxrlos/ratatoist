@@ -54,8 +54,9 @@ async fn start(cli: Cli) -> Result<()> {
         Err(error) if runtime::is_missing_token(&error) => {
             state.not_loaded(LoadError::NoToken);
             // With no token there is nothing to ask Todoist, and no sync
-            // starts, so the client is never called.
-            return run_app(FakeClient::new(), state, Some(&config_dir)).await;
+            // starts, so the client is never called and no sync token is
+            // saved.
+            return run_app(FakeClient::new(), state, None).await;
         }
         Err(error) => return Err(error),
     };

@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use tracing::error;
 
 use super::Effect;
-use super::failure::{Failure, LoadError};
+use super::failure::{ErrorKind, Failure, LoadError};
 use super::state::{State, SyncHealth, UserRecord};
 use crate::todoist::ClientError;
 use crate::todoist::model::{Folder, Project, Task};
@@ -146,7 +146,7 @@ impl State {
                     effects.push(Effect::OpenLive { url });
                 }
             }
-            Err(ClientError::Unauthorized) if first => {
+            Err(e) if first && ErrorKind::of(&e, self.now) == ErrorKind::TokenRejected => {
                 error!("todoist rejected the token");
                 self.not_loaded(LoadError::TokenRejected);
             }

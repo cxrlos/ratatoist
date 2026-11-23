@@ -287,6 +287,9 @@ impl State {
                 false
             }
             Action::ShowScreen(screen) => self.show_screen(screen),
+            // Logged out or with a rejected token there is nothing to sync,
+            // and a sync answered by the stand-in client would save its token.
+            Action::Resync if self.load_error.is_some() => false,
             Action::Resync => {
                 self.force_full_resync(effects);
                 true
