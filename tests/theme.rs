@@ -61,7 +61,10 @@ fn there_are_the_terminal_default_and_ten_base16_built_in_themes() {
         ]
     );
     for name in names {
-        assert!(Theme::built_in(name).is_some(), "{name} does not load");
+        assert!(
+            Theme::built_in(name).is_some(),
+            "a built-in theme does not load"
+        );
     }
 }
 
@@ -78,8 +81,14 @@ fn muted_meets_three_to_one_in_every_base16_built_in_after_the_lift() {
         let theme = Theme::built_in(name).unwrap();
         let ratio = contrast_ratio(theme.muted, theme.background).unwrap();
 
-        assert!(ratio >= MUTED_MIN_CONTRAST, "{name} muted: {ratio:.2}");
-        assert_eq!(theme.border, theme.muted, "{name} border");
+        assert!(
+            ratio >= MUTED_MIN_CONTRAST,
+            "a built-in theme's muted text is below 3:1"
+        );
+        assert_eq!(
+            theme.border, theme.muted,
+            "a built-in theme's border is not muted"
+        );
     }
 }
 
@@ -88,7 +97,7 @@ fn a_muted_colour_too_dark_for_its_background_is_lifted_toward_the_text() {
     let theme = Theme::from_base16_json(DIM).unwrap();
 
     let ratio = contrast_ratio(theme.muted, theme.background).unwrap();
-    assert!(ratio >= MUTED_MIN_CONTRAST, "{ratio:.2}");
+    assert!(ratio >= MUTED_MIN_CONTRAST);
     assert_ne!(theme.muted, Color::Rgb(0x1c, 0x1c, 0x1c));
     assert!(
         contrast_ratio(theme.muted, theme.background)
@@ -168,10 +177,10 @@ fn a_base16_theme_paints_its_background_and_the_terminal_theme_keeps_the_termina
     let terminal = demo_with(&Config::default());
 
     for cell in nord.backend().buffer().content() {
-        assert_eq!(cell.bg, Color::Rgb(0x2e, 0x34, 0x40), "{cell:?}");
+        assert_eq!(cell.bg, Color::Rgb(0x2e, 0x34, 0x40));
     }
     for cell in terminal.backend().buffer().content() {
-        assert_eq!(cell.bg, Color::Reset, "{cell:?}");
+        assert_eq!(cell.bg, Color::Reset);
     }
 }
 

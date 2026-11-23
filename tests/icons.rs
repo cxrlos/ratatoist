@@ -82,7 +82,7 @@ fn priority_and_check_glyphs_are_pairwise_distinct_in_both_sets() {
 
         let distinct: HashSet<&str> = glyphs.iter().copied().collect();
 
-        assert_eq!(distinct.len(), glyphs.len(), "{set:?}: {glyphs:?}");
+        assert_eq!(distinct.len(), glyphs.len());
     }
 }
 
@@ -100,8 +100,8 @@ fn the_nerd_set_changes_every_glyph() {
 fn every_nerd_glyph_is_one_private_use_character() {
     for glyph in all(IconSet::Nerd.icons()) {
         let chars: Vec<char> = glyph.chars().collect();
-        assert_eq!(chars.len(), 1, "{glyph:?}");
-        assert!(('\u{e000}'..='\u{f8ff}').contains(&chars[0]), "{glyph:?}");
+        assert_eq!(chars.len(), 1);
+        assert!(('\u{e000}'..='\u{f8ff}').contains(&chars[0]));
     }
 }
 
@@ -145,8 +145,14 @@ fn the_views_draw_glyphs_from_the_set_chosen() {
         icons.priority(Priority::P4),
         icons.comments,
     ] {
-        assert!(nerd.contains(glyph), "{glyph:?} missing:\n{nerd}");
-        assert!(!unicode.contains(glyph), "{glyph:?} in the unicode set");
+        assert!(
+            nerd.contains(glyph),
+            "a nerd glyph is missing from the rendered list"
+        );
+        assert!(
+            !unicode.contains(glyph),
+            "a nerd glyph shows in the unicode set"
+        );
     }
 }
 

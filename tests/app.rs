@@ -238,7 +238,7 @@ fn an_unbound_key_under_an_overlay_does_not_redraw() {
 
         send(&mut app, [key('y'), press(KeyCode::F(5))]);
 
-        assert_eq!(app.frames_drawn(), frames, "under {overlay:?}");
+        assert_eq!(app.frames_drawn(), frames);
         assert_eq!(app.state().top_modal().cloned(), overlay);
     }
 }

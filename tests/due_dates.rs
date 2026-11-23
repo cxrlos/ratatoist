@@ -170,6 +170,6 @@ fn the_today_counts_match_the_today_list() {
 
     let rows = app.state().visible_tasks().len();
     assert_eq!(rows, 4);
-    assert!(shows(&app, "◆ Today  4"), "{:#?}", screen(&app));
-    assert!(shows(&app, "Overdue  (3)"), "{:#?}", screen(&app));
+    assert!(shows(&app, "◆ Today  4"));
+    assert!(shows(&app, "Overdue  (3)"));
 }
