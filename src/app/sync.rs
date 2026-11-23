@@ -566,6 +566,6 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(a.len(), 36);
         assert_eq!(&a[14..15], "4");
-        assert!(matches!(&a[19..20], "8" | "9" | "a" | "b"), "{a}");
+        assert!(matches!(&a[19..20], "8" | "9" | "a" | "b"));
     }
 }
