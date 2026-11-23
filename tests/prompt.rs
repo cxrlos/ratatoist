@@ -164,6 +164,28 @@ fn enter_with_nothing_to_send_keeps_the_prompt_open_with_the_reason() {
 }
 
 #[test]
+fn editing_a_refused_line_drops_the_reason() {
+    let mut app = demo();
+    send(&mut app, [key('c'), press(KeyCode::Enter)]);
+    assert!(prompt(&app).unwrap().error.is_some());
+
+    send(&mut app, [key('x')]);
+
+    assert_eq!(prompt(&app).unwrap().error, None);
+    assert!(!screen(&app).contains("A comment needs text"));
+}
+
+#[test]
+fn pasting_into_a_refused_line_drops_the_reason() {
+    let mut app = demo();
+    send(&mut app, [key('c'), press(KeyCode::Enter)]);
+
+    send(&mut app, [Event::Paste("On my way".to_owned())]);
+
+    assert_eq!(prompt(&app).unwrap().error, None);
+}
+
+#[test]
 fn an_empty_description_clears_it() {
     let mut app = demo();
     let (id, _) = focused(&app);
