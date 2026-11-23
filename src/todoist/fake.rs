@@ -111,21 +111,26 @@ fn decode<T: DeserializeOwned>(body: Value) -> Result<T, ClientError> {
 impl TodoistClient for FakeClient {
     async fn sync(&self, request: SyncRequest) -> Result<SyncResponse, ClientError> {
         let mut shared = self.shared();
+        // Recorded before the body is decoded, so a malformed fixture still
+        // leaves the record of what was sent.
+        let statuses: Vec<_> = request
+            .commands
+            .iter()
+            .map(|command| (command.uuid.clone(), shared.status(command)))
+            .collect();
+        shared.commands.extend(request.commands);
         let full = request.sync_token == "*";
         let body = if full {
             shared.full_sync.clone()
         } else {
             shared.incremental_sync.clone()
         };
+        drop(shared);
         let mut response = match body {
             Some(body) => decode(body)?,
             None => SyncResponse::empty(full),
         };
-        for command in request.commands {
-            let status = shared.status(&command);
-            response.sync_status.insert(command.uuid.clone(), status);
-            shared.commands.push(command);
-        }
+        response.sync_status.extend(statuses);
         Ok(response)
     }
 

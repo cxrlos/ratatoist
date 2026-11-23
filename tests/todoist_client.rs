@@ -517,6 +517,22 @@ async fn the_fake_fails_a_chosen_command_and_records_every_command() {
 }
 
 #[tokio::test]
+async fn the_fake_records_commands_even_when_its_sync_body_is_malformed() {
+    let fake = FakeClient::new().with_incremental_sync(json!({ "full_sync": "not a bool" }));
+
+    let response = fake
+        .sync(write_request(vec![command("item_close", "u1")]))
+        .await;
+
+    assert!(
+        matches!(response, Err(ClientError::Decode(_))),
+        "{response:?}"
+    );
+    let uuids: Vec<String> = fake.commands().into_iter().map(|c| c.uuid).collect();
+    assert_eq!(uuids, ["u1"]);
+}
+
+#[tokio::test]
 async fn the_fake_with_nothing_configured_is_an_empty_account() {
     let fake = FakeClient::default();
 
