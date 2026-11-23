@@ -209,7 +209,7 @@ pub struct CompletedTasksResponse {
     pub next_cursor: Option<String>,
 }
 
-// Paginated REST response — still used by get_completed_tasks.
+// One page of a cursor-paged REST list, as GET /comments returns it.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Paginated<T> {
     pub results: Vec<T>,
