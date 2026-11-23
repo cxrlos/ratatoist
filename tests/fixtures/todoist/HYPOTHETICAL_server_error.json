@@ -1,0 +1,7 @@
+{
+  "error": "Internal server error",
+  "error_code": 1,
+  "error_extra": {},
+  "error_tag": "INTERNAL_SERVER_ERROR",
+  "http_code": 500
+}

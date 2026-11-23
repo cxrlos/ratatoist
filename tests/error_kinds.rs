@@ -11,7 +11,7 @@ use ratatoist::app::{ErrorKind, Failure};
 use ratatoist::auth::ApiToken;
 use ratatoist::todoist::sync::{SyncCommandResult, SyncRequest};
 use ratatoist::todoist::{ClientConfig, ClientError, HttpClient, TodoistClient};
-use serde_json::{Value, json};
+use serde_json::Value;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -73,11 +73,7 @@ async fn a_401_is_a_rejected_token() {
 
 #[tokio::test]
 async fn a_429_is_rate_limited_until_its_retry_after() {
-    let body = json!({
-        "error": "Too many requests",
-        "error_code": 35,
-        "error_extra": { "retry_after": 30 }
-    });
+    let body = fixture("HYPOTHETICAL_rate_limited.json");
     let error = sync_error(ResponseTemplate::new(429).set_body_json(body)).await;
 
     let kind = ErrorKind::of(&error, now());
@@ -96,7 +92,8 @@ async fn a_429_is_rate_limited_until_its_retry_after() {
 
 #[tokio::test]
 async fn a_500_is_a_server_error() {
-    let error = sync_error(ResponseTemplate::new(500).set_body_string("internal error")).await;
+    let body = fixture("HYPOTHETICAL_server_error.json");
+    let error = sync_error(ResponseTemplate::new(500).set_body_json(body)).await;
 
     assert_eq!(ErrorKind::of(&error, now()), ErrorKind::Server);
 }

@@ -1,0 +1,9 @@
+{
+  "error": "Too many requests. Limits reached. Try again later",
+  "error_code": 35,
+  "error_extra": {
+    "retry_after": 30
+  },
+  "error_tag": "LIMITS_REACHED",
+  "http_code": 429
+}
