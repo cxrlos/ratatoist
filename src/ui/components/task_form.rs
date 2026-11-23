@@ -106,16 +106,6 @@ pub fn render(frame: &mut Frame, state: &State, form: &TaskForm) {
         "API parses due dates: 'tomorrow', 'next friday', 'every monday', '3pm today'",
         theme.muted_text().add_modifier(Modifier::ITALIC),
     )));
-    lines.push(Line::default());
-
-    let submit_hint = if form.editing() {
-        "Enter add  Tab next field  Esc cancel"
-    } else {
-        "Tab next field  Enter change  Esc cancel"
-    };
-    lines.push(
-        Line::from(Span::styled(submit_hint, theme.muted_text())).alignment(Alignment::Center),
-    );
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);

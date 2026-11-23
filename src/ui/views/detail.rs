@@ -131,8 +131,8 @@ fn overflow(lines: &[Line], area: Rect) -> u16 {
 }
 
 /// The rows `lines` fill when wrapped to `width`, found by drawing them off
-/// screen: ratatui's own count sits behind an unstable feature. The last
-/// line is the key hint, never blank, so the last row drawn is the end.
+/// screen: ratatui's own count sits behind an unstable feature. Blank rows
+/// after the last one with text are not counted.
 fn rendered_rows(lines: &[Line], width: u16) -> u16 {
     if width == 0 {
         return 0;
@@ -372,18 +372,6 @@ fn lines<'a>(
         }
         lines.push(Line::default());
     }
-
-    lines.push(Line::default());
-    lines.push(Line::from(vec![
-        Span::styled("i", theme.key_hint()),
-        Span::styled(" edit  ", theme.muted_text()),
-        Span::styled("c", theme.key_hint()),
-        Span::styled(" comment  ", theme.muted_text()),
-        Span::styled("x", theme.key_hint()),
-        Span::styled(" complete  ", theme.muted_text()),
-        Span::styled("Esc", theme.key_hint()),
-        Span::styled(" back", theme.muted_text()),
-    ]));
 
     lines
 }

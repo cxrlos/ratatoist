@@ -6,7 +6,6 @@ pub mod dates;
 mod error;
 pub mod hints;
 pub mod icons;
-pub mod keyhints;
 pub mod layout;
 mod messages;
 pub mod picker;
@@ -53,7 +52,7 @@ pub fn draw(frame: &mut Frame, state: &State) {
     release::render_release_notice(state, frame, tabs_area, tabs_width, indicator_width);
     render_body(state, frame, body_area);
     frame.render_widget(Paragraph::new(notice), notice_area);
-    keyhints::render(frame, state, bar_area);
+    hints::render(state, frame, bar_area);
 
     for modal in &state.modals {
         match modal {

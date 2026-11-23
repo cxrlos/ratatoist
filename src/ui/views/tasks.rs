@@ -6,7 +6,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use crate::app::{ListFilter, Screen, State};
-use crate::keys::Preset;
 use crate::ui::dates::{self, DueBucket};
 use crate::ui::icons::Icons;
 use crate::ui::text;
@@ -44,17 +43,12 @@ pub fn render_with_icons(
     }
 
     if visible.is_empty() && !today && state.list_filter == ListFilter::default() {
-        let hint = match state.keymap.preset() {
-            Preset::Vim => "press a to add a task",
-            Preset::Standard => "press Ctrl-a to add a task",
-        };
         let lines = vec![
             ListItem::new(Line::default()),
             row(Line::from(Span::styled(
                 "No tasks in this project",
                 theme.muted_text(),
             ))),
-            row(Line::from(vec![Span::styled(hint, theme.muted_text())])),
         ];
         frame.render_widget(List::new(lines), area);
         return;

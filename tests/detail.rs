@@ -255,7 +255,6 @@ fn scrolling_stops_at_the_end_of_the_detail() {
     assert_eq!(app.state().detail_scroll, scroll);
     assert!(shows(&app, "Line 60 of the notes"));
     assert!(shows(&app, "Thanks, I will call after ten."));
-    assert!(shows(&app, "i edit  c comment"), "the last row is in view");
     assert_snapshot!(app.backend());
 }
 
@@ -364,7 +363,7 @@ fn a_screen_smaller_than_80x24_scrolls_to_the_end_without_a_resize() {
 
     send(&mut app, (0..40).map(|_| ctrl('d')));
 
-    assert!(shows(&app, "i edit  c comment"), "{:#?}", screen(&app));
+    assert!(shows(&app, "after ten."), "{:#?}", screen(&app));
 }
 
 #[test]
@@ -405,7 +404,7 @@ fn a_shorter_description_under_a_scrolled_detail_leaves_no_blank_tail() {
         .unwrap();
 
     assert!(shows(&app, "Line 30 of the notes"), "{:#?}", screen(&app));
-    assert!(shows(&app, "i edit  c comment"), "{:#?}", screen(&app));
+    assert!(shows(&app, "after ten."), "{:#?}", screen(&app));
     assert!(!shows(&app, "Line 31 of the notes"));
 }
 
@@ -414,8 +413,7 @@ fn the_hint_bar_names_the_scroll_keys() {
     let mut app = sized(80, 24);
     open_call_detail(&mut app);
 
-    assert!(shows(&app, "Ctrl-d/u scroll"), "{:#?}", screen(&app));
-    assert!(!shows(&app, "j/k scroll"));
+    assert!(shows(&app, "C-d/C-u page"), "{:#?}", screen(&app));
 }
 
 #[test]

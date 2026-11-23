@@ -64,17 +64,6 @@ pub fn render(frame: &mut Frame, state: &State, target: InputKind) {
         ]));
     }
 
-    lines.push(Line::default());
-    lines.push(
-        Line::from(vec![
-            Span::styled("Enter", theme.key_hint()),
-            Span::styled(" submit  ", theme.muted_text()),
-            Span::styled("Esc", theme.key_hint()),
-            Span::styled(" cancel", theme.muted_text()),
-        ])
-        .alignment(Alignment::Center),
-    );
-
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
 }
