@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use crate::app::{ProjectEntry, State};
+use crate::ui::text;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let theme = state.theme();
@@ -26,10 +27,10 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
         .map(|entry| match entry {
             ProjectEntry::PersonalHeader => {
                 let name = state.current_user_name.as_deref().unwrap_or("Personal");
-                ListItem::new(Line::from(Span::styled(
+                Line::from(Span::styled(
                     format!("  {name}"),
                     theme.muted_text().add_modifier(Modifier::BOLD),
-                )))
+                ))
             }
 
             ProjectEntry::WorkspaceHeader(wi) => {
@@ -38,10 +39,10 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                     .get(*wi)
                     .map(|w| w.name.as_str())
                     .unwrap_or("");
-                ListItem::new(Line::from(Span::styled(
+                Line::from(Span::styled(
                     format!("  {name}"),
                     theme.label_tag().add_modifier(Modifier::BOLD),
-                )))
+                ))
             }
 
             ProjectEntry::FolderHeader(fi) => {
@@ -51,13 +52,13 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                     .map(|f| state.collapsed_folders.contains(&f.id))
                     .unwrap_or(false);
                 let arrow = if collapsed { "▸" } else { "▾" };
-                ListItem::new(Line::from(Span::styled(
+                Line::from(Span::styled(
                     format!("    {arrow} {name}"),
                     theme.muted_text(),
-                )))
+                ))
             }
 
-            ProjectEntry::Separator => ListItem::new(Line::default()),
+            ProjectEntry::Separator => Line::default(),
 
             ProjectEntry::TodayView => {
                 let stats = state.overview_stats();
@@ -70,7 +71,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                 if count > 0 {
                     spans.push(Span::styled(format!("  {count}"), theme.muted_text()));
                 }
-                ListItem::new(Line::from(spans))
+                Line::from(spans)
             }
 
             ProjectEntry::Project(i) => {
@@ -92,13 +93,14 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                     Span::styled("# ", Style::default().fg(dot_color))
                 };
 
-                ListItem::new(Line::from(vec![
+                Line::from(vec![
                     Span::raw(indent),
                     icon,
                     Span::styled(&project.name, theme.normal_text()),
-                ]))
+                ])
             }
         })
+        .map(|line| ListItem::new(text::fit_line(line, usize::from(area.width))))
         .collect();
 
     if items.is_empty() {

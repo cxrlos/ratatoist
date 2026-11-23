@@ -4,6 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding};
 
 use crate::app::State;
+use crate::ui::text;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let theme = state.theme();
@@ -35,10 +36,13 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     ]));
 
     let theme_name = &state.theme().name;
-    let theme_item = ListItem::new(Line::from(vec![
-        Span::styled("Theme ", theme.muted_text()),
-        Span::styled(theme_name, theme.key_hint()),
-    ]));
+    let theme_item = ListItem::new(text::fit_line(
+        Line::from(vec![
+            Span::styled("Theme ", theme.muted_text()),
+            Span::styled(theme_name, theme.key_hint()),
+        ]),
+        usize::from(inner.width),
+    ));
 
     let idle_label = if state.idle_timeout_secs < 60 {
         format!("{}s", state.idle_timeout_secs)

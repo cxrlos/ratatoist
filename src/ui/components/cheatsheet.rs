@@ -4,6 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
 use crate::app::InputMode;
+use crate::ui::text;
 use crate::ui::theme::Theme;
 
 use super::popup::{centered_rect, render_dim_overlay};
@@ -42,7 +43,13 @@ fn section(title: &str, theme: &Theme) -> Line<'static> {
 
 fn binding(key: &str, desc: &str, theme: &Theme) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("  {key:<16}"), theme.key_hint()),
+        Span::styled(
+            format!(
+                "  {key}{}",
+                " ".repeat(16usize.saturating_sub(text::width(key)))
+            ),
+            theme.key_hint(),
+        ),
         Span::styled(desc.to_string(), theme.normal_text()),
     ])
 }

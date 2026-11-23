@@ -4,6 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::app::{InputMode, Pane, State, VimState};
+use crate::ui::text;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect) {
     let theme = state.theme();
@@ -48,7 +49,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
     };
 
     let status_str = format!("{ws_label} {ws_dot} ");
-    let status_width = status_str.chars().count() as u16;
+    let status_width = u16::try_from(text::width(&status_str)).unwrap_or(u16::MAX);
 
     let [left, right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(status_width)]).areas(area);
@@ -59,7 +60,8 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
     ];
 
     frame.render_widget(
-        Paragraph::new(Line::from(spans)).style(theme.surface_bg()),
+        Paragraph::new(text::fit_line(Line::from(spans), usize::from(left.width)))
+            .style(theme.surface_bg()),
         left,
     );
     frame.render_widget(

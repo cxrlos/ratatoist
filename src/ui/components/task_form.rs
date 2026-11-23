@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 use crate::todoist::model::priority_label;
 
 use crate::app::{State, TaskForm};
+use crate::ui::text;
 
 use super::popup::{centered_rect, render_dim_overlay};
 
@@ -79,7 +80,13 @@ pub fn render(frame: &mut Frame, state: &State, form: &TaskForm) {
         let cursor = if active && !form.editing { " <" } else { "" };
 
         lines.push(Line::from(vec![
-            Span::styled(format!("{label:<10}"), label_style),
+            Span::styled(
+                format!(
+                    "{label}{}",
+                    " ".repeat(10usize.saturating_sub(text::width(label)))
+                ),
+                label_style,
+            ),
             Span::styled(value, value_style),
             Span::styled(cursor, theme.key_hint()),
         ]));

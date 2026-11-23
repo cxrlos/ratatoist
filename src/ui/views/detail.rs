@@ -11,8 +11,8 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap};
 use crate::todoist::model::{Comment, Task};
 
 use crate::app::{State, UserRecord};
-use crate::ui::dates;
 use crate::ui::theme::Theme;
+use crate::ui::{dates, text};
 
 /// The task fields the detail's cursor moves over, top to bottom. The
 /// cursor, the edit it starts and the edit popup's title all match on this.
@@ -306,12 +306,12 @@ fn lines<'a>(
                 let is_me = current_user_id == Some(user_id.as_str());
                 let resolved = user_names
                     .get(&user_id)
-                    .map(|r| r.display.as_str())
-                    .unwrap_or_else(|| take_chars(&user_id, 8));
+                    .map(|r| r.display.clone())
+                    .unwrap_or_else(|| text::fit(&user_id, 9));
                 let display_name = if is_me {
                     format!("{resolved} (you)")
                 } else {
-                    resolved.to_string()
+                    resolved
                 };
                 let name_style = if is_me {
                     Style::default()
@@ -347,7 +347,7 @@ fn lines<'a>(
                     let hint = file_type.map(|t| format!(" ({t})")).unwrap_or_default();
                     format!("[+] {name}{hint}")
                 } else if let Some(url) = file_url {
-                    format!("[+] {}", take_chars(url, 50))
+                    format!("[+] {}", text::fit(url, 51))
                 } else {
                     format!("[+] {resource_type} attachment")
                 };
@@ -403,17 +403,9 @@ fn field_hint(active: bool, theme: &Theme) -> Span<'static> {
     }
 }
 
-/// The first `count` characters of `text`, cut on a character boundary.
-fn take_chars(text: &str, count: usize) -> &str {
-    match text.char_indices().nth(count) {
-        Some((end, _)) => text.get(..end).unwrap_or(text),
-        None => text,
-    }
-}
-
 /// A comment's time as `YYYY-MM-DD HH:MM`, from RFC 3339 or from an ISO
 /// time without an offset (`2024-01-15T14:30:00`); anything else shows as
-/// sent, up to 16 characters.
+/// sent, cut with `…` past 17 cells.
 fn format_comment_time(timestamp: &str) -> String {
     const SHOWN: &str = "%Y-%m-%d %H:%M";
     if let Ok(time) = DateTime::parse_from_rfc3339(timestamp) {
@@ -422,5 +414,5 @@ fn format_comment_time(timestamp: &str) -> String {
     if let Ok(time) = NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H:%M:%S%.f") {
         return time.format(SHOWN).to_string();
     }
-    take_chars(timestamp, 16).to_owned()
+    text::fit(timestamp, 17)
 }

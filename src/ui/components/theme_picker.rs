@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding};
 
 use crate::app::State;
+use crate::ui::text;
 
 use super::popup::{centered_rect, render_dim_overlay};
 
@@ -39,7 +40,7 @@ pub fn render(frame: &mut Frame, state: &State, selection: usize) {
                 .collect();
 
             let mut spans = vec![Span::styled(
-                format!("{:<20}", t.name),
+                pad(&t.name, 20),
                 theme.normal_text().fg(theme.text),
             )];
             spans.extend(swatches);
@@ -51,4 +52,11 @@ pub fn render(frame: &mut Frame, state: &State, selection: usize) {
     let list = List::new(items).highlight_style(theme.selected_item());
     let mut list_state = ListState::default().with_selected(Some(selection));
     frame.render_stateful_widget(list, inner, &mut list_state);
+}
+
+/// `name` cut or padded with spaces to exactly `cells` terminal cells.
+fn pad(name: &str, cells: usize) -> String {
+    let cut = text::fit(name, cells);
+    let fill = cells.saturating_sub(text::width(&cut));
+    format!("{cut}{}", " ".repeat(fill))
 }

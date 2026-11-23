@@ -4,6 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::app::{DOCK_ITEMS, InputMode, Pane, State};
+use crate::ui::text;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect) {
     let theme = state.theme();
@@ -22,7 +23,8 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
             format!("→ {}", item.hint()),
             theme.active_title(),
         ));
-        let bar = Paragraph::new(Line::from(spans)).style(theme.base_bg());
+        let bar = Paragraph::new(text::fit_line(Line::from(spans), usize::from(area.width)))
+            .style(theme.base_bg());
         frame.render_widget(bar, area);
         return;
     }
@@ -89,6 +91,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
         spans.push(Span::styled(format!(" {desc}"), theme.muted_text()));
     }
 
-    let bar = Paragraph::new(Line::from(spans)).style(theme.base_bg());
+    let bar = Paragraph::new(text::fit_line(Line::from(spans), usize::from(area.width)))
+        .style(theme.base_bg());
     frame.render_widget(bar, area);
 }

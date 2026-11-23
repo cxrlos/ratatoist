@@ -4,6 +4,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
+use crate::ui::text;
 use crate::ui::theme::Theme;
 
 pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
@@ -14,11 +15,7 @@ pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
         .lines()
         .filter(|l| !l.trim().is_empty())
         .collect();
-    let max_width = logo_lines
-        .iter()
-        .map(|l| l.chars().count())
-        .max()
-        .unwrap_or(0);
+    let max_width = logo_lines.iter().map(|l| text::width(l)).max().unwrap_or(0);
     let logo_height = logo_lines.len() as u16;
 
     let [_, logo_area, _, bar_area, status_area, _] = Layout::vertical([
@@ -34,7 +31,10 @@ pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
     let logo_text: Vec<Line> = logo_lines
         .iter()
         .map(|line| {
-            let padded = format!("{:width$}", line, width = max_width);
+            let padded = format!(
+                "{line}{}",
+                " ".repeat(max_width.saturating_sub(text::width(line)))
+            );
             Line::from(Span::styled(padded, theme.subtle_text()))
         })
         .collect();
@@ -44,8 +44,11 @@ pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
 
     render_progress_bar(frame, bar_area, progress, theme);
 
-    let status_line = Paragraph::new(Line::from(Span::styled(status, theme.muted_text())))
-        .alignment(Alignment::Center);
+    let status_line = Paragraph::new(Line::from(Span::styled(
+        text::fit(status, usize::from(status_area.width)),
+        theme.muted_text(),
+    )))
+    .alignment(Alignment::Center);
     frame.render_widget(status_line, status_area);
 }
 

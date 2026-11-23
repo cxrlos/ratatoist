@@ -11,6 +11,7 @@ use crate::ui::theme::Theme;
 
 use super::keyhints;
 use super::statusbar;
+use super::text;
 use super::views;
 
 pub fn render(frame: &mut Frame, state: &State) {
@@ -125,7 +126,13 @@ fn render_tasks_block(frame: &mut Frame, state: &State, area: Rect, active: bool
         (format!(" ◈ {} ", filter.hint()), s, s)
     } else {
         (
-            format!(" {} ", state.selected_project_name()),
+            format!(
+                " {} ",
+                text::fit(
+                    state.selected_project_name(),
+                    usize::from(area.width.saturating_sub(4))
+                )
+            ),
             if active {
                 theme.active_title()
             } else {
@@ -185,7 +192,8 @@ fn render_filter_banner(frame: &mut Frame, state: &State, area: Rect) {
         Span::styled("Esc: clear", hint),
     ]);
     frame.render_widget(
-        Paragraph::new(line).style(Style::default().bg(theme.surface)),
+        Paragraph::new(text::fit_line(line, usize::from(area.width)))
+            .style(Style::default().bg(theme.surface)),
         area,
     );
 }
@@ -216,7 +224,7 @@ fn render_filter_row(frame: &mut Frame, state: &State, area: Rect) {
         ));
     }
 
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    text::draw(frame, Line::from(spans), area);
 }
 
 fn render_stats_block(frame: &mut Frame, state: &State, area: Rect, active: bool) {
@@ -305,6 +313,6 @@ fn render_stats_block(frame: &mut Frame, state: &State, area: Rect, active: bool
         ),
     ]);
 
-    frame.render_widget(Paragraph::new(due_line), due_area);
-    frame.render_widget(Paragraph::new(prio_line), prio_area);
+    text::draw(frame, due_line, due_area);
+    text::draw(frame, prio_line, prio_area);
 }

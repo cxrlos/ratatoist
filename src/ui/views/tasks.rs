@@ -7,16 +7,19 @@ use ratatui::widgets::{List, ListItem, ListState};
 
 use crate::app::{InputMode, State};
 use crate::ui::dates::{self, DueBucket};
+use crate::ui::text;
 use crate::ui::theme::Theme;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let theme = state.theme();
     let visible = state.visible_tasks();
+    let room = usize::from(area.width);
+    let row = |line: Line<'static>| ListItem::new(text::fit_line(line, room));
 
     if state.today_view_active && visible.is_empty() {
         let lines = vec![
             ListItem::new(Line::default()),
-            ListItem::new(Line::from(Span::styled(
+            row(Line::from(Span::styled(
                 "All caught up for today",
                 theme.muted_text(),
             ))),
@@ -32,11 +35,11 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
         };
         let lines = vec![
             ListItem::new(Line::default()),
-            ListItem::new(Line::from(Span::styled(
+            row(Line::from(Span::styled(
                 "No tasks in this project",
                 theme.muted_text(),
             ))),
-            ListItem::new(Line::from(vec![Span::styled(hint, theme.muted_text())])),
+            row(Line::from(vec![Span::styled(hint, theme.muted_text())])),
         ];
         frame.render_widget(List::new(lines), area);
         return;
@@ -45,7 +48,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     if visible.is_empty() {
         let lines = vec![
             ListItem::new(Line::default()),
-            ListItem::new(Line::from(Span::styled(
+            row(Line::from(Span::styled(
                 "No matching tasks",
                 theme.muted_text(),
             ))),
@@ -79,7 +82,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
             } else {
                 "▼"
             };
-            items.push(ListItem::new(Line::from(vec![Span::styled(
+            items.push(row(Line::from(vec![Span::styled(
                 format!(" {arrow} Overdue  ({overdue_count})"),
                 theme.due_overdue().add_modifier(Modifier::BOLD),
             )])));
@@ -102,7 +105,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                 if !items.is_empty() {
                     items.push(ListItem::new(Line::default()));
                 }
-                items.push(ListItem::new(Line::from(Span::styled(
+                items.push(row(Line::from(Span::styled(
                     format!("  {name}"),
                     theme.muted_text().add_modifier(Modifier::BOLD),
                 ))));
@@ -112,7 +115,8 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
         if task_idx == state.selected_task {
             visual_selected = Some(items.len());
         }
-        items.push(build_task_item(task, state, theme, cross_project));
+        let line = task_line(task, state, theme, cross_project);
+        items.push(ListItem::new(text::fit_line(line, room)));
     }
 
     let highlight_style = if is_active {
@@ -126,12 +130,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn build_task_item<'a>(
-    task: &'a Task,
-    state: &State,
-    theme: &Theme,
-    show_project: bool,
-) -> ListItem<'a> {
+fn task_line<'a>(task: &'a Task, state: &State, theme: &Theme, show_project: bool) -> Line<'a> {
     let mut spans = Vec::new();
     let depth = if show_project {
         0
@@ -158,7 +157,7 @@ fn build_task_item<'a>(
 
     if state.is_context_task(task) {
         spans.push(Span::styled(&task.content, theme.muted_text()));
-        return ListItem::new(Line::from(spans));
+        return Line::from(spans);
     }
 
     if task.checked {
@@ -211,5 +210,5 @@ fn build_task_item<'a>(
         ));
     }
 
-    ListItem::new(Line::from(spans))
+    Line::from(spans)
 }
