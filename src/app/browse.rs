@@ -118,7 +118,8 @@ impl State {
 
     /// Every label: the user's own, favourites first and then in their
     /// order, then those shared with the user that only tasks carry, by
-    /// name.
+    /// name. Each counts the open tasks carrying it in a loaded project,
+    /// the ones Enter on it lists.
     pub fn label_rows(&self) -> Vec<LabelRow> {
         let mut own: Vec<_> = self
             .labels
@@ -151,7 +152,11 @@ impl State {
             row.count = self
                 .tasks
                 .iter()
-                .filter(|task| is_open(task) && task.labels.contains(&row.name))
+                .filter(|task| {
+                    is_open(task)
+                        && task.labels.contains(&row.name)
+                        && self.projects.iter().any(|p| p.id == task.project_id)
+                })
                 .count();
         }
         rows

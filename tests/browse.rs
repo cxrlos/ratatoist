@@ -280,6 +280,87 @@ fn each_label_s_count_equals_the_list_enter_opens_grouped_by_project() {
     }
 }
 
+/// A delta adding a task labelled `label` to `project_id`, completed when
+/// `checked`.
+fn labelled_task(id: &str, project_id: &str, label: &str, checked: bool) -> Box<SyncResponse> {
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "fixture-token-2",
+        "items": [{
+            "id": id,
+            "content": "A labelled task added by a delta",
+            "checked": checked,
+            "child_order": 99,
+            "priority": 1,
+            "project_id": project_id,
+            "labels": [label],
+            "added_at": "2026-11-19T08:30:00Z"
+        }]
+    });
+    Box::new(serde_json::from_value(delta).unwrap())
+}
+
+/// The count on the `@errand` row and the tasks Enter on it lists.
+fn errand_count_and_list(mut app: App<TestBackend>) -> (usize, Vec<String>) {
+    send(&mut app, [key('5')]);
+    focus_row(&mut app, "@errand ");
+    let count = count_on(&app, "@errand ");
+    send(&mut app, [press(KeyCode::Enter)]);
+    let listed = app
+        .state()
+        .visible_tasks()
+        .iter()
+        .map(|task| task.id.clone())
+        .collect();
+    (count, listed)
+}
+
+#[test]
+fn a_completed_labelled_task_is_left_out_of_the_count_and_the_list() {
+    let (before, _) = errand_count_and_list(sized(119, 36));
+    let mut app = sized(119, 36);
+    let project_id = app
+        .state()
+        .tasks
+        .iter()
+        .find(|task| task.labels.iter().any(|l| l == "errand"))
+        .map(|task| task.project_id.clone())
+        .unwrap();
+    app.handle(Event::Synced(Ok(labelled_task(
+        "t-done-errand",
+        &project_id,
+        "errand",
+        true,
+    ))))
+    .unwrap();
+    assert!(app.state().tasks.iter().any(|t| t.id == "t-done-errand"));
+
+    let (count, listed) = errand_count_and_list(app);
+
+    assert_eq!(count, before);
+    assert_eq!(listed.len(), count);
+    assert!(!listed.iter().any(|id| id == "t-done-errand"));
+}
+
+#[test]
+fn a_labelled_task_in_a_project_not_loaded_is_left_out_of_the_count() {
+    let (before, _) = errand_count_and_list(sized(119, 36));
+    let mut app = sized(119, 36);
+    app.handle(Event::Synced(Ok(labelled_task(
+        "t-stray-errand",
+        "p-not-loaded",
+        "errand",
+        false,
+    ))))
+    .unwrap();
+    assert!(app.state().tasks.iter().any(|t| t.id == "t-stray-errand"));
+
+    let (count, listed) = errand_count_and_list(app);
+
+    assert_eq!(count, before);
+    assert_eq!(listed.len(), count);
+}
+
 #[test]
 fn esc_from_a_label_s_list_returns_to_the_same_label() {
     let mut app = sized(120, 36);
