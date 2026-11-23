@@ -4,8 +4,6 @@ on:
   pull_request:
   push:
     branches: [main, 'feat/**']
-  # publish.yml runs these jobs before it publishes.
-  workflow_call:
 
 permissions:
   contents: read

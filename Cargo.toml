@@ -52,6 +52,15 @@ rustix = { version = "1.1.6", features = ["process", "termios"] }
 tokio = { version = "1", features = ["full", "test-util"] }
 wiremock = "0.6.5"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+bin-dir = "{ name }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "txz"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
 [lints.clippy]
 expect_used = "deny"
 unwrap_used = "deny"
