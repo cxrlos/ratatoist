@@ -3,13 +3,13 @@ source: tests/cheatsheet.rs
 expression: "text(&on_the_list(\"\", 80, 24))"
 ---
  [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago 
-╭ Inbox ───────────────────────────────────────────────────────────────────────╮
-│┌ Keys ─────────────────────────────────────────────────────────────────────┐ │
-││ Move                                │ Edit the task                       │ │
-││  j,Down/k,Up  down / up             │  x    complete / reopen             │ │
-││  gg/G         top / bottom          │  a    add a task                    │ │
-││  C-d/C-u      half page             │  p    priority                      │ │
-││  h/l          pane left / right     │  d    due date                      │ │
+┌Inbox─────────────────────────────────────────────────────────────────────────┐
+│┌ Keys ─────────────────────────────────────────────────────────────────────┐1│
+││ Move                                │ Edit the task                       │2│
+││  j,Down/k,Up  down / up             │  x    complete / reopen             │4│
+││  gg/G         top / bottom          │  a    add a task                    │3│
+││  C-d/C-u      half page             │  p    priority                      │4│
+││  h/l          pane left / right     │  d    due date                      │4│
 ││  Enter        open the task         │  e/E  content / description         │ │
 ││  Esc          close or step back    │  c    comment                       │ │
 ││                                     │                                     │ │
@@ -22,6 +22,6 @@ expression: "text(&on_the_list(\"\", 80, 24))"
 ││  q,C-c      quit                    │                                     │ │
 │└ Esc close ────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
+└──────────────────────────────────────────────────────────────────────────────┘
  Move │ j/k move                                                                
  Do   │ Esc close

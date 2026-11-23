@@ -3,11 +3,11 @@ source: tests/app.rs
 expression: app.backend()
 ---
 " [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
-"╭ Today ───────────────────────────────────────────────────────────────────────╮"
+"┌Today─────────────────────────────────────────────────────────────────────────┐"
 "│┌ Keys ─────────────────────────────────────────────────────────────────────┐ │"
-"││ Move                                │ Edit the task                       │ │"
+"││ Move                                │ Edit the task                       │x│"
 "││  j,Down/k,Up  down / up             │  x    complete / reopen             │ │"
-"││  gg/G         top / bottom          │  a    add a task                    │ │"
+"││  gg/G         top / bottom          │  a    add a task                    │x│"
 "││  C-d/C-u      half page             │  p    priority                      │ │"
 "││  h/l          pane left / right     │  d    due date                      │ │"
 "││  Enter        open the task         │  e/E  content / description         │ │"
@@ -22,7 +22,7 @@ expression: app.backend()
 "││  q,C-c      quit                    │                                     │ │"
 "│└ Esc close ────────────────────────────────────────────────────────────────┘ │"
 "│                                                                              │"
-"╰──────────────────────────────────────────────────────────────────────────────╯"
+"└──────────────────────────────────────────────────────────────────────────────┘"
 " Move │ j/k move                                                                "
 " Do   │ Esc close                                                               "
 "                                                                                "

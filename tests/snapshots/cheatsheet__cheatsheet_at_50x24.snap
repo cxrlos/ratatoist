@@ -3,14 +3,14 @@ source: tests/cheatsheet.rs
 expression: "text(&on_the_list(\"\", 50, 24))"
 ---
  [1] Inbox │ [2] │ [3] │ [4] │ [5]  synced 0s ago 
-╭ Inbox ─────────────────────────────────────────╮
-│ ○ ▮▮▮┌ Keys ────────────────────────────┐      │
-│ ○ ▮▮▯│ Move                             │      │
-│ ○ ···│  j,Down/k,Up  down / up          │      │
-│ ▿ ▮▯▯│  gg/G         top / bottom       │      │
-│   ○ ·│  C-d/C-u      half page          │      │
-│   ● ·│  h/l          pane left / right  │      │
-│ ○ ···│  Enter        open the task      │p-wo… │
+┌Inbox───────────────────────────────────────────┐
+│› ○ Bu┌ Keys ────────────────────────────┐▮▮▮ P1│
+│  ○ Ca│ Move                             │▮▮▯ P2│
+│  ○ Wa│  j,Down/k,Up  down / up          │··· P4│
+│  ▿ Pl│  gg/G         top / bottom       │▮▯▯ P3│
+│    ○ │  C-d/C-u      half page          │··· P4│
+│  ○ Re│  h/l          pane left / right  │··· P4│
+│      │  Enter        open the task      │      │
 │      │  Esc          close or step back │      │
 │      │                                  │      │
 │      │ Edit the task                    │      │
@@ -22,6 +22,6 @@ expression: "text(&on_the_list(\"\", 50, 24))"
 │      │  c    comment                    │      │
 │      │                                  │      │
 │      └ Esc close ───────────────────────┘      │
-╰────────────────────────────────────────────────╯
+└────────────────────────────────────────────────┘
  Move │ j/k move                                  
  Do   │ Esc close

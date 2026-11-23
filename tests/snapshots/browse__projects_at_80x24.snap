@@ -1,0 +1,28 @@
+---
+source: tests/browse.rs
+expression: app.backend()
+---
+" [1] │ [2] │ [3] │ [4] Projects │ [5]                             synced 0s ago "
+"┌Projects──────────────────────────────────────────────────────────────────────┐"
+"│  Personal                                                                    │"
+"│›   ★ Home  8                                                                 │"
+"│      # Kitchen renovation  6                                                 │"
+"│    # Reading  5                                                              │"
+"│    # Fitness  5                                                              │"
+"│    # Garden  5                                                               │"
+"│  Lantern Studio                                                              │"
+"│    ▾ Client work                                                             │"
+"│      # Atlas redesign  9                                                     │"
+"│      # Harbor app  6                                                         │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Move │ j down      │ k up      │ gg top │ G bottom  │ C-d/C-u page             "
+" Do   │ Enter open  │ Esc close │ ? keys │ : palette │ q quit                   "
+" View │ s favourite │ za fold                                                   "

@@ -3,11 +3,11 @@ source: tests/icons.rs
 expression: "rows.join(\"\\n\")"
 ---
 ▿ / ▹ / ✉
-  shown:  ▿ ▮▯▯ Plan the winter trip  ✉3  Dec 12
-  folded: ▹ ▮▯▯ Plan the winter trip  ✉3  Dec 12
+  shown:  ▿ Plan the winter trip  ✉3
+  folded: ▹ Plan the winter trip  ✉3
 ▾ / ▸ / ✎
-  shown:  ▾ ▮▯▯ Plan the winter trip  ✎3  Dec 12
-  folded: ▸ ▮▯▯ Plan the winter trip  ✎3  Dec 12
+  shown:  ▾ Plan the winter trip  ✎3
+  folded: ▸ Plan the winter trip  ✎3
 - / + / c
-  shown:  - ▮▯▯ Plan the winter trip  c3  Dec 12
-  folded: + ▮▯▯ Plan the winter trip  c3  Dec 12
+  shown:  - Plan the winter trip  c3
+  folded: + Plan the winter trip  c3

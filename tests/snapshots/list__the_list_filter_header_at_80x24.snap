@@ -1,0 +1,28 @@
+---
+source: tests/list.rs
+expression: app.backend()
+---
+" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
+"f filter: p1 · 4 of 19 · Esc clears                                             "
+"┌Today─────────────────────────────────────────────────────────────────────────┐"
+"│▲ Overdue (1)                                                                 │"
+"│› ○ Get three quotes for the plumbing  @phone…  Nov 20 ▮▮▮ P1 Kitchen renovat…│"
+"│◆ Today (3)                                                                   │"
+"│  ○ Pay the electricity bill  @computer  ↻ today 17:00 ▮▮▮ P1 Home            │"
+"│  ○ Draft the new navigation  @deep-work…  today 14:00 ▮▮▮ P1 Atlas redesign  │"
+"│  ○ Fix the crash when the ferry timetable is e… today ▮▮▮ P1 Harbor app      │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Move │ j down  k up  gg top  G bottom  C-d/C-u page  h/l pane                  "
+" Do   │ Enter open  Esc close  ? keys  : palette  q quit                        "
+" View │ z fold  f filter  vs sort  x complete  a add  p priority  d due         "

@@ -1,0 +1,28 @@
+---
+source: tests/browse.rs
+expression: app.backend()
+---
+" [1] │ [2] │ [3] │ [4] Projects │ [5]                             synced 0s ago "
+"┌Kitchen renovation────────────────────────────────────────────────────────────┐"
+"│› ▿ Pick the tiles  @deep-work                                    Dec 3 ▮▮▯ P2│"
+"│    ▿ Order tile samples  @computer                              Nov 25 ··· P4│"
+"│      ○ Compare grout colours with the samples  @errand                 ··· P4│"
+"│    ○ Measure the worktop  @quick                                       ··· P4│"
+"│  ○ Get three quotes for the plumbing  @phone @waiting  ✉2       Nov 20 ▮▮▮ P1│"
+"│  ○ Choose the cabinet handles                                   Dec 14 ▮▯▯ P3│"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Move │ j down  k up  gg top  G bottom  C-d/C-u page  h/l pane                  "
+" Do   │ Enter open  Esc close  ? keys  : palette  q quit                        "
+" View │ z fold  f filter  vs sort  x complete  a add  p priority  d due         "

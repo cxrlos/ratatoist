@@ -3,15 +3,15 @@ source: tests/picker.rs
 expression: app.backend()
 ---
 " [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago "
-"╭ Inbox ───────────────────────────────────────────────────────────────────────╮"
-"│ ○ ▮▮▯ Call the plumber about the leaking tap  phone  ✉1  today               │"
-"│ ○ ▮▯▯ Return the library books  errand  Nov 21                               │"
-"│ ○ ··· Renew the┌ Show in Inbox ────────────────────────────┐                 │"
-"│ ○ ··· 買い物リス > type to filter                          │                 │" Hidden by multi-width symbols: [(9, "e"), (11, " "), (13, "h"), (15, "e"), (17, " ")]
-"│ ○ ▮▮▯ Réserver │ 1 Open ✓                                  │  Nov 26         │"
-"│ ○ ··· Write dow│ 2 Completed                               │ade: the shelf…  │"
-"│ ○ ▮▮▮ 🎂 Order │ 3 All                                     │                 │" Hidden by multi-width symbols: [(9, "e")]
-"│ ○ ▮▯▯ Reply to │ 4 ▲ Overdue                               │                 │"
+"┌Inbox─────────────────────────────────────────────────────────────────────────┐"
+"│› ○ Call the plumber about the leaking tap  @phone  ✉1            today ▮▮▯ P2│"
+"│  ○ Return the library books  @errand                            Nov 21 ▮▯▯ P3│"
+"│  ○ Renew the bi┌ Show in Inbox ────────────────────────────┐    Nov 28 ··· P4│"
+"│  ○ 買い物リスト│t> type to filter                          │     today ··· P4│" Hidden by multi-width symbols: [(6, "e"), (8, " "), (10, "h"), (12, "e"), (14, " "), (16, "u")]
+"│  ○ Réserver la │ 1 Open ✓                                  │    Nov 26 ▮▮▯ P2│"
+"│  ○ Write down e│ 2 Completed                               │: the she… ··· P4│"
+"│  ○ 🎂 Order a c│ 3 All                                     │v 27 12:00 ▮▮▮ P1│" Hidden by multi-width symbols: [(6, "e")]
+"│  ○ Reply to Teo│ 4 ▲ Overdue                               │ yesterday ▮▯▯ P3│"
 "│                │ 5 ◆ Due today                             │                 │"
 "│                │ 6 Due this week                           │                 │"
 "│                │ 7 ▮▮▮ P1                                  │                 │"
@@ -22,7 +22,7 @@ expression: app.backend()
 "│                                                                              │"
 "│                                                                              │"
 "│                                                                              │"
-"╰──────────────────────────────────────────────────────────────────────────────╯"
+"└──────────────────────────────────────────────────────────────────────────────┘"
 " Move │ Down/Up move                                                            "
 " Do   │ Enter choose │ Esc close                                                "
 "                                                                                "

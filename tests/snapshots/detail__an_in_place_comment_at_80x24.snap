@@ -1,0 +1,28 @@
+---
+source: tests/detail.rs
+expression: app.backend()
+---
+" [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago "
+"┌Inbox─────────────────────────────────────────────────────────────────────────┐"
+"│State     ○ Open                                                              │"
+"│Priority  ▮▮▯ P2                                                              │"
+"│Due       today (Sun Nov 22)                                                  │"
+"│Labels    None                                                                │"
+"│                                                                              │"
+"│Ask about the January slot.                                                   │"
+"│Bring the insurance card.                                                     │"
+"│                                                                              │"
+"│Comments (2)                                                                  │"
+"│Grace Example · 2 days ago                                                    │"
+"│  Their office opens at nine.                                                 │"
+"│                                                                              │"
+"│Ada Example (you) · 1 day ago                                                 │"
+"│  Thanks, I will call after ten.                                              │"
+"│                                                                              │"
+"│New comment                                                                   │"
+"│> Booked                                                                      │"
+"│One line, kept as typed, Markdown included                                    │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"                                                                                "
+" Do   │ Enter send │ Esc close                                                  "
+"                                                                                "
