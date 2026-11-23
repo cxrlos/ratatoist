@@ -555,3 +555,34 @@ async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
     let reopened = app.state().tasks.iter().find(|t| t.id == "t-dentist");
     assert!(reopened.is_some_and(|t| !t.checked), "{reopened:?}");
 }
+
+#[tokio::test]
+async fn completing_a_parent_completes_its_subtasks() {
+    let client = demo::client(today());
+    let family = ["t-tiles", "t-samples", "t-grout", "t-worktop"];
+
+    send(&client, "item_close", json!({ "id": "t-tiles" })).await;
+
+    let items = full_sync(&client).await;
+    assert!(!items.iter().any(|t| family.contains(&t.id.as_str())));
+    let done = done(&client).await;
+    for id in family {
+        assert!(done.iter().any(|t| t.id == id && t.checked), "{id}");
+    }
+}
+
+#[tokio::test]
+async fn reopening_a_subtask_reopens_its_completed_parents() {
+    let client = demo::client(today());
+    send(&client, "item_close", json!({ "id": "t-tiles" })).await;
+
+    send(&client, "item_reopen", json!({ "id": "t-grout" })).await;
+
+    let items = full_sync(&client).await;
+    let open: Vec<&str> = items.iter().map(|t| t.id.as_str()).collect();
+    for id in ["t-tiles", "t-samples", "t-grout"] {
+        assert!(open.contains(&id), "{id}");
+    }
+    assert!(!open.contains(&"t-worktop"));
+    assert!(done(&client).await.iter().any(|t| t.id == "t-worktop"));
+}

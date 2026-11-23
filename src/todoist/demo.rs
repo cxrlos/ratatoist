@@ -214,31 +214,11 @@ impl Store {
                 command.temp_id.clone().map(|temp| (temp, real_id))
             }
             "item_close" | "item_complete" => {
-                let items = self.list("items");
-                let position = items.iter().position(|item| item["id"] == id.as_str())?;
-                let mut item = items.remove(position);
-                let completed_at = self.timestamp();
-                item["checked"] = json!(true);
-                item["completed_at"] = json!(completed_at);
-                let record = json!({
-                    "task_id": id,
-                    "content": item["content"],
-                    "completed_at": completed_at,
-                    "project_id": item["project_id"],
-                    "section_id": item["section_id"],
-                    "user_id": USER,
-                    "item_object": item,
-                });
-                self.completed().push(record);
+                self.close(&id);
                 None
             }
             "item_reopen" | "item_uncomplete" => {
-                let completed = self.completed();
-                let position = completed.iter().position(|r| r["task_id"] == id.as_str())?;
-                let mut item = completed.remove(position)["item_object"].take();
-                item["checked"] = json!(false);
-                item["completed_at"] = Value::Null;
-                self.list("items").push(item);
+                self.reopen(&id);
                 None
             }
             "item_update" => {
@@ -272,6 +252,60 @@ impl Store {
                 command.temp_id.clone().map(|temp| (temp, real_id))
             }
             _ => None,
+        }
+    }
+
+    /// Completes the task `id` and, as Todoist does, every open subtask
+    /// under it.
+    fn close(&mut self, id: &str) {
+        let mut family = vec![id.to_owned()];
+        let mut next = 0;
+        while let Some(parent) = family.get(next).cloned() {
+            family.extend(
+                self.list("items")
+                    .iter()
+                    .filter(|item| item["parent_id"] == parent.as_str())
+                    .filter_map(|item| item["id"].as_str().map(str::to_owned)),
+            );
+            next += 1;
+        }
+        let completed_at = self.timestamp();
+        for id in family {
+            let items = self.list("items");
+            let Some(position) = items.iter().position(|item| item["id"] == id.as_str()) else {
+                continue;
+            };
+            let mut item = items.remove(position);
+            item["checked"] = json!(true);
+            item["completed_at"] = json!(completed_at);
+            let record = json!({
+                "task_id": id,
+                "content": item["content"],
+                "completed_at": completed_at,
+                "project_id": item["project_id"],
+                "section_id": item["section_id"],
+                "user_id": USER,
+                "item_object": item,
+            });
+            self.completed().push(record);
+        }
+    }
+
+    /// Reopens the completed task `id` and, as Todoist does, every
+    /// completed task above it, so it never comes back under a parent that
+    /// is not there.
+    fn reopen(&mut self, id: &str) {
+        let mut next = Some(id.to_owned());
+        while let Some(id) = next.take() {
+            let completed = self.completed();
+            let Some(position) = completed.iter().position(|r| r["task_id"] == id.as_str()) else {
+                return;
+            };
+            let mut item = completed.remove(position)["item_object"].take();
+            item["checked"] = json!(false);
+            item["completed_at"] = Value::Null;
+            next = item["parent_id"].as_str().map(str::to_owned);
+            self.list("items").push(item);
         }
     }
 
