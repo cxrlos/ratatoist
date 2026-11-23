@@ -10,7 +10,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -34,6 +34,8 @@ struct Pty {
     child: Box<dyn Child + Send + Sync>,
     writer: Box<dyn Write + Send>,
     output: Arc<Mutex<Vec<u8>>>,
+    /// Set once the reader has read everything the terminal will ever give.
+    drained: Arc<AtomicBool>,
     home: TempDir,
 }
 
@@ -90,12 +92,15 @@ impl Pty {
 
         let output = Arc::new(Mutex::new(Vec::new()));
         let mut reader = pair.master.try_clone_reader().unwrap();
+        let drained = Arc::new(AtomicBool::new(false));
         let sink = Arc::clone(&output);
+        let done = Arc::clone(&drained);
         thread::spawn(move || {
             let mut buffer = [0; 4096];
             while let Ok(read @ 1..) = reader.read(&mut buffer) {
                 sink.lock().unwrap().extend_from_slice(&buffer[..read]);
             }
+            done.store(true, Ordering::SeqCst);
         });
         let writer = pair.master.take_writer().unwrap();
         Self {
@@ -104,6 +109,7 @@ impl Pty {
             child,
             writer,
             output,
+            drained,
             home,
         }
     }
@@ -162,13 +168,26 @@ impl Pty {
         });
     }
 
-    /// Asserts the terminal is cooked and back on the main screen.
-    fn assert_restored(&self) {
-        assert!(self.cooked(), "the terminal was left in raw mode");
+    /// Whether the last alternate-screen sequence in the output so far
+    /// leaves it.
+    fn left_alternate_screen(&self) -> bool {
         let output = self.output();
+        output.rfind(LEAVE_ALTERNATE_SCREEN) > output.rfind(ENTER_ALTERNATE_SCREEN)
+    }
+
+    /// Asserts the terminal is cooked and back on the main screen. The
+    /// program has exited, but the reader thread may not have read its last
+    /// bytes yet, so this waits for the leave sequence or the end of the
+    /// output before judging.
+    fn assert_restored(&mut self) {
+        assert!(self.cooked(), "the terminal was left in raw mode");
+        self.wait_until("the output is read to the end", |pty| {
+            pty.left_alternate_screen() || pty.drained.load(Ordering::SeqCst)
+        });
         assert!(
-            output.rfind(LEAVE_ALTERNATE_SCREEN) > output.rfind(ENTER_ALTERNATE_SCREEN),
-            "the alternate screen was not left: {output:?}"
+            self.left_alternate_screen(),
+            "the alternate screen was not left: {:?}",
+            self.output()
         );
     }
 
