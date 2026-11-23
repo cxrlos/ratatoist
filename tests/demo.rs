@@ -68,6 +68,48 @@ fn the_account_is_dated_from_the_day_it_is_built_for() {
 }
 
 #[test]
+fn the_account_for_now_has_fixed_dates() {
+    let tasks = tasks();
+    let task = |id: &str| tasks.iter().find(|t| t.id == id).unwrap();
+
+    assert_eq!(due_date(task("t-plumber")), Some("2026-11-23"));
+    assert_eq!(due_date(task("t-library")), Some("2026-11-21"));
+    let run = task("t-run").due.as_ref().unwrap();
+    assert_eq!(run.date, "2026-11-23T07:30:00");
+    assert_eq!(run.string.as_deref(), Some("every mon, wed, fri at 7:30"));
+}
+
+#[test]
+fn weekday_recurrences_name_the_day_they_are_due_on_any_day() {
+    for offset in 0..7 {
+        let built = today() + Days::new(offset);
+        let account: SyncResponse = serde_json::from_value(demo::account(built).sync).unwrap();
+        for task in account.items.unwrap() {
+            let Some(due) = task.due.filter(|d| d.is_recurring) else {
+                continue;
+            };
+            let rule = due.string.unwrap().to_lowercase();
+            let days = rule
+                .split(" at ")
+                .next()
+                .unwrap()
+                .trim_start_matches("every ");
+            let named: Vec<&str> = days.split(", ").collect();
+            if !named.iter().all(|d| d.parse::<chrono::Weekday>().is_ok()) {
+                continue;
+            }
+            let date = NaiveDate::parse_from_str(&due.date[..10], "%Y-%m-%d").unwrap();
+            let weekday = date.format("%a").to_string().to_lowercase();
+            assert!(
+                named.contains(&weekday.as_str()),
+                "{built} {}: {rule}",
+                task.id
+            );
+        }
+    }
+}
+
+#[test]
 fn has_a_personal_inbox() {
     let projects = sync().projects.unwrap();
     assert!(

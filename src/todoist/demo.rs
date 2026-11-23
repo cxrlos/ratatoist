@@ -488,14 +488,23 @@ fn next_occurrence(date: &str, rule: &str, today: NaiveDate) -> Option<String> {
 struct Dates(NaiveDate);
 
 impl Dates {
-    fn day(&self, offset: i64) -> String {
+    fn date(&self, offset: i64) -> NaiveDate {
         let days = Days::new(offset.unsigned_abs());
         let date = if offset < 0 {
             self.0.checked_sub_days(days)
         } else {
             self.0.checked_add_days(days)
         };
-        date.unwrap_or(self.0).format("%Y-%m-%d").to_string()
+        date.unwrap_or(self.0)
+    }
+
+    fn day(&self, offset: i64) -> String {
+        self.date(offset).format("%Y-%m-%d").to_string()
+    }
+
+    /// The weekday `offset` days away, as a due string names it: `mon`.
+    fn weekday(&self, offset: i64) -> String {
+        self.date(offset).format("%a").to_string().to_lowercase()
     }
 
     /// An all-day due date.
@@ -853,11 +862,19 @@ fn items(at: &Dates) -> Vec<Item> {
         task(at, "t-run", "p-fitness", "🏃 Run 5 km along the river")
             .p(2)
             .section("s-running")
-            .due(at.every(at.at(0, "07:30"), "every mon, wed, fri at 7:30"))
+            .due(at.every(
+                at.at(0, "07:30"),
+                &format!(
+                    "every {}, {}, {} at 7:30",
+                    at.weekday(0),
+                    at.weekday(2),
+                    at.weekday(4)
+                ),
+            ))
             .labels(&["health", "outdoors"]),
         task(at, "t-long-run", "p-fitness", "Long run: 12 km")
             .section("s-running")
-            .due(at.every(at.on(5), "every sat"))
+            .due(at.every(at.on(5), &format!("every {}", at.weekday(5))))
             .labels(&["outdoors"]),
         task(at, "t-socks", "p-fitness", "Buy new running socks").labels(&["errand"]),
         task(at, "t-physio", "p-fitness", "Book the physio appointment")
@@ -982,7 +999,10 @@ fn items(at: &Dates) -> Vec<Item> {
             "p-harbor",
             "Weekly sync with the Harbor team",
         )
-        .due(at.every(at.at(3, "11:00"), "every thu at 11:00")),
+        .due(at.every(
+            at.at(3, "11:00"),
+            &format!("every {} at 11:00", at.weekday(3)),
+        )),
         task(at, "t-backlog", "p-harbor", "Tidy the backlog").labels(&["someday"]),
     ]
 }
