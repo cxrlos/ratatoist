@@ -1,0 +1,28 @@
+---
+source: tests/prompt.rs
+expression: app.backend()
+---
+" [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago "
+"╭ Inbox ───────────────────────────────────────────────────────────────────────╮"
+"│ ○ ▮▮▯ Call the plumber about the leaking tap  phone  ✉1  today               │"
+"│ ○ ▮▯▯ Return the library books  errand  Nov 21                               │"
+"│ ○ ··· Renew the bike insurance  computer  Nov 28                             │"
+"│ ○ ··· 買い物リストを作る  quick  today                                       │" Hidden by multi-width symbols: [(9, "e"), (11, " "), (13, "h"), (15, "e"), (17, " "), (19, "u"), (21, "t"), (23, "s"), (25, "f")]
+"│ ○ ▮▮▯ Réserver la crêperie pour l'anniversaire de Zoé  phone  Nov 26         │"
+"│ ○ ··· Write down every idea from Sunday's walk before they fade: the shelf…  │"
+"│ ○ ▮▮▮ 🎂 Order a cake for Saturday  errand  Nov 27                           │" Hidden by multi-width symbols: [(9, "e")]
+"│ ○ ▮▯▯ Repl┌ Content of Call the plumber about the leaking tap ──┐            │"
+"│           │ > Call the plumber about the leaking tap            │            │"
+"│           │ The task's title, Markdown kept as typed            │            │"
+"│           └ Enter set  Esc close ───────────────────────────────┘            │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+"                                                                                "
+" Do   │ Enter set │ Esc close                                                   "
+"                                                                                "
