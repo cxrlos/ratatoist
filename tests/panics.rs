@@ -174,7 +174,7 @@ fn detail_with_comments(comments: Vec<Comment>) -> App<TestBackend> {
     let sync: Box<SyncResponse> = Box::new(serde_json::from_str(FULL_SYNC).unwrap());
     app.handle(Event::Synced(Ok(sync))).unwrap();
     let effects: Vec<Effect> = [
-        key(KeyCode::Enter),
+        key(KeyCode::Char('1')),
         key(KeyCode::Char('j')),
         key(KeyCode::Enter),
     ]

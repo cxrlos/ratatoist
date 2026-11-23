@@ -3,11 +3,12 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Local, NaiveDate};
 use ratatui::layout::Size;
 
-use super::failure::ErrorLog;
+use super::failure::{ErrorLog, LoadError};
 use super::modal::Modal;
 use super::release::ReleaseState;
 use super::sync::OptimisticOp;
 use super::text_field::TextField;
+use crate::auth::Source;
 use crate::keys::Keymap;
 use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
 use crate::ui::icons::{IconSet, Icons};
@@ -25,8 +26,15 @@ pub struct State {
     pub today: NaiveDate,
     pub now: DateTime<Local>,
 
-    /// True until the first sync answers; the splash shows meanwhile.
+    /// True until the first sync answers; the body says it is loading
+    /// meanwhile.
     pub loading: bool,
+    /// Why the task lists cannot load, when they cannot; the body shows an
+    /// error screen instead.
+    pub load_error: Option<LoadError>,
+    /// Where the token in use came from, to say how to replace it when
+    /// Todoist rejects it.
+    pub token_source: Option<Source>,
     pub projects: Vec<Project>,
     pub workspaces: Vec<Workspace>,
     pub folders: Vec<Folder>,
@@ -70,14 +78,16 @@ pub struct State {
     pub current_user_id: Option<String>,
     pub user_names: HashMap<String, UserRecord>,
     pub task_filter: TaskFilter,
-    pub dock_focus: Option<usize>,
     pub dock_filter: Option<DockItem>,
     /// The glyphs every view draws with, from `[ui] icons`.
     pub icon_set: IconSet,
     /// The themes the theme picker offers; `theme_idx` is the one drawn.
     pub themes: Vec<Theme>,
     pub theme_idx: usize,
-    pub websocket_connected: bool,
+    /// How reading from Todoist went the last time, for the sync indicator.
+    pub sync_health: SyncHealth,
+    /// The live connection dropped and has not come back yet.
+    pub live_dropped: bool,
     pub sync_token: String,
     pub completed_cache: HashMap<String, Vec<Task>>,
     pub comments_by_task: HashMap<String, Vec<Comment>>,
@@ -86,7 +96,6 @@ pub struct State {
     pub collapsed_folders: HashSet<String>,
     pub folder_cursor: Option<usize>,
     pub current_user_name: Option<String>,
-    pub today_view_active: bool,
     pub overdue_section_collapsed: bool,
     pub last_activity: DateTime<Local>,
     pub(crate) pending_ws_sync: bool,
@@ -104,6 +113,8 @@ impl State {
             today: now.date_naive(),
             now,
             loading: true,
+            load_error: None,
+            token_source: None,
             projects: Vec::new(),
             workspaces: Vec::new(),
             folders: Vec::new(),
@@ -112,7 +123,7 @@ impl State {
             sections: Vec::new(),
             selected_project: 0,
             selected_task: 0,
-            active_pane: Pane::Projects,
+            active_pane: Pane::Tasks,
             error: None,
             keymap: Keymap::default(),
             modals: Vec::new(),
@@ -131,12 +142,12 @@ impl State {
             current_user_id: None,
             user_names: HashMap::new(),
             task_filter: TaskFilter::Active,
-            dock_focus: None,
             dock_filter: None,
             icon_set: IconSet::default(),
             themes: Theme::built_ins(),
             theme_idx: 0,
-            websocket_connected: false,
+            sync_health: SyncHealth::Fine,
+            live_dropped: false,
             sync_token: "*".to_owned(),
             completed_cache: HashMap::new(),
             comments_by_task: HashMap::new(),
@@ -145,7 +156,6 @@ impl State {
             collapsed_folders: HashSet::new(),
             folder_cursor: None,
             current_user_name: None,
-            today_view_active: false,
             overdue_section_collapsed: false,
             last_activity: now,
             pending_ws_sync: false,
@@ -182,11 +192,35 @@ impl State {
         self.viewport.unwrap_or(Size::new(80, 24))
     }
 
-    pub fn sync_age_label(&self) -> String {
-        match self.last_sync_at {
-            Some(at) => at.format("%Y-%m-%d %H:%M").to_string(),
-            None => "--".to_string(),
+    /// Shows the error screen for `error` in place of the task lists; no
+    /// sync runs.
+    pub fn not_loaded(&mut self, error: LoadError) {
+        self.loading = false;
+        self.load_error = Some(error);
+    }
+
+    /// What the sync indicator shows: `synced 4s ago`, or what is wrong.
+    /// `None` before anything has synced or failed.
+    pub fn indicator(&self) -> Option<Indicator> {
+        let problem = match self.sync_health {
+            SyncHealth::Offline => Some("offline"),
+            SyncHealth::Failing => Some("sync failing"),
+            SyncHealth::Fine if self.live_dropped => Some("reconnecting"),
+            SyncHealth::Fine => None,
+        };
+        if let Some(text) = problem {
+            return Some(Indicator {
+                text: text.to_owned(),
+                alert: true,
+            });
         }
+        let ago = age(self.now - self.last_sync_at?);
+        let text = if self.is_idle() {
+            format!("idle, synced {ago} ago")
+        } else {
+            format!("synced {ago} ago")
+        };
+        Some(Indicator { text, alert: false })
     }
 
     pub fn is_idle(&self) -> bool {
@@ -210,6 +244,36 @@ impl State {
             None => false,
         }
     }
+}
+
+/// `elapsed` in its largest whole unit, as `4s`, `3m`, `2h` or `5d`.
+fn age(elapsed: chrono::TimeDelta) -> String {
+    let seconds = elapsed.num_seconds().max(0);
+    match seconds {
+        0..60 => format!("{seconds}s"),
+        60..3600 => format!("{}m", seconds / 60),
+        3600..86400 => format!("{}h", seconds / 3600),
+        _ => format!("{}d", seconds / 86400),
+    }
+}
+
+/// How reading from Todoist went the last time.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SyncHealth {
+    #[default]
+    Fine,
+    /// The last sync could not reach Todoist.
+    Offline,
+    /// The last sync reached Todoist and failed.
+    Failing,
+}
+
+/// What the sync indicator shows, and whether it calls for attention.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Indicator {
+    pub text: String,
+    /// Sync is failing or the live connection is down.
+    pub alert: bool,
 }
 
 fn fallback_theme() -> &'static Theme {
@@ -280,7 +344,6 @@ pub enum Pane {
     Projects,
     Tasks,
     Detail,
-    StatsDock,
 }
 
 pub struct OverviewStats {
@@ -444,11 +507,9 @@ pub enum ProjectEntry {
     FolderHeader(usize),
     Project(usize),
     Separator,
-    TodayView,
 }
 
 pub enum ProjectNavItem {
     Folder(usize),
     Project(usize),
-    TodayView,
 }

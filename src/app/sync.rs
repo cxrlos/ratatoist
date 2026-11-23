@@ -6,7 +6,8 @@ use std::collections::HashSet;
 use tracing::error;
 
 use super::Effect;
-use super::state::{AppError, State, UserRecord};
+use super::failure::LoadError;
+use super::state::{AppError, State, SyncHealth, UserRecord};
 use crate::todoist::ClientError;
 use crate::todoist::model::{Folder, Project};
 use crate::todoist::sync::{SyncCommand, SyncRequest, SyncResponse};
@@ -123,6 +124,11 @@ impl State {
         effects: &mut Vec<Effect>,
     ) {
         let first = std::mem::replace(&mut self.loading, false);
+        self.sync_health = match &result {
+            Ok(_) => SyncHealth::Fine,
+            Err(ClientError::Network(_)) => SyncHealth::Offline,
+            Err(_) => SyncHealth::Failing,
+        };
         match result {
             Ok(resp) => {
                 self.apply_sync_delta(*resp, effects);
@@ -133,6 +139,10 @@ impl State {
                     self.live_opened = true;
                     effects.push(Effect::OpenLive { url });
                 }
+            }
+            Err(ClientError::Unauthorized) if first => {
+                error!("todoist rejected the token");
+                self.not_loaded(LoadError::TokenRejected);
             }
             Err(e) if first => self.set_error(&e, "Initial sync"),
             Err(e) => error!(error = %e, "incremental sync failed"),

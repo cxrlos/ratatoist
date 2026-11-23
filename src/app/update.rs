@@ -5,7 +5,7 @@ use ratatui::layout::Size;
 use tracing::info;
 
 use super::modal::{InputKind, Modal, TaskForm};
-use super::state::{DOCK_ITEMS, Pane, ProjectNavItem, TaskFilter};
+use super::state::{Pane, ProjectNavItem, Screen, TaskFilter};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
 use super::text_field::TextField;
 use super::{Action, Editable, Effect, Event, State};
@@ -42,6 +42,7 @@ impl Update {
 pub fn update(state: &mut State, event: Event) -> Update {
     let mut effects = Vec::new();
     match event {
+        Event::Start if state.load_error.is_some() => Update::default(),
         Event::Start => {
             info!("full sync starting");
             Update {
@@ -58,11 +59,11 @@ pub fn update(state: &mut State, event: Event) -> Update {
             Update::redraw(effects)
         }
         Event::Tick { now } => {
-            let before = (state.is_idle(), state.today);
+            let before = (state.today, state.indicator());
             state.now = now;
             state.today = now.date_naive();
             Update {
-                redraw: before != (state.is_idle(), state.today),
+                redraw: before != (state.today, state.indicator()),
                 effects,
             }
         }
@@ -87,21 +88,21 @@ pub fn update(state: &mut State, event: Event) -> Update {
             Update::redraw(effects)
         }
         Event::Live(message) => {
-            let was_connected = state.websocket_connected;
+            let was_dropped = state.live_dropped;
             match message {
-                LiveMessage::Connected => state.websocket_connected = true,
+                LiveMessage::Connected => state.live_dropped = false,
                 LiveMessage::Changed => {
-                    state.websocket_connected = true;
+                    state.live_dropped = false;
                     if state.is_idle() {
                         state.pending_ws_sync = true;
                     } else {
                         effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
                     }
                 }
-                LiveMessage::Disconnected => state.websocket_connected = false,
+                LiveMessage::Disconnected => state.live_dropped = true,
             }
             Update {
-                redraw: was_connected != state.websocket_connected,
+                redraw: was_dropped != state.live_dropped,
                 effects,
             }
         }
@@ -113,14 +114,6 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
         return Update::default();
     }
     let key = Key::from(key);
-    if state.loading {
-        // Only quitting works until the first sync answers.
-        return match state.keymap.resolve(&keys::screen_contexts(state), &[key]) {
-            Resolution::Action(Action::Quit) => perform(state, Action::Quit),
-            _ => Update::default(),
-        };
-    }
-
     let mut effects = Vec::new();
     let was_idle = state.is_idle();
     state.last_activity = state.now;
@@ -143,7 +136,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
     if prev_pane == Pane::Tasks && state.active_pane != Pane::Tasks {
         state.dock_filter = None;
     }
-    // Leaving idle changes the status bar.
+    // Leaving idle changes the sync indicator.
     update.redraw |= was_idle || cleared_notice;
     effects.append(&mut update.effects);
     update.effects = effects;
@@ -289,11 +282,7 @@ impl State {
                 effects.push(Effect::Quit);
                 false
             }
-            Action::ShowScreen(screen) => {
-                let changed = self.screen != screen;
-                self.screen = screen;
-                changed
-            }
+            Action::ShowScreen(screen) => self.show_screen(screen),
             Action::Resync => {
                 self.force_full_resync(effects);
                 true
@@ -382,9 +371,25 @@ impl State {
         }
     }
 
+    /// Switches to `screen`, on its list, or on the tree for Projects.
+    fn show_screen(&mut self, screen: Screen) -> bool {
+        if self.screen == screen {
+            return false;
+        }
+        self.screen = screen;
+        self.active_pane = match screen {
+            Screen::Projects | Screen::Labels => Pane::Projects,
+            Screen::Inbox | Screen::Today | Screen::Upcoming => Pane::Tasks,
+        };
+        self.dock_filter = None;
+        self.selected_task = 0;
+        self.detail_scroll = 0;
+        true
+    }
+
     /// Closes the top overlay, or steps back: from the detail to its list,
-    /// from a filtered list to the whole list, from the list or the stats
-    /// dock to the projects.
+    /// from a filtered list to the whole list, from a project's list to the
+    /// Projects tree.
     fn close(&mut self) -> bool {
         match self.top_modal() {
             Some(Modal::Input(_) | Modal::Form(_)) => {
@@ -397,13 +402,6 @@ impl State {
             }
             None => {}
         }
-        if self.dock_focus.is_some() {
-            self.dock_focus = None;
-            self.dock_filter = None;
-            self.active_pane = Pane::Projects;
-            self.clamp_selected_task();
-            return true;
-        }
         match self.active_pane {
             Pane::Detail => {
                 self.active_pane = Pane::Tasks;
@@ -415,11 +413,11 @@ impl State {
                 self.clamp_selected_task();
                 true
             }
-            Pane::Tasks | Pane::StatsDock => {
+            Pane::Tasks if self.screen == Screen::Projects => {
                 self.active_pane = Pane::Projects;
                 true
             }
-            Pane::Projects => false,
+            Pane::Tasks | Pane::Projects => false,
         }
     }
 
@@ -507,9 +505,6 @@ impl State {
     /// Moves the cursor of the focused pane, or the detail's field cursor
     /// and scroll.
     fn move_cursor(&mut self, action: Action) -> bool {
-        if self.dock_focus.is_some() && self.active_pane != Pane::Detail {
-            return self.move_in_dock(action);
-        }
         match (self.active_pane, action) {
             (Pane::Detail, Action::MoveDown) => self.move_detail_field(1),
             (Pane::Detail, Action::MoveUp) => self.move_detail_field(-1),
@@ -517,28 +512,17 @@ impl State {
             (Pane::Detail, Action::MoveToBottom) => self.detail_field = DetailField::Description,
             (Pane::Detail, _) => return self.scroll_detail(action),
             (Pane::Tasks, _) => self.move_in_tasks(action),
-            (Pane::Projects, _) => self.move_in_projects(action),
-            (Pane::StatsDock, _) => return false,
+            (Pane::Projects, _) if self.screen == Screen::Projects => {
+                self.move_in_projects(action);
+            }
+            (Pane::Projects, _) => return false,
         }
         true
     }
 
-    /// Half the terminal's rows, the step of a half-page move in a list.
+    /// Half the rows of the list on screen, the step of a half-page move.
     fn half_page(&self) -> usize {
-        (usize::from(self.screen_size().height) / 2).max(1)
-    }
-
-    fn move_in_dock(&mut self, action: Action) -> bool {
-        let focus = self.dock_focus.unwrap_or(0);
-        let last = DOCK_ITEMS.len() - 1;
-        self.dock_focus = Some(match action {
-            Action::MoveDown => (focus + 1) % DOCK_ITEMS.len(),
-            Action::MoveUp => focus.checked_sub(1).unwrap_or(last),
-            Action::MoveToTop => 0,
-            Action::MoveToBottom => last,
-            _ => return false,
-        });
-        true
+        (crate::ui::list_rows(self, self.screen_size()) / 2).max(1)
     }
 
     /// One row down or up wraps around the task list; the other moves stop
@@ -574,8 +558,7 @@ impl State {
         self.selected_task = next;
     }
 
-    /// Moves through the projects pane: the Today view, folders and
-    /// projects. Moving down past the last row focuses the stats dock.
+    /// Moves through the Projects tree: folders and projects.
     fn move_in_projects(&mut self, action: Action) {
         let nav = self.visible_nav_items();
         if nav.is_empty() {
@@ -586,21 +569,13 @@ impl State {
             .iter()
             .position(|item| match item {
                 ProjectNavItem::Project(i) => {
-                    !self.today_view_active
-                        && self.folder_cursor.is_none()
-                        && *i == self.selected_project
+                    self.folder_cursor.is_none() && *i == self.selected_project
                 }
                 ProjectNavItem::Folder(fi) => self.folder_cursor == Some(*fi),
-                ProjectNavItem::TodayView => self.today_view_active && self.folder_cursor.is_none(),
             })
             .unwrap_or(0);
         let next = match action {
-            Action::MoveDown if current == last => {
-                self.dock_focus = Some(0);
-                self.active_pane = Pane::StatsDock;
-                return;
-            }
-            Action::MoveDown => current + 1,
+            Action::MoveDown => (current + 1).min(last),
             Action::MoveUp => current.saturating_sub(1),
             Action::MoveToTop => 0,
             Action::MoveToBottom => last,
@@ -609,9 +584,7 @@ impl State {
         };
         match nav[next] {
             ProjectNavItem::Project(i) => {
-                let changed = self.folder_cursor.is_some()
-                    || self.today_view_active
-                    || self.selected_project != i;
+                let changed = self.folder_cursor.is_some() || self.selected_project != i;
                 self.folder_cursor = None;
                 self.selected_project = i;
                 if changed {
@@ -619,51 +592,37 @@ impl State {
                 }
             }
             ProjectNavItem::Folder(fi) => self.folder_cursor = Some(fi),
-            ProjectNavItem::TodayView => {
-                self.folder_cursor = None;
-                if !self.today_view_active {
-                    self.activate_today_view();
-                }
-            }
         }
     }
 
+    /// From the detail back to its list. The list and the detail show one
+    /// at a time, so there is no pane to its left otherwise.
     fn focus_left(&mut self) -> bool {
-        match self.active_pane {
-            Pane::Tasks => self.active_pane = Pane::Projects,
-            Pane::Detail => {
-                self.active_pane = Pane::Tasks;
-                self.detail_scroll = 0;
-            }
-            _ => return false,
-        }
-        true
-    }
-
-    fn focus_right(&mut self) -> bool {
-        if self.active_pane != Pane::Tasks {
-            return false;
-        }
-        self.dock_focus = Some(0);
-        self.active_pane = Pane::StatsDock;
-        true
-    }
-
-    /// Opens the focused project's tasks, or the list the focused dock item
-    /// filters to (or the whole list again when it is the filter already).
-    fn open_list(&mut self) -> bool {
-        if let Some(focus) = self.dock_focus {
-            let item = DOCK_ITEMS[focus.min(DOCK_ITEMS.len() - 1)];
-            self.dock_filter = (self.dock_filter != Some(item)).then_some(item);
-            self.dock_focus = None;
-            self.active_pane = Pane::Tasks;
-            self.clamp_selected_task();
-            return true;
-        }
-        if self.active_pane != Pane::Projects {
+        if self.active_pane != Pane::Detail {
             return false;
         }
         self.active_pane = Pane::Tasks;
+        self.detail_scroll = 0;
+        true
+    }
+
+    /// The list and the detail show one at a time, so there is no pane to
+    /// the right of either.
+    fn focus_right(&mut self) -> bool {
+        false
+    }
+
+    /// Opens the focused project's tasks from the Projects tree.
+    fn open_list(&mut self) -> bool {
+        if self.screen != Screen::Projects
+            || self.active_pane != Pane::Projects
+            || self.folder_cursor.is_some()
+            || self.projects.get(self.selected_project).is_none()
+        {
+            return false;
+        }
+        self.active_pane = Pane::Tasks;
+        self.selected_task = 0;
         true
     }
 
@@ -692,9 +651,9 @@ impl State {
     /// subtasks, or the focused folder.
     fn toggle_fold(&mut self) -> bool {
         match self.active_pane {
-            Pane::Tasks if self.today_view_active => self.toggle_overdue_section(),
+            Pane::Tasks if self.screen == Screen::Today => self.toggle_overdue_section(),
             Pane::Tasks => self.toggle_collapse(),
-            Pane::Projects => self.toggle_folder_collapse(),
+            Pane::Projects if self.screen == Screen::Projects => self.toggle_folder_collapse(),
             _ => return false,
         }
         true
@@ -703,10 +662,7 @@ impl State {
     fn cycle_task_filter(&mut self, effects: &mut Vec<Effect>) {
         self.task_filter = self.task_filter.next();
         if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both)
-            && let Some(pid) = self
-                .projects
-                .get(self.selected_project)
-                .map(|p| p.id.clone())
+            && let Some(pid) = self.list_project().map(|p| p.id.clone())
             && !self.completed_cache.contains_key(&pid)
         {
             effects.push(Effect::FetchCompletedTasks(CompletedQuery {
@@ -745,15 +701,6 @@ impl State {
     }
 
     fn switch_to_project_tasks(&mut self) {
-        self.today_view_active = false;
-        self.selected_task = 0;
-        self.detail_scroll = 0;
-    }
-
-    fn activate_today_view(&mut self) {
-        tracing::debug!("today view activated");
-        self.today_view_active = true;
-        self.overdue_section_collapsed = false;
         self.selected_task = 0;
         self.detail_scroll = 0;
     }
@@ -812,8 +759,8 @@ impl State {
 
     fn start_input(&mut self) {
         let project_id = self
-            .projects
-            .get(self.selected_project)
+            .list_project()
+            .or_else(|| self.projects.iter().find(|p| p.is_inbox()))
             .map(|p| p.id.clone())
             .unwrap_or_default();
         self.modals.push(Modal::Form(TaskForm::new(project_id)));

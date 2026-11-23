@@ -7,14 +7,14 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 use crate::app::{InputKind, State};
 use crate::ui::views::detail::DetailField;
 
-use super::popup::{centered_rect, render_dim_overlay};
+use super::popup::centered_rect;
 
 pub fn render(frame: &mut Frame, state: &State, target: InputKind) {
     let theme = state.theme();
-    render_dim_overlay(frame, theme);
 
     let area = frame.area();
     let popup_area = centered_rect(50, 20, area);
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
 
     let title = if target == InputKind::Comment {
         " Add Comment "

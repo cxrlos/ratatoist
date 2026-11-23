@@ -419,6 +419,7 @@ fn loads_through_the_normal_sync_path() {
     app.handle(Event::Synced(Ok(Box::new(sync())))).unwrap();
 
     assert!(!app.state().visible_tasks().is_empty());
+    app.handle(key('4')).unwrap();
     assert!(shows(&app, "Inbox"));
     assert!(shows(&app, "Lantern Studio"));
 }
@@ -440,10 +441,11 @@ async fn starts_with_tasks_visible_and_never_opens_the_live_connection() {
 async fn completing_a_task_keeps_it_completed_and_lists_it_under_done() {
     let client = demo::client(today());
     let (mut app, _) = started(&client).await;
+    drive(&mut app, &client, [key('1')]).await;
     let first = app.state().visible_tasks()[0].clone();
     assert!(shows(&app, &first.content));
 
-    drive(&mut app, &client, [press(KeyCode::Enter), key('x')]).await;
+    drive(&mut app, &client, [key('x')]).await;
 
     assert!(app.state().error.is_none());
     assert!(!shows(&app, &first.content));
@@ -456,7 +458,7 @@ async fn an_added_task_stays_under_its_new_id_and_survives_a_full_sync() {
     let client = demo::client(today());
     let (mut app, _) = started(&client).await;
 
-    drive(&mut app, &client, [press(KeyCode::Enter), key('a')]).await;
+    drive(&mut app, &client, [key('1'), key('a')]).await;
     drive(&mut app, &client, "Feed the parrot".chars().map(key)).await;
     drive(&mut app, &client, [press(KeyCode::Enter)]).await;
 
@@ -480,7 +482,7 @@ async fn a_comment_stays_after_the_comments_reload() {
     drive(
         &mut app,
         &client,
-        [press(KeyCode::Enter), press(KeyCode::Enter), key('c')],
+        [key('1'), press(KeyCode::Enter), key('c')],
     )
     .await;
     drive(&mut app, &client, "Seen, thanks".chars().map(key)).await;
@@ -583,7 +585,7 @@ async fn reopening_a_seeded_completed_task_brings_it_back_whole() {
 async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
     let client = demo::client(today());
     let (mut app, _) = started(&client).await;
-    drive(&mut app, &client, [press(KeyCode::Enter), key('f')]).await;
+    drive(&mut app, &client, [key('1'), key('f')]).await;
     assert!(shows(&app, "Book the dentist check-up"));
 
     drive(&mut app, &client, [key('x'), key('R')]).await;

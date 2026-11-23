@@ -7,13 +7,12 @@ use crate::keys::Preset;
 use crate::ui::text;
 use crate::ui::theme::Theme;
 
-use super::popup::{centered_rect, render_dim_overlay};
+use super::popup::centered_rect;
 
 pub fn render(frame: &mut Frame, preset: Preset, theme: &Theme) {
-    render_dim_overlay(frame, theme);
-
     let area = frame.area();
     let popup = centered_rect(55, 70, area);
+    frame.render_widget(ratatui::widgets::Clear, popup);
 
     let block = Block::default()
         .title(" Keybindings ")

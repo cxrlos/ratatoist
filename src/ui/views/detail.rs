@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Layout, Position, Rect, Size};
+use ratatui::layout::{Rect, Size};
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap};
@@ -96,26 +96,18 @@ pub fn max_scroll(state: &State, screen: Size) -> u16 {
         theme,
         state.icons(),
     );
-    overflow(&lines, text_area(screen, theme))
+    overflow(&lines, text_area(state, screen))
 }
 
 /// The rows of text the detail shows at once on a terminal of `screen`.
 pub fn page_height(state: &State, screen: Size) -> u16 {
-    text_area(screen, state.theme()).height
+    text_area(state, screen).height
 }
 
-/// Where the detail's text goes: inside the detail block, which takes the
-/// right of the main area as `ui::layout` splits it.
-fn text_area(screen: Size, theme: &Theme) -> Rect {
-    let [main, _status, _hints] = Layout::vertical([
-        Constraint::Min(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .areas(Rect::from((Position::ORIGIN, screen)));
-    let [_left, right] =
-        Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)]).areas(main);
-    block(theme).inner(right)
+/// Where the detail's text goes: inside the detail block, where the frame
+/// puts it.
+fn text_area(state: &State, screen: Size) -> Rect {
+    block(state.theme()).inner(crate::ui::detail_area(state, screen))
 }
 
 fn block(theme: &Theme) -> Block<'static> {

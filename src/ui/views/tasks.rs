@@ -5,7 +5,7 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
-use crate::app::State;
+use crate::app::{Screen, State};
 use crate::keys::Preset;
 use crate::ui::dates::{self, DueBucket};
 use crate::ui::icons::Icons;
@@ -29,8 +29,9 @@ pub fn render_with_icons(
     let visible = state.visible_tasks();
     let room = usize::from(area.width);
     let row = |line: Line<'static>| ListItem::new(text::fit_line(line, room));
+    let today = state.screen == Screen::Today;
 
-    if state.today_view_active && visible.is_empty() {
+    if today && visible.is_empty() {
         let lines = vec![
             ListItem::new(Line::default()),
             row(Line::from(Span::styled(
@@ -42,7 +43,7 @@ pub fn render_with_icons(
         return;
     }
 
-    if visible.is_empty() && !state.today_view_active && state.dock_filter.is_none() {
+    if visible.is_empty() && !today && state.dock_filter.is_none() {
         let hint = match state.keymap.preset() {
             Preset::Vim => "press a to add a task",
             Preset::Standard => "press Ctrl-a to add a task",
@@ -71,14 +72,14 @@ pub fn render_with_icons(
         return;
     }
 
-    let cross_project = state.today_view_active || state.dock_filter.is_some();
+    let cross_project = today || state.dock_filter.is_some();
 
     let mut items: Vec<ListItem> = Vec::new();
     let mut visual_selected: Option<usize> = None;
     let mut current_project_id: Option<String> = None;
     let mut last_section_id: Option<String> = None;
 
-    let stats = if state.today_view_active {
+    let stats = if today {
         Some(state.overview_stats())
     } else {
         None
@@ -86,10 +87,7 @@ pub fn render_with_icons(
     let mut overdue_header_shown = false;
 
     for (task_idx, task) in visible.iter().enumerate() {
-        if state.today_view_active
-            && !overdue_header_shown
-            && state.due_bucket(task) == DueBucket::Overdue
-        {
+        if today && !overdue_header_shown && state.due_bucket(task) == DueBucket::Overdue {
             let overdue_count = stats.as_ref().map(|s| s.overdue).unwrap_or(0);
             let fold = icons.fold(!state.overdue_section_collapsed);
             items.push(row(Line::from(vec![Span::styled(
@@ -140,7 +138,9 @@ pub fn render_with_icons(
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn task_line<'a>(
+/// One task's row; `show_project` flattens it, as in lists across
+/// projects.
+pub(crate) fn task_line<'a>(
     task: &'a Task,
     state: &State,
     theme: &Theme,

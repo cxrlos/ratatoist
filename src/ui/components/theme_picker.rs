@@ -7,14 +7,14 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding};
 use crate::app::State;
 use crate::ui::text;
 
-use super::popup::{centered_rect, render_dim_overlay};
+use super::popup::centered_rect;
 
 pub fn render(frame: &mut Frame, state: &State, selection: usize) {
     let theme = state.theme();
-    render_dim_overlay(frame, theme);
 
     let area = frame.area();
     let popup = centered_rect(45, 70, area);
+    frame.render_widget(ratatui::widgets::Clear, popup);
 
     let block = Block::default()
         .title(" Theme ")

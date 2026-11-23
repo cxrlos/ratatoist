@@ -15,7 +15,7 @@ pub use registry::{
     spec,
 };
 
-use crate::app::{Modal, Pane, State};
+use crate::app::{Modal, Pane, Screen, State};
 
 /// Where a binding applies. Several contexts are active at once, most
 /// specific first, and the first one that binds a key wins.
@@ -90,19 +90,19 @@ pub fn active_contexts(state: &State) -> Vec<Context> {
     }
 }
 
-/// The contexts of the focused pane under any overlay. While the first
-/// sync runs, only the keys that apply everywhere.
+/// The contexts of the screen and its focused pane under any overlay.
+/// While the first sync runs, or when the tasks cannot load, only the keys
+/// that apply everywhere.
 pub fn screen_contexts(state: &State) -> Vec<Context> {
-    if state.loading {
+    if state.loading || state.load_error.is_some() {
         return vec![Context::Global];
     }
-    if state.dock_focus.is_some() && state.active_pane != Pane::Detail {
-        return vec![Context::Browse, Context::Global];
-    }
-    match state.active_pane {
-        Pane::Projects => vec![Context::Projects, Context::Browse, Context::Global],
-        Pane::Tasks => vec![Context::List, Context::Global],
-        Pane::Detail => vec![Context::Detail, Context::Global],
-        Pane::StatsDock => vec![Context::Browse, Context::Global],
+    match (state.screen, state.active_pane) {
+        (_, Pane::Detail) => vec![Context::Detail, Context::Global],
+        (Screen::Projects, Pane::Projects) => {
+            vec![Context::Projects, Context::Browse, Context::Global]
+        }
+        (Screen::Labels, _) => vec![Context::Browse, Context::Global],
+        (_, Pane::Tasks | Pane::Projects) => vec![Context::List, Context::Global],
     }
 }

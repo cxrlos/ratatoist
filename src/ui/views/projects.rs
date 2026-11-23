@@ -13,13 +13,8 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let entries = state.project_list_entries();
 
     let selected_visual = entries.iter().position(|e| match e {
-        ProjectEntry::Project(i) => {
-            !state.today_view_active
-                && state.folder_cursor.is_none()
-                && *i == state.selected_project
-        }
+        ProjectEntry::Project(i) => state.folder_cursor.is_none() && *i == state.selected_project,
         ProjectEntry::FolderHeader(fi) => state.folder_cursor == Some(*fi),
-        ProjectEntry::TodayView => state.today_view_active && state.folder_cursor.is_none(),
         _ => false,
     });
 
@@ -60,20 +55,6 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
             }
 
             ProjectEntry::Separator => Line::default(),
-
-            ProjectEntry::TodayView => {
-                let stats = state.overview_stats();
-                let count = stats.overdue + stats.due_today;
-                let mut spans = vec![
-                    Span::raw("  "),
-                    Span::styled(format!("{} ", icons.today), theme.due_today()),
-                    Span::styled("Today", theme.normal_text()),
-                ];
-                if count > 0 {
-                    spans.push(Span::styled(format!("  {count}"), theme.muted_text()));
-                }
-                Line::from(spans)
-            }
 
             ProjectEntry::Project(i) => {
                 let project = &state.projects[*i];

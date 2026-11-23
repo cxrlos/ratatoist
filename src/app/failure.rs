@@ -6,6 +6,16 @@ use std::fmt;
 
 use chrono::{DateTime, Local};
 
+/// Why the task lists cannot load at all, so the body shows an error
+/// screen in their place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadError {
+    /// Neither `TODOIST_API_TOKEN` nor the keyring holds a token.
+    NoToken,
+    /// Todoist refused the token the first sync sent.
+    TokenRejected,
+}
+
 /// How many failures the messages log keeps; older ones drop off.
 pub const ERROR_LOG_CAP: usize = 100;
 

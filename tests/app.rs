@@ -109,9 +109,9 @@ fn delta(json: &str) -> Box<SyncResponse> {
 }
 
 #[test]
-fn shows_the_splash_until_the_first_sync_answers() {
+fn shows_the_loading_line_until_the_first_sync_answers() {
     let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
-    assert!(shows(&app, "syncing data..."));
+    assert!(shows(&app, "Loading your tasks from Todoist…"));
 
     let effects = app.handle(Event::Start).unwrap();
 
@@ -121,7 +121,8 @@ fn shows_the_splash_until_the_first_sync_answers() {
     assert_eq!(request.sync_token, "*");
     assert!(request.resource_types.contains(&"user".to_owned()));
     app.handle(Event::Synced(Ok(full_sync()))).unwrap();
-    assert!(shows(&app, "Projects"));
+    assert!(!shows(&app, "Loading your tasks"));
+    assert!(shows(&app, "synced 0s ago"));
 }
 
 #[test]
@@ -173,10 +174,7 @@ fn main_layout_with_the_inbox_selected_at_80x24() {
 fn task_detail_at_120x36() {
     let mut app = sized(120, 36);
 
-    send(
-        &mut app,
-        [press(KeyCode::Enter), key('j'), press(KeyCode::Enter)],
-    );
+    send(&mut app, [key('1'), key('j'), press(KeyCode::Enter)]);
 
     assert_eq!(app.state().active_pane, Pane::Detail);
     assert_snapshot!(app.backend());
@@ -186,10 +184,7 @@ fn task_detail_at_120x36() {
 fn task_detail_at_80x24() {
     let mut app = sized(80, 24);
 
-    send(
-        &mut app,
-        [press(KeyCode::Enter), key('j'), press(KeyCode::Enter)],
-    );
+    send(&mut app, [key('1'), key('j'), press(KeyCode::Enter)]);
 
     assert_snapshot!(app.backend());
 }
@@ -217,7 +212,7 @@ fn cheatsheet_at_80x24() {
 fn the_cheatsheet_closes_on_esc_and_swallows_other_keys() {
     let mut app = app();
     send(&mut app, [key('?'), key('j'), key('l')]);
-    assert_eq!(app.state().active_pane, Pane::Projects);
+    assert_eq!(app.state().active_pane, Pane::Tasks);
 
     send(&mut app, [press(KeyCode::Esc)]);
 
@@ -228,7 +223,7 @@ fn the_cheatsheet_closes_on_esc_and_swallows_other_keys() {
 fn an_unbound_key_under_an_overlay_does_not_redraw() {
     let cheatsheet = || vec![key('?')];
     let theme_picker = || vec![key(',')];
-    let priority_picker = || vec![press(KeyCode::Enter), key('p')];
+    let priority_picker = || vec![key('1'), key('p')];
     for open in [cheatsheet(), theme_picker(), priority_picker()] {
         let mut app = configured(THEME_ON_COMMA);
         send(&mut app, open);
@@ -267,12 +262,18 @@ fn a_key_that_changes_nothing_does_not_redraw() {
 #[test]
 fn a_tick_that_changes_nothing_does_not_redraw() {
     let mut app = app();
+    send(
+        &mut app,
+        [Event::Tick {
+            now: now() + chrono::Duration::seconds(61),
+        }],
+    );
     let frames = app.frames_drawn();
 
     send(
         &mut app,
         [Event::Tick {
-            now: now() + chrono::Duration::seconds(1),
+            now: now() + chrono::Duration::seconds(62),
         }],
     );
 
@@ -300,7 +301,7 @@ fn q_and_ctrl_c_ask_to_quit() {
 fn completing_a_task_checks_it_at_once_and_sends_one_item_close() {
     let mut app = app();
 
-    let effects = send(&mut app, [press(KeyCode::Enter), key('x')]);
+    let effects = send(&mut app, [key('1'), key('x')]);
 
     let command = single_command(&effects);
     assert_eq!(command.r#type, "item_close");
@@ -313,10 +314,7 @@ fn completing_a_task_checks_it_at_once_and_sends_one_item_close() {
 fn completing_a_recurring_task_sends_item_complete() {
     let mut app = app();
 
-    let effects = send(
-        &mut app,
-        [press(KeyCode::Enter), key('j'), key('j'), key('x')],
-    );
+    let effects = send(&mut app, [key('1'), key('j'), key('j'), key('x')]);
 
     let command = single_command(&effects);
     assert_eq!(command.args["id"], "t-plants");
@@ -326,7 +324,7 @@ fn completing_a_recurring_task_sends_item_complete() {
 #[test]
 fn a_failed_flush_restores_the_completed_task_and_says_so() {
     let mut app = app();
-    let command = single_command(&send(&mut app, [press(KeyCode::Enter), key('x')]));
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
 
     app.handle(Event::CommandsSent {
         uuids: vec![command.uuid.clone()],
@@ -343,7 +341,7 @@ fn a_failed_flush_restores_the_completed_task_and_says_so() {
 #[test]
 fn a_rejected_command_restores_the_task_and_shows_todoist_s_message() {
     let mut app = app();
-    let command = single_command(&send(&mut app, [press(KeyCode::Enter), key('x')]));
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
 
     let rejection = format!(
         r#"{{"full_sync":false,"sync_token":"fixture-token-2",
@@ -363,7 +361,7 @@ fn a_rejected_command_restores_the_task_and_shows_todoist_s_message() {
 #[test]
 fn any_key_dismisses_the_error_and_does_nothing_else() {
     let mut app = app();
-    let command = single_command(&send(&mut app, [press(KeyCode::Enter), key('x')]));
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
     app.handle(Event::CommandsSent {
         uuids: vec![command.uuid],
         result: Err(ClientError::Network("offline".to_owned())),
@@ -380,7 +378,7 @@ fn any_key_dismisses_the_error_and_does_nothing_else() {
 #[test]
 fn a_racing_delta_does_not_clobber_a_task_with_a_pending_command() {
     let mut app = app();
-    let command = single_command(&send(&mut app, [press(KeyCode::Enter), key('x')]));
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
 
     app.handle(Event::Synced(Ok(delta(
         r#"{"full_sync":false,"sync_token":"fixture-token-2",
@@ -401,7 +399,7 @@ fn a_racing_delta_does_not_clobber_a_task_with_a_pending_command() {
 #[test]
 fn a_confirmed_command_maps_the_temp_id_of_a_new_task() {
     let mut app = app();
-    send(&mut app, [press(KeyCode::Enter), key('a')]);
+    send(&mut app, [key('1'), key('a')]);
     send(&mut app, "Pay rent".chars().map(key));
     let command = single_command(&send(&mut app, [press(KeyCode::Enter)]));
     assert_eq!(command.r#type, "item_add");
@@ -428,7 +426,7 @@ fn a_confirmed_command_maps_the_temp_id_of_a_new_task() {
 #[test]
 fn a_failed_add_removes_the_optimistic_task() {
     let mut app = app();
-    send(&mut app, [press(KeyCode::Enter), key('a')]);
+    send(&mut app, [key('1'), key('a')]);
     send(&mut app, "Pay rent".chars().map(key));
     let command = single_command(&send(&mut app, [press(KeyCode::Enter)]));
 
@@ -444,7 +442,7 @@ fn a_failed_add_removes_the_optimistic_task() {
 #[test]
 fn setting_a_priority_sends_one_item_update() {
     let mut app = app();
-    send(&mut app, [press(KeyCode::Enter), key('p')]);
+    send(&mut app, [key('1'), key('p')]);
     assert!(matches!(
         app.state().modals.as_slice(),
         [Modal::PriorityPicker { selection: 4 }]
@@ -461,10 +459,7 @@ fn setting_a_priority_sends_one_item_update() {
 #[test]
 fn a_comment_shows_at_once_and_goes_out_as_note_add() {
     let mut app = app();
-    let effects = send(
-        &mut app,
-        [press(KeyCode::Enter), key('j'), press(KeyCode::Enter)],
-    );
+    let effects = send(&mut app, [key('1'), key('j'), press(KeyCode::Enter)]);
     assert!(effects.contains(&Effect::FetchComments {
         task_id: "t-call".to_owned(),
         fetch_seq: 1,
@@ -482,10 +477,7 @@ fn a_comment_shows_at_once_and_goes_out_as_note_add() {
 #[test]
 fn comments_from_an_older_fetch_do_not_replace_the_open_ones() {
     let mut app = app();
-    send(
-        &mut app,
-        [press(KeyCode::Enter), key('j'), press(KeyCode::Enter)],
-    );
+    send(&mut app, [key('1'), key('j'), press(KeyCode::Enter)]);
 
     app.handle(Event::Comments {
         task_id: "t-call".to_owned(),
@@ -500,7 +492,7 @@ fn comments_from_an_older_fetch_do_not_replace_the_open_ones() {
 #[test]
 fn force_resync_drops_pending_writes_and_reads_everything() {
     let mut app = app();
-    let command = single_command(&send(&mut app, [press(KeyCode::Enter), key('x')]));
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
 
     let effects = send(&mut app, [key('R')]);
 
@@ -523,7 +515,7 @@ fn a_live_change_syncs_from_the_last_token() {
         panic!("{effects:?}");
     };
     assert_eq!(request.sync_token, "fixture-token-1");
-    assert!(shows(&app, "Connected"));
+    assert!(shows(&app, "synced 0s ago"));
 }
 
 #[test]
@@ -536,23 +528,21 @@ fn a_live_change_while_idle_waits_for_the_next_key() {
             now: now() + chrono::Duration::minutes(6),
         }],
     );
-    assert!(shows(&app, "Idle"), "{:#?}", screen(&app));
+    assert!(shows(&app, "idle, synced 6m ago"), "{:#?}", screen(&app));
 
     let while_idle = send(&mut app, [Event::Live(LiveMessage::Changed)]);
     let on_key = send(&mut app, [key('y')]);
 
     assert!(while_idle.is_empty(), "{while_idle:?}");
     assert!(matches!(on_key.as_slice(), [Effect::Sync(_)]), "{on_key:?}");
-    assert!(shows(&app, "Connected"));
+    assert!(shows(&app, "synced 6m ago"));
+    assert!(!shows(&app, "idle"));
 }
 
 #[test]
 fn the_z_chord_folds_the_subtasks() {
     let mut app = app();
-    send(
-        &mut app,
-        [press(KeyCode::Enter), key('j'), key('j'), key('j')],
-    );
+    send(&mut app, [key('1'), key('j'), key('j'), key('j')]);
     assert!(shows(&app, "Book the train"));
 
     send(&mut app, [key('z'), key('a')]);
@@ -565,7 +555,7 @@ fn the_z_chord_folds_the_subtasks() {
 fn the_standard_preset_completes_with_ctrl_x() {
     let mut app = configured("[keys]\npreset = \"standard\"\n");
 
-    let effects = send(&mut app, [press(KeyCode::Enter), ctrl('x')]);
+    let effects = send(&mut app, [key('1'), ctrl('x')]);
 
     assert_eq!(single_command(&effects).r#type, "item_close");
 }
@@ -596,7 +586,7 @@ fn there_is_no_settings_pane_and_nothing_saves_settings() {
 fn the_done_filter_asks_for_the_project_s_completed_tasks() {
     let mut app = app();
 
-    let effects = send(&mut app, [press(KeyCode::Enter), key('f')]);
+    let effects = send(&mut app, [key('1'), key('f')]);
 
     assert!(matches!(
         effects.as_slice(),

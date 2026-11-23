@@ -171,6 +171,15 @@ where
     }
 }
 
+/// Whether `error`, from resolving the token, says there is none, so the
+/// app starts on its Not logged in screen instead of failing.
+pub fn is_missing_token(error: &anyhow::Error) -> bool {
+    matches!(
+        error.downcast_ref::<crate::auth::AuthError>(),
+        Some(crate::auth::AuthError::NoToken)
+    )
+}
+
 /// Today's date on the wall clock.
 pub fn today() -> NaiveDate {
     clock().date_naive()
@@ -492,6 +501,32 @@ mod tests {
 
         assert_eq!(resumed, "fake");
         assert_eq!(without_files, "*");
+    }
+
+    #[test]
+    fn only_a_missing_token_starts_the_app_logged_out() {
+        use crate::auth::AuthError;
+
+        assert!(is_missing_token(&AuthError::NoToken.into()));
+        assert!(!is_missing_token(&AuthError::LoginRejected.into()));
+        assert!(!is_missing_token(&anyhow::anyhow!("no config folder")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_logged_out_start_asks_todoist_for_nothing() {
+        let mut state = start(&Config::default(), &UiSettings::default());
+        state.not_loaded(crate::app::LoadError::NoToken);
+        let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+        let client = FakeClient::new();
+
+        let shutdown = tokio::time::sleep(Duration::from_secs(5));
+        let no_input = futures_util::stream::pending();
+        run(&mut app, &client, no_input, shutdown, None)
+            .await
+            .unwrap();
+
+        assert!(client.commands().is_empty());
+        assert!(app.state().last_sync_at.is_none());
     }
 
     #[test]

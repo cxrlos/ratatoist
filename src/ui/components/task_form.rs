@@ -9,14 +9,14 @@ use crate::todoist::model::priority_label;
 use crate::app::{State, TaskForm};
 use crate::ui::text;
 
-use super::popup::{centered_rect, render_dim_overlay};
+use super::popup::centered_rect;
 
 pub fn render(frame: &mut Frame, state: &State, form: &TaskForm) {
     let theme = state.theme();
-    render_dim_overlay(frame, theme);
 
     let area = frame.area();
     let popup = centered_rect(55, 45, area);
+    frame.render_widget(ratatui::widgets::Clear, popup);
 
     let block = Block::default()
         .title(" New Task ")

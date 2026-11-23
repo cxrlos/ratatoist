@@ -94,7 +94,8 @@ fn the_no_color_theme_resets_every_role() {
 
 #[test]
 fn the_main_screen_draws_no_colour_and_reverses_the_focused_row() {
-    let app = no_color_demo();
+    let mut app = no_color_demo();
+    press(&mut app, KeyCode::Char('4'));
     let buffer = app.backend().buffer();
 
     assert_colourless(buffer);
@@ -105,7 +106,7 @@ fn the_main_screen_draws_no_colour_and_reverses_the_focused_row() {
 #[test]
 fn the_focused_task_row_stays_reversed_in_the_task_list() {
     let mut app = no_color_demo();
-    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Char('1'));
     let buffer = app.backend().buffer();
 
     assert_colourless(buffer);

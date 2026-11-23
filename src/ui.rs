@@ -1,67 +1,199 @@
+//! Rendering: a pure function of [`State`].
+
 pub mod components;
 pub mod dates;
+mod error;
 pub mod hints;
 pub mod icons;
 pub mod keyhints;
 pub mod layout;
 pub mod release;
-pub mod splash;
-pub mod statusbar;
 pub mod style;
 pub mod text;
 pub mod theme;
+mod upcoming;
 pub mod views;
 
-pub const LOGO: &str = r#"
-░█▀▄░█▀█░▀█▀░█▀█░▀█▀░█▀█░▀█▀░█▀▀░▀█▀
-░█▀▄░█▀█░░█░░█▀█░░█░░█░█░░█░░▀▀█░░█░
-░▀░▀░▀░▀░░▀░░▀░▀░░▀░░▀▀▀░▀▀▀░▀▀▀░░▀░
-"#;
-
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::widgets::Block;
+use ratatui::layout::{Constraint, Layout, Position, Rect, Size};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Paragraph, Tabs};
 
-use crate::app::{Modal, State};
+use crate::app::{Action, Modal, Pane, Screen, State};
+use crate::keys;
 
 /// The most rows the notice above the bottom bar takes.
 pub const MAX_NOTICE_ROWS: usize = 3;
 
-/// Draws the whole screen from `state`: the splash until the first sync
-/// answers, then the panes, the top overlay and any error.
+/// Draws the whole screen from `state`: the tab row, the current screen's
+/// body, the notice, the bottom bar and the overlays over the body.
 pub fn draw(frame: &mut Frame, state: &State) {
-    if state.loading {
-        splash::render(frame, 0.3, "syncing data...", state.theme());
-        return;
-    }
+    let theme = state.theme();
+    let area = frame.area();
+    frame.buffer_mut().set_style(area, style::base(theme));
+    let notice = notice_rows(state, area.width);
+    let [tabs_area, body_area, notice_area, bar_area] = areas(area, notice.len());
 
-    layout::render(frame, state);
+    let selected = Screen::ALL
+        .iter()
+        .position(|&screen| screen == state.screen);
+    let titles = tab_titles(state, tabs_area.width);
+    let tabs_width = titles_width(&titles);
+    frame.render_widget(
+        Tabs::new(titles)
+            .select(selected)
+            .style(style::muted(theme))
+            .highlight_style(style::accent(theme)),
+        tabs_area,
+    );
+    let indicator_width = render_sync_indicator(state, frame, tabs_area, tabs_width);
+    release::render_release_notice(state, frame, tabs_area, tabs_width, indicator_width);
+    render_body(state, frame, body_area);
+    frame.render_widget(Paragraph::new(notice), notice_area);
+    keyhints::render(frame, state, bar_area);
 
-    match state.top_modal() {
-        Some(Modal::ThemePicker { selection }) => {
-            components::theme_picker::render(frame, state, *selection);
-        }
-        Some(Modal::PriorityPicker { selection }) => {
-            components::priority_picker::render(frame, *selection, state.theme(), state.icons());
-        }
-        Some(Modal::Form(form)) => components::task_form::render(frame, state, form),
-        Some(Modal::Input(target)) => components::input_popup::render(frame, state, *target),
-        Some(Modal::Cheatsheet { .. }) => {
-            components::cheatsheet::render(frame, state.keymap.preset(), state.theme());
-        }
-        Some(
+    for modal in &state.modals {
+        match modal {
+            Modal::ThemePicker { selection } => {
+                components::theme_picker::render(frame, state, *selection);
+            }
+            Modal::PriorityPicker { selection } => {
+                components::priority_picker::render(frame, *selection, theme, state.icons());
+            }
+            Modal::Form(form) => components::task_form::render(frame, state, form),
+            Modal::Input(target) => components::input_popup::render(frame, state, *target),
+            Modal::Cheatsheet { .. } => {
+                components::cheatsheet::render(frame, state.keymap.preset(), theme);
+            }
             Modal::WhichKey { .. }
             | Modal::Palette(_)
             | Modal::Picker(_)
             | Modal::Confirm(_)
-            | Modal::Messages { .. },
-        )
-        | None => {}
+            | Modal::Messages { .. } => {}
+        }
     }
 
     if let Some(error) = &state.error {
-        components::error_popup::render(frame, error, state.theme());
+        components::error_popup::render(frame, error, theme);
     }
+}
+
+/// The current screen in `area`: the loading line or an error screen until
+/// the tasks are in, then the screen's list, tree or the focused task's
+/// detail.
+fn render_body(state: &State, frame: &mut Frame, area: Rect) {
+    let title = state.screen.title();
+    if let Some(load_error) = state.load_error {
+        error::render(
+            load_error,
+            state.token_source,
+            title,
+            state.theme(),
+            frame,
+            area,
+        );
+        return;
+    }
+    if state.loading {
+        error::render_loading(state.theme(), title, frame, area);
+        return;
+    }
+    if state.active_pane == Pane::Detail {
+        render_detail(state, frame, area);
+        return;
+    }
+    match state.screen {
+        Screen::Inbox | Screen::Today => {
+            layout::render_tasks_block(frame, state, area, state.list_title());
+        }
+        Screen::Upcoming => upcoming::render(state, frame, area),
+        Screen::Projects if state.active_pane == Pane::Projects => {
+            layout::render_projects_block(frame, state, area);
+        }
+        Screen::Projects => layout::render_tasks_block(frame, state, area, state.list_title()),
+        Screen::Labels => error::render_not_built(state.theme(), title, frame, area),
+    }
+}
+
+/// The focused task's detail, filling `area`.
+fn render_detail(state: &State, frame: &mut Frame, area: Rect) {
+    let Some(task) = state.selected_task() else {
+        return;
+    };
+    views::detail::render(
+        frame,
+        task,
+        &state.comments,
+        &state.user_names,
+        state.current_user_id.as_deref(),
+        area,
+        state.detail_scroll,
+        state.detail_field,
+        state.today,
+        state.theme(),
+        state.icons(),
+    );
+}
+
+/// Every tab's title, as [`tab_title`] has it. When they do not fit in
+/// `width` beside the sync indicator, the tabs of the other screens show
+/// only their key, as `[2]`.
+fn tab_titles(state: &State, width: u16) -> [String; Screen::ALL.len()] {
+    let full = Screen::ALL.map(|screen| tab_title(state, screen, false));
+    let indicator = state
+        .indicator()
+        .map_or(0, |indicator| text::width(&indicator.text) + 2);
+    let room = usize::from(width).saturating_sub(indicator);
+    if usize::from(titles_width(&full)) <= room {
+        return full;
+    }
+    Screen::ALL.map(|screen| tab_title(state, screen, screen != state.screen))
+}
+
+/// The screen's title after the first key that shows it from here, as
+/// `[1] Inbox`, or only the key when `short`, as `[1]`. The bare title if no
+/// key reaches it (unbound, or shadowed by a binding of the current screen).
+fn tab_title(state: &State, screen: Screen, short: bool) -> String {
+    match state
+        .keymap
+        .keys_for(Action::ShowScreen(screen), &keys::screen_contexts(state))
+        .first()
+    {
+        Some(key) if short => format!("[{key}]"),
+        Some(key) => format!("[{key}] {}", screen.title()),
+        None => screen.title().to_owned(),
+    }
+}
+
+/// How wide [`Tabs`] draws `titles`: each padded by a space on both sides,
+/// with a one-column divider between them.
+fn titles_width(titles: &[String]) -> u16 {
+    let padded: usize = titles.iter().map(|title| text::width(title) + 2).sum();
+    let dividers = titles.len().saturating_sub(1);
+    u16::try_from(padded + dividers).unwrap_or(u16::MAX)
+}
+
+/// The sync indicator at the right end of the tab row, muted while sync is
+/// fine and accented when it is failing or the live connection is down.
+/// Left out when it would touch the tabs. Returns how many columns it took.
+fn render_sync_indicator(state: &State, frame: &mut Frame, area: Rect, tabs_width: u16) -> u16 {
+    let Some(indicator) = state.indicator() else {
+        return 0;
+    };
+    let text = format!("{} ", indicator.text);
+    let width = u16::try_from(text::width(&text)).unwrap_or(u16::MAX);
+    if tabs_width.saturating_add(width).saturating_add(1) > area.width {
+        return 0;
+    }
+    let style = if indicator.alert {
+        style::accent(state.theme())
+    } else {
+        style::muted(state.theme())
+    };
+    let [_, right] =
+        Layout::horizontal([Constraint::Fill(1), Constraint::Length(width)]).areas(area);
+    frame.render_widget(Span::styled(text, style), right);
+    width
 }
 
 /// The tab row, the body, the notice and the bottom bar, top to bottom. The
@@ -75,6 +207,72 @@ pub fn areas(area: Rect, notice_rows: usize) -> [Rect; 4] {
         Constraint::Length(hints::ROWS),
     ])
     .areas(area)
+}
+
+/// The body of a `viewport`-sized terminal: what the tab row, the notice
+/// and the bottom bar leave.
+pub fn body_area(state: &State, viewport: Size) -> Rect {
+    let area = Rect::from((Position::ORIGIN, viewport));
+    let [_, body_area, _, _] = areas(area, notice_rows(state, viewport.width).len());
+    body_area
+}
+
+/// How many task rows fit in the body of a `viewport`-sized terminal,
+/// inside its border. Page moves use it.
+pub fn list_rows(state: &State, viewport: Size) -> usize {
+    usize::from(body_area(state, viewport).height.saturating_sub(2))
+}
+
+/// Where the focused task's detail is drawn in a `viewport`-sized terminal:
+/// the whole body, since the detail shows in place of its list.
+pub fn detail_area(state: &State, viewport: Size) -> Rect {
+    body_area(state, viewport)
+}
+
+/// The notice under the body, cut into rows of `width` cells.
+fn notice_rows(state: &State, width: u16) -> Vec<Line<'static>> {
+    state
+        .notice
+        .as_deref()
+        .map(|notice| notice_lines(notice, width, style::muted(state.theme())))
+        .unwrap_or_default()
+}
+
+/// `notice` wrapped at spaces into rows of `width` cells in `style`, at most
+/// [`MAX_NOTICE_ROWS`]; the last ends in `…` when the rest does not fit.
+fn notice_lines(notice: &str, width: u16, style: ratatui::style::Style) -> Vec<Line<'static>> {
+    let room = usize::from(width.max(1));
+    let mut rows: Vec<String> = Vec::new();
+    let mut row = String::new();
+    for word in notice.split_whitespace() {
+        let joined = if row.is_empty() {
+            word.to_owned()
+        } else {
+            format!("{row} {word}")
+        };
+        if text::width(&joined) <= room || row.is_empty() {
+            row = joined;
+        } else {
+            rows.push(std::mem::replace(&mut row, word.to_owned()));
+        }
+    }
+    if !row.is_empty() {
+        rows.push(row);
+    }
+    let overflow = rows.len() > MAX_NOTICE_ROWS;
+    rows.truncate(MAX_NOTICE_ROWS);
+    let last = rows.len().saturating_sub(1);
+    rows.into_iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let row = if overflow && index == last {
+                text::fit(&format!("{row} …"), room)
+            } else {
+                text::fit(&row, room)
+            };
+            Line::styled(row, style)
+        })
+        .collect()
 }
 
 /// The block of a popup: its border in the theme's border colour, and the
@@ -94,5 +292,35 @@ pub fn centered(area: Rect, width: u16, height: u16) -> Rect {
         y: area.y + (area.height - height) / 2,
         width,
         height,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn texts(lines: &[Line]) -> Vec<String> {
+        lines.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn a_notice_wraps_at_spaces() {
+        let lines = notice_lines("one two three four", 9, ratatui::style::Style::new());
+
+        assert_eq!(texts(&lines), ["one two", "three", "four"]);
+    }
+
+    #[test]
+    fn a_notice_longer_than_three_rows_ends_in_an_ellipsis() {
+        let lines = notice_lines("aa bb cc dd ee ff gg", 5, ratatui::style::Style::new());
+
+        assert_eq!(texts(&lines), ["aa bb", "cc dd", "ee f…"]);
+    }
+
+    #[test]
+    fn a_word_wider_than_the_row_is_cut() {
+        let lines = notice_lines("abcdefgh", 4, ratatui::style::Style::new());
+
+        assert_eq!(texts(&lines), ["abc…"]);
     }
 }

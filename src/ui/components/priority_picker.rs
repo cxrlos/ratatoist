@@ -8,13 +8,12 @@ use crate::todoist::model::{PRIORITY_LABELS, Priority};
 use crate::ui::icons::Icons;
 use crate::ui::theme::Theme;
 
-use super::popup::{centered_fixed_rect, render_dim_overlay};
+use super::popup::centered_fixed_rect;
 
 pub fn render(frame: &mut Frame, selected: u8, theme: &Theme, icons: &Icons) {
-    render_dim_overlay(frame, theme);
-
     let area = frame.area();
     let popup = centered_fixed_rect(30, 10, area);
+    frame.render_widget(ratatui::widgets::Clear, popup);
 
     let block = Block::default()
         .title(" Priority ")

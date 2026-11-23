@@ -90,10 +90,7 @@ fn command_types(effects: &[Effect]) -> Vec<String> {
 
 /// Opens the detail of "Call the dentist", the second Inbox task.
 fn open_call_detail(app: &mut App<TestBackend>) {
-    send(
-        app,
-        [press(KeyCode::Enter), key('j'), press(KeyCode::Enter)],
-    );
+    send(app, [key('1'), key('j'), press(KeyCode::Enter)]);
     assert_eq!(app.state().active_pane, Pane::Detail);
 }
 
@@ -102,11 +99,7 @@ fn standard_call_detail(columns: u16, rows: u16) -> App<TestBackend> {
     let mut app = sized_with(columns, rows, Preset::Standard);
     send(
         &mut app,
-        [
-            press(KeyCode::Enter),
-            press(KeyCode::Down),
-            press(KeyCode::Enter),
-        ],
+        [key('1'), press(KeyCode::Down), press(KeyCode::Enter)],
     );
     assert_eq!(app.state().active_pane, Pane::Detail);
     app
@@ -245,7 +238,7 @@ fn ctrl_d_scrolls_a_long_description_half_a_page() {
     send(&mut app, [ctrl('d')]);
 
     assert_ne!(screen(&app), before);
-    assert!(shows(&app, "Line 20 of the notes"), "{:#?}", screen(&app));
+    assert!(shows(&app, "Line 18 of the notes"), "{:#?}", screen(&app));
     assert_snapshot!(app.backend());
 }
 
@@ -297,11 +290,7 @@ fn the_scroll_keys_work_in_the_standard_preset() {
     app.handle(Event::Synced(Ok(long_description()))).unwrap();
     send(
         &mut app,
-        [
-            press(KeyCode::Enter),
-            press(KeyCode::Down),
-            press(KeyCode::Enter),
-        ],
+        [key('1'), press(KeyCode::Down), press(KeyCode::Enter)],
     );
 
     send(&mut app, [press(KeyCode::PageDown)]);
@@ -327,7 +316,7 @@ fn a_taller_screen_lowers_the_scroll_limit() {
     let mut state = State::new(now());
     update(&mut state, Event::Synced(Ok(response(FULL_SYNC))));
     update(&mut state, Event::Synced(Ok(long_description())));
-    for event in [press(KeyCode::Enter), key('j'), press(KeyCode::Enter)] {
+    for event in [key('1'), key('j'), press(KeyCode::Enter)] {
         update(&mut state, event);
     }
     let scroll_to_end = |state: &mut State| {

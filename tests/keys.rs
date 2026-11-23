@@ -6,7 +6,7 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatoist::app::{
-    App, DockItem, Effect, Event, InputKind, Modal, Pane, Screen, SortMode, State, TaskFilter,
+    App, Effect, Event, InputKind, Modal, Pane, Screen, SortMode, State, TaskFilter,
 };
 use ratatoist::config;
 use ratatoist::keys::{ACTIONS, Key, Preset, STANDARD};
@@ -144,7 +144,7 @@ fn screen(app: &App<TestBackend>) -> String {
 #[test]
 fn vim_keys_move_through_the_task_list() {
     let mut app = vim();
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
     assert_eq!(app.state().active_pane, Pane::Tasks);
 
     send(&mut app, [key('j')]);
@@ -164,7 +164,7 @@ fn vim_keys_move_through_the_task_list() {
 #[test]
 fn the_standard_preset_moves_with_arrows_home_end_and_page_keys() {
     let mut app = standard();
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
 
     send(&mut app, [press(KeyCode::Down)]);
     assert_eq!(selected(&app), "t-call");
@@ -186,30 +186,31 @@ fn the_standard_preset_moves_with_arrows_home_end_and_page_keys() {
 #[test]
 fn the_standard_preset_switches_panes_with_tab_and_shift_tab() {
     let mut app = standard();
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1'), enter()]);
+    assert_eq!(app.state().active_pane, Pane::Detail);
 
     send(&mut app, [back_tab()]);
-    assert_eq!(app.state().active_pane, Pane::Projects);
-    send(&mut app, [enter(), press(KeyCode::Tab)]);
-    assert_eq!(app.state().active_pane, Pane::StatsDock);
-    assert_eq!(app.state().dock_focus, Some(0));
+    assert_eq!(app.state().active_pane, Pane::Tasks);
+    send(&mut app, [press(KeyCode::Tab)]);
+    assert_eq!(app.state().active_pane, Pane::Tasks);
 }
 
 #[test]
 fn vim_keys_switch_panes_with_h_and_l() {
     let mut app = vim();
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1'), enter()]);
+    assert_eq!(app.state().active_pane, Pane::Detail);
 
     send(&mut app, [key('h')]);
-    assert_eq!(app.state().active_pane, Pane::Projects);
-    send(&mut app, [enter(), key('l')]);
-    assert_eq!(app.state().active_pane, Pane::StatsDock);
+    assert_eq!(app.state().active_pane, Pane::Tasks);
+    send(&mut app, [key('l')]);
+    assert_eq!(app.state().active_pane, Pane::Tasks);
 }
 
 #[test]
 fn the_standard_preset_adds_with_ctrl_a_and_completes_with_ctrl_x() {
     let mut app = standard();
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
     send(&mut app, [key('a'), key('x')]);
     assert!(app.state().modals.is_empty(), "a and x are unbound");
 
@@ -240,7 +241,7 @@ fn the_standard_preset_changes_only_the_keys_it_lists() {
 fn the_keys_both_presets_share_run_the_same_actions() {
     for preset in Preset::ALL {
         let mut app = in_preset(preset);
-        send(&mut app, [enter()]);
+        send(&mut app, [key('1')]);
 
         let filtered = send(&mut app, [key('f')]);
         assert_eq!(app.state().task_filter, TaskFilter::Done);
@@ -302,7 +303,7 @@ fn the_keys_both_presets_share_run_the_same_actions() {
 fn folds_work_through_chords_and_space_in_both_presets() {
     for preset in Preset::ALL {
         let mut app = in_preset(preset);
-        send(&mut app, [enter()]);
+        send(&mut app, [key('1')]);
         send(&mut app, (0..3).map(|_| press(KeyCode::Down)));
         assert_eq!(selected(&app), "t-trip");
 
@@ -329,7 +330,7 @@ fn folds_work_through_chords_and_space_in_both_presets() {
 #[test]
 fn a_key_that_ends_no_chord_closes_the_popup_and_does_nothing() {
     let mut app = vim();
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
 
     let effects = send(&mut app, [key('z'), key('q')]);
 
@@ -341,7 +342,7 @@ fn a_key_that_ends_no_chord_closes_the_popup_and_does_nothing() {
 fn space_folds_the_overdue_group_in_the_today_view() {
     let mut state = vim().state().clone();
     state.active_pane = Pane::Tasks;
-    state.today_view_active = true;
+    state.screen = Screen::Today;
     let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
 
     send(&mut app, [key(' ')]);
@@ -352,7 +353,7 @@ fn space_folds_the_overdue_group_in_the_today_view() {
 #[test]
 fn esc_steps_back_from_the_detail_and_the_list() {
     let mut app = vim();
-    send(&mut app, [enter(), key('j'), enter()]);
+    send(&mut app, [key('4'), enter(), key('j'), enter()]);
     assert_eq!(app.state().active_pane, Pane::Detail);
 
     send(&mut app, [esc()]);
@@ -364,7 +365,7 @@ fn esc_steps_back_from_the_detail_and_the_list() {
 #[test]
 fn the_detail_moves_its_field_cursor_and_scrolls() {
     let mut app = vim();
-    send(&mut app, [enter(), key('j'), enter()]);
+    send(&mut app, [key('1'), key('j'), enter()]);
 
     send(&mut app, [key('j')]);
     assert_eq!(app.state().detail_field, DetailField::Priority);
@@ -377,24 +378,10 @@ fn the_detail_moves_its_field_cursor_and_scrolls() {
 }
 
 #[test]
-fn the_stats_dock_filters_the_list_and_esc_clears_it() {
-    let mut app = vim();
-    send(&mut app, [enter(), key('l'), key('j')]);
-    assert_eq!(app.state().dock_focus, Some(1));
-
-    send(&mut app, [enter()]);
-    assert_eq!(app.state().dock_filter, Some(DockItem::DueToday));
-    assert_eq!(app.state().active_pane, Pane::Tasks);
-
-    send(&mut app, [esc()]);
-    assert_eq!(app.state().dock_filter, None);
-}
-
-#[test]
 fn s_marks_the_project_as_a_favourite() {
     let mut app = vim();
 
-    let effects = send(&mut app, [key('s')]);
+    let effects = send(&mut app, [key('4'), key('s')]);
 
     let command = &commands(&effects)[0];
     assert_eq!(command.r#type, "project_update");
@@ -415,10 +402,15 @@ fn quitting_in_an_overlay_takes_esc_first() {
 }
 
 #[test]
-fn only_quitting_works_while_the_first_sync_runs() {
+fn only_the_keys_that_apply_everywhere_work_while_the_first_sync_runs() {
     let mut app = App::new(TestBackend::new(80, 24), state_with("")).unwrap();
 
-    assert!(send(&mut app, [key('?'), key('j')]).is_empty());
+    assert!(send(&mut app, [key('?')]).is_empty());
+    assert!(matches!(
+        app.state().top_modal(),
+        Some(Modal::Cheatsheet { .. })
+    ));
+    send(&mut app, [esc(), key('x')]);
     assert!(app.state().modals.is_empty());
     assert_eq!(send(&mut app, [key('q')]), [Effect::Quit]);
 }
@@ -437,7 +429,7 @@ fn a_key_release_does_nothing() {
 #[test]
 fn a_text_field_takes_typed_keys_before_the_keymap() {
     let mut app = vim();
-    send(&mut app, [enter(), key('c')]);
+    send(&mut app, [key('1'), key('c')]);
 
     let effects = send(&mut app, typed("q? jk 1"));
 
@@ -449,7 +441,7 @@ fn a_text_field_takes_typed_keys_before_the_keymap() {
 #[test]
 fn the_cursor_moves_and_edits_in_a_text_field() {
     let mut app = vim();
-    send(&mut app, [enter(), key('c')]);
+    send(&mut app, [key('1'), key('c')]);
     send(&mut app, typed("helo"));
 
     send(&mut app, [press(KeyCode::Left)]);
@@ -472,7 +464,7 @@ fn the_cursor_moves_and_edits_in_a_text_field() {
 #[test]
 fn a_paste_goes_into_the_text_field_on_one_line() {
     let mut app = vim();
-    send(&mut app, [enter(), key('c')]);
+    send(&mut app, [key('1'), key('c')]);
     send(&mut app, typed("see "));
 
     send(&mut app, [Event::Paste("the\nnotes".to_owned())]);
@@ -500,7 +492,7 @@ fn esc_in_a_prompt_or_the_form_sends_nothing() {
             Preset::Vim => key('a'),
             Preset::Standard => ctrl('a'),
         };
-        send(&mut app, [enter(), key('c')]);
+        send(&mut app, [key('1'), key('c')]);
         send(&mut app, typed("Never mind"));
         let comment = send(&mut app, [esc()]);
         send(&mut app, [add]);
@@ -554,7 +546,7 @@ fn an_edit_from_the_list_changes_the_task_it_opened_on_after_a_sync_reorders_the
     ];
     for (open, submit) in openers {
         let mut app = vim();
-        send(&mut app, [enter(), key('j')]);
+        send(&mut app, [key('1'), key('j')]);
         assert_eq!(selected(&app), "t-call");
         send(&mut app, [open]);
 
@@ -576,7 +568,7 @@ fn an_edit_from_the_list_changes_the_task_it_opened_on_after_a_sync_reorders_the
 #[test]
 fn the_form_moves_between_fields_and_adds_the_task() {
     let mut app = vim();
-    send(&mut app, [enter(), key('a')]);
+    send(&mut app, [key('1'), key('a')]);
     send(&mut app, typed("Pay rent"));
 
     send(&mut app, [press(KeyCode::Tab), enter()]);
@@ -604,7 +596,7 @@ fn the_form_moves_between_fields_and_adds_the_task() {
 #[test]
 fn a_replaced_key_is_the_action_s_only_key_in_its_context() {
     let mut app = app_with("[keys.list]\ntoggle-complete = \"X\"\n");
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
 
     assert!(commands(&send(&mut app, [key('x')])).is_empty());
     assert_eq!(command_types(&send(&mut app, [key('X')])), ["item_close"]);
@@ -613,7 +605,7 @@ fn a_replaced_key_is_the_action_s_only_key_in_its_context() {
 #[test]
 fn an_override_applies_only_in_its_context() {
     let mut app = app_with("[keys.detail]\ntoggle-complete = \"X\"\n");
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
 
     assert_eq!(command_types(&send(&mut app, [key('x')])), ["item_close"]);
 }
@@ -623,7 +615,7 @@ fn prepended_and_appended_keys_run_the_action_beside_the_defaults() {
     let mut app = app_with(
         "[keys.list]\nmove-down = { prepend = [\"n\"] }\nmove-up = { append = [\"<C-p>\"] }\n",
     );
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
 
     send(&mut app, [key('n')]);
     assert_eq!(selected(&app), "t-call");
@@ -638,7 +630,7 @@ fn prepended_and_appended_keys_run_the_action_beside_the_defaults() {
 #[test]
 fn a_noop_key_does_nothing() {
     let mut app = app_with("[keys.list]\nnoop = [\"x\", \"zM\"]\n");
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
     let frames = app.frames_drawn();
 
     let effects = send(&mut app, [key('x')]);
@@ -650,7 +642,7 @@ fn a_noop_key_does_nothing() {
 #[test]
 fn the_preset_and_overrides_combine() {
     let mut app = app_with("[keys]\npreset = \"standard\"\n\n[keys.list]\nmove-down = \"j\"\n");
-    send(&mut app, [enter()]);
+    send(&mut app, [key('1')]);
 
     send(&mut app, [key('j')]);
     assert_eq!(selected(&app), "t-call");

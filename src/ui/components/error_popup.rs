@@ -8,13 +8,12 @@ use crate::app::AppError;
 use crate::ui::text;
 use crate::ui::theme::Theme;
 
-use super::popup::{centered_rect, render_dim_overlay};
+use super::popup::centered_rect;
 
 pub fn render(frame: &mut Frame, error: &AppError, theme: &Theme) {
-    render_dim_overlay(frame, theme);
-
     let area = frame.area();
     let popup_area = centered_rect(55, 35, area);
+    frame.render_widget(ratatui::widgets::Clear, popup_area);
 
     let room = usize::from(popup_area.width.saturating_sub(4));
     let title = format!(" {} ", text::fit(&error.title, room));

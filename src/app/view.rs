@@ -4,7 +4,8 @@
 use std::collections::HashSet;
 
 use super::state::{
-    DOCK_ITEMS, DockItem, OverviewStats, ProjectEntry, ProjectNavItem, SortMode, State, TaskFilter,
+    DOCK_ITEMS, DockItem, OverviewStats, ProjectEntry, ProjectNavItem, Screen, SortMode, State,
+    TaskFilter,
 };
 use crate::todoist::model::{Project, Task};
 use crate::ui::dates::{self, DueBucket};
@@ -87,11 +88,7 @@ impl State {
             }
 
             if !folder_collapsed {
-                let is_inbox = self.projects[i].is_inbox();
                 entries.push(ProjectEntry::Project(i));
-                if is_inbox {
-                    entries.push(ProjectEntry::TodayView);
-                }
             }
         }
 
@@ -124,11 +121,30 @@ impl State {
             .filter_map(|e| match e {
                 ProjectEntry::FolderHeader(fi) => Some(ProjectNavItem::Folder(fi)),
                 ProjectEntry::Project(i) => Some(ProjectNavItem::Project(i)),
-                ProjectEntry::TodayView => Some(ProjectNavItem::TodayView),
                 _ => None,
             })
             .collect()
     }
+    /// The project whose tasks the list shows: the Inbox on the Inbox
+    /// screen and the focused project on the Projects screen. The other
+    /// screens list tasks across projects.
+    pub fn list_project(&self) -> Option<&Project> {
+        match self.screen {
+            Screen::Inbox => self.projects.iter().find(|p| p.is_inbox()),
+            Screen::Projects => self.projects.get(self.selected_project),
+            Screen::Today | Screen::Upcoming | Screen::Labels => None,
+        }
+    }
+
+    /// The title of the task list's pane: the screen's name, or the
+    /// project's where it lists one project.
+    pub fn list_title(&self) -> &str {
+        match self.list_project() {
+            Some(project) => &project.name,
+            None => self.screen.title(),
+        }
+    }
+
     pub fn selected_project_name(&self) -> &str {
         self.projects
             .get(self.selected_project)
@@ -179,39 +195,67 @@ impl State {
         self.collapsed.contains(task_id)
     }
 
+    /// The rows of the task list on the current screen, in order.
     pub fn visible_tasks(&self) -> Vec<&Task> {
-        if self.today_view_active {
-            let mut tasks: Vec<&Task> = self
-                .tasks
-                .iter()
-                .filter(|t| {
-                    self.in_dock_item(t, DockItem::DueOverdue)
-                        || self.in_dock_item(t, DockItem::DueToday)
-                })
-                .collect();
-            tasks.sort_by(|a, b| {
-                let a_date = a
-                    .due
-                    .as_ref()
-                    .map(|d| dates::date_part(&d.date))
-                    .unwrap_or("");
-                let b_date = b
-                    .due
-                    .as_ref()
-                    .map(|d| dates::date_part(&d.date))
-                    .unwrap_or("");
-                a_date.cmp(b_date).then(a.child_order.cmp(&b.child_order))
-            });
-            if self.overdue_section_collapsed {
-                tasks.retain(|t| self.due_bucket(t) == DueBucket::Today);
-            }
-            return tasks;
+        match self.screen {
+            Screen::Today => self.today_tasks(),
+            Screen::Upcoming => self.upcoming_tasks(),
+            Screen::Labels => Vec::new(),
+            Screen::Inbox | Screen::Projects => self.project_tasks(),
         }
+    }
 
-        let current_project_id = self
-            .projects
-            .get(self.selected_project)
-            .map(|p| p.id.as_str());
+    /// Open tasks due today or in the six days after, by day, then by
+    /// their order in the project. Subtasks are left out, as on Today.
+    pub fn upcoming_tasks(&self) -> Vec<&Task> {
+        let mut tasks: Vec<&Task> = self
+            .tasks
+            .iter()
+            .filter(|t| self.in_dock_item(t, DockItem::DueWeek))
+            .collect();
+        tasks.sort_by(|a, b| {
+            let day = |t: &Task| t.due.as_ref().map(|d| d.date.clone()).unwrap_or_default();
+            day(a).cmp(&day(b)).then(a.child_order.cmp(&b.child_order))
+        });
+        tasks
+    }
+
+    /// The day `task` is due, when it has a due date that parses.
+    pub fn due_day(task: &Task) -> Option<chrono::NaiveDate> {
+        let due = task.due.as_ref()?;
+        chrono::NaiveDate::parse_from_str(dates::date_part(&due.date), "%Y-%m-%d").ok()
+    }
+
+    fn today_tasks(&self) -> Vec<&Task> {
+        let mut tasks: Vec<&Task> = self
+            .tasks
+            .iter()
+            .filter(|t| {
+                self.in_dock_item(t, DockItem::DueOverdue)
+                    || self.in_dock_item(t, DockItem::DueToday)
+            })
+            .collect();
+        tasks.sort_by(|a, b| {
+            let a_date = a
+                .due
+                .as_ref()
+                .map(|d| dates::date_part(&d.date))
+                .unwrap_or("");
+            let b_date = b
+                .due
+                .as_ref()
+                .map(|d| dates::date_part(&d.date))
+                .unwrap_or("");
+            a_date.cmp(b_date).then(a.child_order.cmp(&b.child_order))
+        });
+        if self.overdue_section_collapsed {
+            tasks.retain(|t| self.due_bucket(t) == DueBucket::Today);
+        }
+        tasks
+    }
+
+    fn project_tasks(&self) -> Vec<&Task> {
+        let current_project_id = self.list_project().map(|p| p.id.as_str());
 
         let mut top_level: Vec<&Task> = self
             .tasks
@@ -279,10 +323,7 @@ impl State {
         }
 
         if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both)
-            && let Some(pid) = self
-                .projects
-                .get(self.selected_project)
-                .map(|p| p.id.clone())
+            && let Some(pid) = self.list_project().map(|p| p.id.clone())
         {
             self.append_cached_completed(&pid, &mut result);
         }
@@ -338,10 +379,7 @@ impl State {
         if self.has_completed_descendant(&task.id) {
             return true;
         }
-        if let Some(pid) = self
-            .projects
-            .get(self.selected_project)
-            .map(|p| p.id.as_str())
+        if let Some(pid) = self.list_project().map(|p| p.id.as_str())
             && let Some(cached) = self.completed_cache.get(pid)
         {
             return cached

@@ -7,8 +7,8 @@ use ratatoist::todoist::demo;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 
-/// The demo account at 80x24 on the inbox, the first screen after the
-/// first sync, with `edit` applied to the account before it loads.
+/// The demo account at 80x24 on the Inbox screen, with `edit` applied to
+/// the account before it loads.
 fn demo_inbox(edit: impl FnOnce(&mut serde_json::Value)) -> App<TestBackend> {
     let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
     let mut app = App::new(TestBackend::new(80, 24), State::new(now)).unwrap();
@@ -16,6 +16,8 @@ fn demo_inbox(edit: impl FnOnce(&mut serde_json::Value)) -> App<TestBackend> {
     edit(&mut sync);
     let sync = serde_json::from_value(sync).unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
+    let one = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('1'));
+    app.handle(Event::Key(one)).unwrap();
     app
 }
 
@@ -72,7 +74,7 @@ fn an_emoji_task_row_ends_in_an_ellipsis_at_the_pane_edge() {
         rename(
             sync,
             "t-cake",
-            "🎂 Order a cake for Saturday, and balloons 🎈🎈🎈🎈",
+            "🎂 Order a cake for Saturday, and balloons 🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈",
         )
     });
 

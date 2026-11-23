@@ -11,7 +11,7 @@ use std::fs;
 use chrono::{Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
-use ratatoist::app::{App, Event, State};
+use ratatoist::app::{App, Event, Screen, State};
 use ratatoist::config::{self, Config};
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::demo;
@@ -21,7 +21,7 @@ use ratatoist::ui::views::tasks;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
-/// The demo account at 120x36 with `icons`, its task list focused.
+/// The demo account at 120x36 with `icons`, on the Today list.
 fn task_list(icons: IconSet) -> App<TestBackend> {
     let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
     let config = Config {
@@ -32,8 +32,14 @@ fn task_list(icons: IconSet) -> App<TestBackend> {
     let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
     let sync = serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
+    app
+}
+
+/// The demo account at 120x36 with `icons`, on the Projects tree.
+fn projects_tree(icons: IconSet) -> App<TestBackend> {
+    let mut app = task_list(icons);
     app.handle(Event::Key(KeyEvent::new(
-        KeyCode::Char('l'),
+        KeyCode::Char('4'),
         KeyModifiers::NONE,
     )))
     .unwrap();
@@ -130,8 +136,9 @@ fn ui_icons_picks_the_set_and_unicode_is_the_default() {
 
 #[test]
 fn the_views_draw_glyphs_from_the_set_chosen() {
-    let unicode = screen(&task_list(IconSet::Unicode));
-    let nerd = screen(&task_list(IconSet::Nerd));
+    let drawn = |icons| screen(&task_list(icons)) + &screen(&projects_tree(icons));
+    let unicode = drawn(IconSet::Unicode);
+    let nerd = drawn(IconSet::Nerd);
     let icons = IconSet::Nerd.icons();
 
     for glyph in [
@@ -139,7 +146,6 @@ fn the_views_draw_glyphs_from_the_set_chosen() {
         icons.inbox,
         icons.project,
         icons.favourite,
-        icons.today,
         icons.overdue,
         icons.priority(Priority::P1),
         icons.priority(Priority::P4),
@@ -175,6 +181,7 @@ fn trip_with_comments() -> State {
         serde_json::from_str(include_str!("fixtures/app/HYPOTHETICAL_full_sync.json")).unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     let mut state = app.state().clone();
+    state.screen = Screen::Inbox;
     let trip = state.tasks.iter_mut().find(|t| t.id == "t-trip").unwrap();
     trip.note_count = Some(3);
     state

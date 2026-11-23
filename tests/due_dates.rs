@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use insta::assert_snapshot;
-use ratatoist::app::{App, DockItem, Event, OverviewStats, State, update};
+use ratatoist::app::{App, DockItem, Event, OverviewStats, Screen, State, update};
 use ratatoist::todoist::sync::SyncResponse;
 use ratatui::backend::TestBackend;
 
@@ -90,6 +90,7 @@ fn count(stats: &OverviewStats, item: DockItem) -> u32 {
 fn count_and_rows(item: DockItem) -> (u32, Vec<String>) {
     let mut state = synced();
     let shown = count(&state.overview_stats(), item);
+    state.screen = Screen::Inbox;
     state.dock_filter = Some(item);
     let rows = state.visible_tasks().iter().map(|t| t.id.clone()).collect();
     (shown, rows)
@@ -163,13 +164,11 @@ fn the_p4_count_matches_its_rows() {
 
 #[test]
 fn the_today_counts_match_the_today_list() {
-    let mut state = synced();
-    state.today_view_active = true;
+    let state = synced();
 
     let app = App::new(TestBackend::new(120, 36), state).unwrap();
 
     let rows = app.state().visible_tasks().len();
     assert_eq!(rows, 4);
-    assert!(shows(&app, "◆ Today  4"));
     assert!(shows(&app, "Overdue  (3)"));
 }
