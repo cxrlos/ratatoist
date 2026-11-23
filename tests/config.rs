@@ -2,10 +2,11 @@
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
+use ratatoist::auth::{self, ApiToken, MemoryKeyring, Source};
 use ratatoist::config::{self, Config};
 
 /// A fresh config folder for one test, removed when dropped.
@@ -223,6 +224,88 @@ fn api_token_is_known_and_never_read() {
     assert!(!format!("{config:?}").contains("0123456789abcdef"));
 }
 
+/// What startup does with the config folder: load the config, then resolve
+/// the token (which runs the migration when `config.toml` has `api_token`).
+fn start_up(dir: &Path) -> Config {
+    let config = config::load(dir);
+    let keyring = MemoryKeyring::holding(ApiToken::new(TOKEN).unwrap());
+    let mut notes = Vec::new();
+    let resolved = auth::resolve_from(None, &keyring, dir, &mut notes).unwrap();
+    assert_eq!(resolved.source, Source::Keyring);
+    assert!(notes.is_empty(), "{}", String::from_utf8_lossy(&notes));
+    config
+}
+
+const TOKEN: &str = "0123456789abcdef0123456789abcdef01234567";
+
+/// Every entry under `dir` with its inode, change time and modification
+/// time: any write, even one of the same bytes, changes the times, and a
+/// replace changes the inode.
+fn snapshot(dir: &Path) -> Vec<(PathBuf, u64, i64, i64, SystemTime)> {
+    let mut entries = Vec::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(next) = pending.pop() {
+        for entry in fs::read_dir(&next).unwrap() {
+            let path = entry.unwrap().path();
+            let metadata = fs::symlink_metadata(&path).unwrap();
+            if metadata.is_dir() {
+                pending.push(path.clone());
+            }
+            entries.push((
+                path,
+                metadata.ino(),
+                metadata.ctime(),
+                metadata.ctime_nsec(),
+                metadata.modified().unwrap(),
+            ));
+        }
+    }
+    entries.sort();
+    entries
+}
+
+#[test]
+fn starting_up_writes_nothing_to_a_writable_config_folder() {
+    let text = "# mine\n[theme]\nname = \"Mine\"\n[sync]\nidle-timeout = = 1\n";
+    let dir = TempDir::with_config("startupwritable", text);
+    dir.theme("mine.json", MINE);
+    let file = dir.0.join("config.toml");
+    // An old modification time, so even a same-bytes rewrite within the
+    // timestamp granularity shows up.
+    let old = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    for path in [&file, &dir.0.join("themes/mine.json")] {
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+    }
+    let before = snapshot(&dir.0);
+
+    let config = start_up(&dir.0);
+
+    assert_eq!(config.warnings.len(), 1, "{:?}", config.warnings);
+    assert_eq!(fs::read_to_string(&file).unwrap(), text);
+    assert_eq!(snapshot(&dir.0), before);
+}
+
+#[test]
+fn starting_up_on_a_read_only_config_folder_writes_nothing() {
+    let text = "# mine\n[sync]\nidle-timeout = 30\n";
+    let dir = TempDir::with_config("startupreadonly", text);
+    let file = dir.0.join("config.toml");
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o444)).unwrap();
+    fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o555)).unwrap();
+    let before = snapshot(&dir.0);
+
+    let config = start_up(&dir.0);
+
+    assert_eq!(config.warnings, Vec::<String>::new());
+    assert_eq!(config.idle_timeout, Some(Duration::from_secs(30)));
+    assert_eq!(snapshot(&dir.0), before);
+}
+
 #[test]
 fn loading_a_read_only_config_folder_writes_nothing() {
     let text = "# mine\n[sync]\nidle-timeout = = 1\n";
@@ -255,7 +338,7 @@ fn user_theme_files_load_and_a_broken_one_is_a_warning() {
     assert_eq!(config.theme.as_deref(), Some("Mine"));
     assert_eq!(config.warnings.len(), 1, "{:?}", config.warnings);
     assert!(
-        config.warnings[0].starts_with("themes/broken.json:"),
+        config.warnings[0].starts_with("themes/broken.json:1:19: "),
         "{:?}",
         config.warnings
     );
