@@ -40,7 +40,7 @@ pub fn update(state: &mut State, event: Event) -> Update {
     let mut effects = Vec::new();
     match event {
         Event::Start => {
-            info!(sync_token = %state.sync_token, "full sync starting");
+            info!("full sync starting");
             Update {
                 redraw: false,
                 effects: vec![Effect::Sync(full_sync_request())],
