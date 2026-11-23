@@ -32,6 +32,30 @@ pub fn fit(text: &str, room: usize) -> String {
     cut
 }
 
+/// `text` as it fits in `room` cells keeping its end, for text whose last
+/// characters matter most (what was just typed): whole when it fits,
+/// otherwise `…` and then the end of `text` after the first non-blank
+/// character, never wider than `room`.
+pub fn fit_start(text: &str, room: usize) -> String {
+    if width(text) <= room {
+        return text.to_owned();
+    }
+    if room == 0 {
+        return String::new();
+    }
+    let mut used = 0;
+    let kept: Vec<char> = text
+        .chars()
+        .rev()
+        .take_while(|c| {
+            used += c.width().unwrap_or(0);
+            used < room
+        })
+        .collect();
+    let end: String = kept.into_iter().rev().collect();
+    format!("{ELLIPSIS}{}", end.trim_start())
+}
+
 /// `line` as it fits in `room` cells: whole when it fits, otherwise its
 /// spans up to the cut, the last one ending in `…` in that span's style.
 pub fn fit_line(line: Line<'_>, room: usize) -> Line<'_> {
@@ -105,6 +129,31 @@ fn take(text: &str, room: usize) -> String {
 mod tests {
     use super::*;
     use ratatui::style::Stylize;
+
+    #[test]
+    fn text_that_fits_keeps_its_start() {
+        assert_eq!(fit_start("cheddar", 7), "cheddar");
+    }
+
+    #[test]
+    fn text_cut_at_the_start_keeps_its_end_after_an_ellipsis() {
+        assert_eq!(fit_start("cheddar", 5), "…ddar");
+        assert_eq!(width(&fit_start("cheddar", 5)), 5);
+        assert_eq!(fit_start("cheddar", 1), "…");
+        assert_eq!(fit_start("cheddar", 0), "");
+    }
+
+    #[test]
+    fn a_cut_start_counts_wide_characters_as_two_cells() {
+        assert_eq!(fit_start("チーズ", 4), "…ズ");
+        assert_eq!(fit_start("チーズ", 5), "…ーズ");
+        assert_eq!(width(&fit_start("チーズ", 4)), 3);
+    }
+
+    #[test]
+    fn a_cut_start_drops_the_space_after_the_ellipsis() {
+        assert_eq!(fit_start("one two", 5), "…two");
+    }
 
     #[test]
     fn text_that_fits_stays_whole() {

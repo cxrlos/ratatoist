@@ -85,11 +85,15 @@ pub(super) fn finder(
     frame.render_widget(block, popup);
 
     let room = usize::from(inner.width);
+    let prompt = format!(" {prompt} ");
+    let cursor = " ";
+    // The end of a long query is what was just typed, so its start is cut.
+    let query_room = room.saturating_sub(text::width(&prompt) + text::width(cursor));
     let query_line = text::fit_line(
         Line::from(vec![
-            Span::styled(format!(" {prompt} "), style::accent(theme)),
-            Span::raw(query.to_owned()),
-            Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
+            Span::styled(prompt, style::accent(theme)),
+            Span::raw(text::fit_start(query, query_room)),
+            Span::styled(cursor, Style::new().add_modifier(Modifier::REVERSED)),
         ]),
         room,
     );

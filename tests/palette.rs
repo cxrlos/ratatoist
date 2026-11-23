@@ -287,6 +287,21 @@ fn enter_with_nothing_matching_keeps_the_palette_open() {
 }
 
 #[test]
+fn a_long_query_keeps_its_last_typed_characters_and_the_cursor() {
+    let mut app = list(80, 24);
+    let query = "the plants, the winter trip, the reading group chapter, the dentist, the train and the end";
+    send(&mut app, [key(':')]);
+    send(&mut app, typed(query));
+
+    let rows = screen(&app);
+    let line = rows.iter().find(|row| row.contains(" : ")).unwrap();
+    let after_prompt = &line[line.find(" : ").unwrap() + 3..];
+
+    assert!(after_prompt.starts_with('…'));
+    assert!(after_prompt.contains("train and the end "));
+}
+
+#[test]
 fn palette_typing_prio_at_120x36() {
     let mut app = list(120, 36);
     send(&mut app, [key(':')]);
