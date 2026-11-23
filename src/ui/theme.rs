@@ -136,25 +136,6 @@ impl Theme {
         .collect()
     }
 
-    pub fn load_user_themes(dir: &std::path::Path) -> Vec<Self> {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return Vec::new();
-        };
-        let mut themes = Vec::new();
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("json")
-                && let Ok(src) = std::fs::read_to_string(&path)
-                && let Ok(scheme) = serde_json::from_str::<Base16Scheme>(&src)
-                && let Ok(theme) = Self::from_scheme(&scheme)
-            {
-                themes.push(theme);
-            }
-        }
-        themes.sort_by(|a, b| a.name.cmp(&b.name));
-        themes
-    }
-
     /// Map a Todoist color name to the closest `Color` in this theme.
     pub fn color_for(&self, todoist_color: &str) -> Color {
         match color_scheme(todoist_color) {
