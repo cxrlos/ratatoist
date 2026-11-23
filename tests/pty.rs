@@ -45,7 +45,12 @@ impl Pty {
     /// pseudo-terminal does not behave as one started from a shell. `exec`
     /// keeps the pid ratatoist's, so signals reach it and not bash.
     fn ratatoist() -> Self {
-        Self::spawn_with(
+        Self::ratatoist_with_config(None)
+    }
+
+    /// [`Pty::ratatoist`], with `config_toml` already in the config folder.
+    fn ratatoist_with_config(config_toml: Option<&str>) -> Self {
+        Self::spawn_in(
             Path::new("/bin/bash"),
             &[
                 "--norc",
@@ -55,6 +60,7 @@ impl Pty {
                 "exec \"$RATATOIST\" --demo",
             ],
             &[("RATATOIST", env!("CARGO_BIN_EXE_ratatoist"))],
+            config_toml,
         )
     }
 
@@ -62,6 +68,17 @@ impl Pty {
     /// and XDG directories fresh and empty but for an empty
     /// `$XDG_CONFIG_HOME/ratatoist`.
     fn spawn_with(program: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
+        Self::spawn_in(program, args, env, None)
+    }
+
+    /// [`Pty::spawn_with`], with `config_toml` written to
+    /// `$XDG_CONFIG_HOME/ratatoist/config.toml` before the program starts.
+    fn spawn_in(
+        program: &Path,
+        args: &[&str],
+        env: &[(&str, &str)],
+        config_toml: Option<&str>,
+    ) -> Self {
         let home = TempDir::new();
         let pair = native_pty_system()
             .openpty(PtySize {
@@ -92,6 +109,9 @@ impl Pty {
         // As on a machine that has run ratatoist before, so a stray write to
         // the config folder lands and the file checks see it.
         fs::create_dir(home.0.join("config").join("ratatoist")).unwrap();
+        if let Some(text) = config_toml {
+            fs::write(home.0.join("config/ratatoist/config.toml"), text).unwrap();
+        }
         let child = pair.slave.spawn_command(command).unwrap();
 
         let output = Arc::new(Mutex::new(Vec::new()));
@@ -275,6 +295,21 @@ fn quitting_leaves_the_terminal_cooked_on_the_main_screen() {
     pty.assert_restored();
     pty.assert_no_shell_rc_files();
     pty.assert_only_a_log_in_the_state_dir();
+}
+
+#[test]
+fn the_demo_never_reads_the_config_file() {
+    let mut pty = Pty::ratatoist_with_config(Some("not_a_key = 1\n[theme]\nname = \"dracula\"\n"));
+    pty.wait_for_takeover();
+
+    pty.press(b"q");
+
+    pty.wait_until("ratatoist exits", Pty::exited);
+    assert!(
+        !pty.output().contains("config.toml"),
+        "the demo reported on config.toml, so it read it: {}",
+        pty.output()
+    );
 }
 
 #[test]

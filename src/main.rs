@@ -32,22 +32,23 @@ async fn start(cli: Cli) -> Result<()> {
         return auth::run(command).await;
     }
 
+    if cli.demo {
+        // The demo account is fictional: it reads nothing from the config
+        // folder (no config.toml, themes, settings or sync token) and writes
+        // nothing there, so it always starts from defaults.
+        let _log_guard = logging::init(&paths::state_dir()?)?;
+        return run_app(demo::client(runtime::today()), &Config::default(), None).await;
+    }
+
     let config_dir = paths::config_dir()?;
     let config = config::load(&config_dir);
     for warning in &config.warnings {
         eprintln!("{warning}");
     }
     let _log_guard = logging::init(&paths::state_dir()?)?;
-
-    if cli.demo {
-        // The demo account is fictional: its sync token and settings must
-        // never replace the real ones.
-        run_app(demo::client(runtime::today()), &config, None).await
-    } else {
-        let resolved = auth::resolve()?;
-        let client = HttpClient::new(&resolved.token)?;
-        run_app(client, &config, Some(&config_dir)).await
-    }
+    let resolved = auth::resolve()?;
+    let client = HttpClient::new(&resolved.token)?;
+    run_app(client, &config, Some(&config_dir)).await
 }
 
 /// Runs the TUI against `client`, reading and saving the sync token and
