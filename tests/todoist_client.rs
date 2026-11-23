@@ -279,6 +279,33 @@ async fn a_429_waits_for_retry_after_then_succeeds() {
 }
 
 #[tokio::test]
+async fn a_huge_retry_after_is_capped_at_sixty_units() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", u64::MAX.to_string()))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("HYPOTHETICAL_user.json")))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = client_for(&server);
+
+    let started = Instant::now();
+    let user = tokio::time::timeout(Duration::from_secs(3), client.user()).await;
+
+    assert!(matches!(user, Ok(Ok(_))), "{user:?}");
+    // Sixty units of 10 ms, jitter included.
+    let waited = started.elapsed();
+    assert!(waited >= Duration::from_millis(600), "{waited:?}");
+}
+
+#[tokio::test]
 async fn a_429_that_never_clears_is_rate_limited_with_the_body_wait() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

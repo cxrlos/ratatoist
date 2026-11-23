@@ -19,6 +19,9 @@ pub const BASE_URL: &str = "https://api.todoist.com/api/v1";
 
 /// How many times a rate-limited request is sent again before giving up.
 const MAX_RETRIES: u32 = 3;
+/// The longest one rate-limit wait lasts, in retry units, whatever
+/// `Retry-After` asks for: the wait runs inside a request the app awaits.
+const MAX_WAIT_UNITS: u64 = 60;
 /// The most pages a cursor-paged list loads.
 pub const MAX_PAGES: usize = 50;
 
@@ -209,7 +212,8 @@ impl HttpClient {
 
     /// Sends the request `build` makes, and again after each 429, waiting
     /// `Retry-After` (or `error_extra.retry_after`, or a doubling backoff)
-    /// plus up to two units of jitter, up to [`MAX_RETRIES`] times.
+    /// plus up to two units of jitter, capped at [`MAX_WAIT_UNITS`], up to
+    /// [`MAX_RETRIES`] times.
     async fn send<T: DeserializeOwned>(
         &self,
         build: impl Fn() -> RequestBuilder,
@@ -229,9 +233,10 @@ impl HttpClient {
                     let units = retry_after.unwrap_or(backoff_units);
                     let jitter = rand::random::<u64>() % 3;
                     warn!(retries, units, jitter, "rate limited, backing off");
+                    let total = units.saturating_add(jitter).min(MAX_WAIT_UNITS);
                     let wait = self
                         .retry_unit
-                        .saturating_mul(u32::try_from(units + jitter).unwrap_or(u32::MAX));
+                        .saturating_mul(u32::try_from(total).unwrap_or(u32::MAX));
                     tokio::time::sleep(wait).await;
                     backoff_units = (backoff_units * 2).min(60);
                 }
