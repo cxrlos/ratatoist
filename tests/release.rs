@@ -340,8 +340,7 @@ fn the_cheatsheet_line_points_a_cargo_install_at_the_readme() {
 
     assert!(shows(
         &app,
-        "ratatoist v99.0.0 is available: upgrade the way you installed it; see \
-         github.com/cxrlos/ratatoist#quick-start"
+        "ratatoist v99.0.0 is available: see https://github.com/cxrlos/ratatoist#quick-start"
     ));
 }
 
@@ -423,7 +422,7 @@ fn only_homebrew_and_cargo_installs_get_an_upgrade_hint() {
     assert_eq!(Channel::Homebrew.upgrade(), Some("brew upgrade ratatoist"));
     assert_eq!(
         Channel::CargoBin.upgrade(),
-        Some("upgrade the way you installed it; see github.com/cxrlos/ratatoist#quick-start")
+        Some("see https://github.com/cxrlos/ratatoist#quick-start")
     );
     assert_eq!(Channel::Aur.upgrade(), None);
     assert_eq!(Channel::Nix.upgrade(), None);

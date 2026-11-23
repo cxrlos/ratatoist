@@ -93,9 +93,7 @@ impl Channel {
     pub fn upgrade(self) -> Option<&'static str> {
         match self {
             Self::Homebrew => Some("brew upgrade ratatoist"),
-            Self::CargoBin => Some(
-                "upgrade the way you installed it; see github.com/cxrlos/ratatoist#quick-start",
-            ),
+            Self::CargoBin => Some("see https://github.com/cxrlos/ratatoist#quick-start"),
             Self::Aur | Self::Nix => None,
         }
     }
@@ -218,6 +216,14 @@ impl ReleaseCache {
         &self.path
     }
 
+    /// The temporary file [`Self::save`] writes before the rename, named
+    /// for this process so two sessions saving at once never share one.
+    fn tmp_path(&self) -> PathBuf {
+        let mut name = self.path.as_os_str().to_owned();
+        name.push(format!(".{}.tmp", std::process::id()));
+        PathBuf::from(name)
+    }
+
     /// What the last checks found, or an empty record when there is no
     /// file or it cannot be read, which only makes the next check due.
     pub fn load(&self) -> Record {
@@ -256,7 +262,7 @@ impl ReleaseCache {
                 .create(dir)
                 .with_context(|| format!("creating {}", dir.display()))?;
         }
-        let tmp = self.path.with_extension("json.tmp");
+        let tmp = self.tmp_path();
         fs::write(&tmp, json).with_context(|| format!("writing {}", tmp.display()))?;
         fs::rename(&tmp, &self.path).with_context(|| format!("replacing {}", self.path.display()))
     }
@@ -501,7 +507,23 @@ mod tests {
             json,
             r#"{"checked_at":"2026-11-18T09:00:00Z","latest":"0.7.1","skipped":"0.7.1"}"#
         );
-        assert!(!cache.path().with_extension("json.tmp").exists());
+        let dir = cache.path().parent().unwrap();
+        let names: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["release.json"]);
+    }
+
+    #[test]
+    fn each_process_saves_through_its_own_temporary_file() {
+        let cache = ReleaseCache::new(scratch_dir("temporary"));
+        let tmp = cache.tmp_path();
+        assert_eq!(tmp.parent(), cache.path().parent());
+        assert_eq!(
+            tmp.file_name().unwrap().to_string_lossy(),
+            format!("release.json.{}.tmp", std::process::id())
+        );
     }
 
     #[test]
