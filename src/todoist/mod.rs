@@ -1,6 +1,7 @@
 //! Everything ratatoist needs from Todoist goes through [`TodoistClient`], so
 //! tests and `--demo` swap the real client for [`FakeClient`].
 
+pub mod demo;
 pub mod fake;
 pub mod http;
 mod live;

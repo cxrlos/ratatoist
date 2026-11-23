@@ -10,7 +10,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatoist::app::App;
 use ratatoist::cli::{Cli, Command};
 use ratatoist::config::{self, Config};
-use ratatoist::todoist::{FakeClient, HttpClient, TodoistClient};
+use ratatoist::todoist::{HttpClient, TodoistClient, demo};
 use ratatoist::{auth, logging, paths, runtime, terminal};
 
 /// Prints a failure as its plain message on stderr and exits 1. Every
@@ -42,7 +42,12 @@ async fn start(cli: Cli) -> Result<()> {
     if cli.demo {
         // The demo account is fictional: its sync token and settings must
         // never replace the real ones.
-        run_app(FakeClient::new(), &config, None).await
+        run_app(
+            demo::client(runtime::initial_state(&config, None).today),
+            &config,
+            None,
+        )
+        .await
     } else {
         let resolved = auth::resolve()?;
         let client = HttpClient::new(&resolved.token)?;
