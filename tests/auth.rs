@@ -10,7 +10,11 @@ use ratatoist::auth::keyring::{Keyring, KeyringError, MemoryKeyring};
 use ratatoist::auth::{self, ApiToken, AuthError, Resolved, Source};
 use ratatoist::todoist::model::{Comment, Task, UserInfo};
 use ratatoist::todoist::sync::{SyncRequest, SyncResponse};
-use ratatoist::todoist::{ClientError, CompletedQuery, LiveMessage, TodoistClient};
+use ratatoist::todoist::{
+    ClientConfig, ClientError, CompletedQuery, HttpClient, LiveMessage, TodoistClient,
+};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const SECRET: &str = "0123456789abcdef0123456789abcdef01234567";
 const OTHER_SECRET: &str = "fedcba9876543210fedcba9876543210fedcba98";
@@ -414,6 +418,32 @@ async fn login_rejects_a_token_todoist_refuses_and_stores_nothing() {
 
     assert!(matches!(error, AuthError::LoginRejected), "{error}");
     assert!(error.to_string().contains("Nothing was stored"));
+    assert_eq!(keyring.stored(), None);
+}
+
+/// The same through the real client: a 401 from the user route.
+#[tokio::test]
+async fn login_rejects_a_real_401_and_stores_nothing() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .respond_with(ResponseTemplate::new(401).set_body_string("Forbidden"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let keyring = MemoryKeyring::default();
+    let config = ClientConfig {
+        base_url: server.uri(),
+        ..ClientConfig::default()
+    };
+
+    let error = auth::login(&keyring, token(SECRET), false, |token| {
+        HttpClient::with_config(token, config)
+    })
+    .await
+    .unwrap_err();
+
+    assert!(matches!(error, AuthError::LoginRejected), "{error}");
     assert_eq!(keyring.stored(), None);
 }
 
