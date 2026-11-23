@@ -324,7 +324,37 @@ fn a_config_that_does_not_parse_is_left_alone() {
 
     let (resolved, _) = resolve(None, &MemoryKeyring::default(), &dir.0);
 
-    assert!(matches!(resolved, Err(AuthError::NoToken)));
+    let message = resolved.unwrap_err().to_string();
+    assert!(message.contains("does not parse"), "{message}");
+    assert!(message.contains("api_token"), "{message}");
+    assert!(message.contains("ratatoist auth login"), "{message}");
+    assert!(!message.contains(SECRET));
+    assert_eq!(dir.read_config(), text);
+}
+
+#[test]
+fn an_invalid_config_token_is_reported_not_ignored() {
+    let text = "api_token = \"not a token\"\n";
+    let dir = TempDir::with_config("migrateinvalid", text);
+
+    let (resolved, _) = resolve(None, &MemoryKeyring::default(), &dir.0);
+
+    let message = resolved.unwrap_err().to_string();
+    assert!(message.contains("api_token"), "{message}");
+    assert!(message.contains("not a valid API token"), "{message}");
+    assert!(!message.contains("not a token"), "{message}");
+    assert_eq!(dir.read_config(), text);
+}
+
+#[test]
+fn a_keyring_token_still_wins_over_a_config_token_that_cannot_move() {
+    let text = "api_token = \"0123456789abcdef0123456789abcdef01234567\"\n[sync\n";
+    let dir = TempDir::with_config("migratebrokenkeyring", text);
+
+    let (resolved, notes) = resolve(None, &MemoryKeyring::holding(token(OTHER_SECRET)), &dir.0);
+
+    assert_eq!(resolved.unwrap().token.expose(), OTHER_SECRET);
+    assert_eq!(notes, "");
     assert_eq!(dir.read_config(), text);
 }
 

@@ -76,6 +76,11 @@ pub enum AuthError {
         "could not move the api_token in {path} into the OS keyring, so the file is unchanged: {source}"
     )]
     Migration { path: String, source: KeyringError },
+    #[error(
+        "No Todoist token: {path} has an api_token, but {why}, so it was not moved into the OS keyring. \
+         Fix or delete that line, then run \"ratatoist auth login\", or set {TOKEN_VAR}."
+    )]
+    Unmovable { path: String, why: &'static str },
     #[error("reading the API token")]
     ReadToken(#[source] io::Error),
     #[error("setting up the Todoist client: {0}")]
@@ -115,7 +120,10 @@ pub fn resolve_from(
             source: Source::Env,
         });
     }
-    let legacy = migrate::Legacy::find(config_dir);
+    let (legacy, stuck) = match migrate::Legacy::find(config_dir) {
+        Ok(legacy) => (legacy, None),
+        Err(stuck) => (None, Some(stuck)),
+    };
     let stored = match (keyring.get(), &legacy) {
         (Ok(stored), _) => stored,
         (Err(source), Some(legacy)) => {
@@ -128,7 +136,14 @@ pub fn resolve_from(
     };
     let token = match (stored, legacy) {
         (Some(token), None) => token,
-        (None, None) => return Err(AuthError::NoToken),
+        (None, None) => {
+            return Err(
+                stuck.map_or(AuthError::NoToken, |stuck| AuthError::Unmovable {
+                    path: stuck.path,
+                    why: stuck.why,
+                }),
+            );
+        }
         (Some(token), Some(legacy)) => {
             note(
                 notes,

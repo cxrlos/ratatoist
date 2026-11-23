@@ -10,6 +10,13 @@ use std::path::{Path, PathBuf};
 use super::ApiToken;
 use crate::config::FILE;
 
+/// An `api_token` in `config.toml` that cannot be moved into the keyring.
+#[derive(Debug)]
+pub(super) struct Stuck {
+    pub(super) path: String,
+    pub(super) why: &'static str,
+}
+
 /// A `config.toml` holding a top-level `api_token`.
 pub(super) struct Legacy {
     path: PathBuf,
@@ -20,27 +27,45 @@ pub(super) struct Legacy {
 }
 
 impl Legacy {
-    /// The `api_token` in `config_dir/config.toml`, if the file parses and
-    /// holds a valid one. A file that does not parse is left to the config
-    /// loader to report.
+    /// The `api_token` in `config_dir/config.toml`, if the file holds one.
+    /// `Ok(None)` when there is no file or no key; [`Stuck`] when the key is
+    /// there but cannot be moved, because the file does not parse or the
+    /// value is not a valid token.
     ///
     /// A symlinked `config.toml` (a dotfiles checkout, say) resolves to its
     /// target, so the rewrite edits the real file and leaves the link alone.
-    pub(super) fn find(config_dir: &Path) -> Option<Self> {
-        let path = fs::canonicalize(config_dir.join(FILE)).ok()?;
-        let text = fs::read_to_string(&path).ok()?;
-        let document = toml_edit::Document::parse(text.as_str()).ok()?;
-        let (key, item) = document.as_table().get_key_value("api_token")?;
-        let token = ApiToken::new(item.as_str()?).ok()?;
-        let start = key.span()?.start;
-        let end = item.span()?.end;
-        let lines = line_start(&text, start)..line_end(&text, end);
-        Some(Self {
+    pub(super) fn find(config_dir: &Path) -> Result<Option<Self>, Stuck> {
+        let Ok(path) = fs::canonicalize(config_dir.join(FILE)) else {
+            return Ok(None);
+        };
+        let Ok(text) = fs::read_to_string(&path) else {
+            return Ok(None);
+        };
+        let stuck = |why| Stuck {
+            path: path.display().to_string(),
+            why,
+        };
+        let document = match toml_edit::Document::parse(text.as_str()) {
+            Ok(document) => document,
+            Err(_) if mentions_api_token(&text) => return Err(stuck("the file does not parse")),
+            Err(_) => return Ok(None),
+        };
+        let Some((key, item)) = document.as_table().get_key_value("api_token") else {
+            return Ok(None);
+        };
+        let Some(token) = item.as_str().and_then(|raw| ApiToken::new(raw).ok()) else {
+            return Err(stuck("its value is not a valid API token"));
+        };
+        let (Some(key), Some(item)) = (key.span(), item.span()) else {
+            return Err(stuck("its position in the file is unknown"));
+        };
+        let lines = line_start(&text, key.start)..line_end(&text, item.end);
+        Ok(Some(Self {
             path,
             text,
             token,
             lines,
-        })
+        }))
     }
 
     pub(super) fn path(&self) -> &Path {
@@ -78,6 +103,15 @@ impl Legacy {
             }
         }
     }
+}
+
+/// Whether a line of a file that does not parse looks like `api_token = ...`.
+fn mentions_api_token(text: &str) -> bool {
+    text.lines().any(|line| {
+        line.trim_start()
+            .strip_prefix("api_token")
+            .is_some_and(|rest| rest.trim_start().starts_with('='))
+    })
 }
 
 fn line_start(text: &str, offset: usize) -> usize {
