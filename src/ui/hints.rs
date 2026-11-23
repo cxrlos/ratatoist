@@ -81,10 +81,10 @@ fn line_items(state: &State, rows: &[HintRow]) -> (HintRow, Vec<Item>) {
 }
 
 /// Whether typed keys go to a text field now: the open prompt's, the
-/// add-task form's active text field, or the palette's query.
+/// add-task form's active text field, or the palette's or a picker's query.
 fn takes_text(state: &State) -> bool {
     match state.top_modal() {
-        Some(Modal::Input(_) | Modal::Palette(_)) => true,
+        Some(Modal::Input(_) | Modal::Palette(_) | Modal::Picker(_)) => true,
         Some(Modal::Form(form)) => form.editing(),
         _ => false,
     }

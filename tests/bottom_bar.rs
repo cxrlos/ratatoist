@@ -180,6 +180,19 @@ fn a_picker_shows_only_its_own_keys() {
 }
 
 #[test]
+fn a_picker_leaves_out_the_keys_its_filter_takes() {
+    let mut app = picker(NARROW);
+    send(&mut app, [key('j')]);
+    assert!(
+        matches!(app.state().top_modal(), Some(Modal::Picker(picker)) if picker.query() == "j")
+    );
+
+    let bar = bar(&app);
+    assert!(!bar.contains("j/k"));
+    assert!(bar.contains("Esc close"));
+}
+
+#[test]
 fn a_text_field_leaves_out_the_keys_that_would_type() {
     let app = text_field(NARROW);
 
