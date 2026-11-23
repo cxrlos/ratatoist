@@ -1915,7 +1915,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
 dependencies = [
  "phf_shared",
- "rand 0.8.6",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -2095,9 +2095,9 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
 name = "rand"
-version = "0.8.6"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
+checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
  "libc",
  "rand_chacha",
@@ -2166,7 +2166,7 @@ dependencies = [
  "keyring-core",
  "linux-keyutils-keyring-store",
  "portable-pty",
- "rand 0.8.6",
+ "rand 0.10.3",
  "ratatui",
  "reqwest",
  "rpassword",
@@ -3264,7 +3264,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rustls",
  "rustls-pki-types",
  "sha1",
