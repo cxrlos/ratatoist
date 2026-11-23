@@ -82,7 +82,7 @@ To read the token from a password manager instead, pipe it in: `pass show todois
 <details>
 <summary><strong>Comments and collaboration</strong></summary>
 
-- Multi-user comment threads with per-user colors
+- Multi-user comment threads
 - Consecutive same-user message collapsing
 - Attachment display with file type metadata
 - Add comments from the detail pane (`c`)
@@ -93,10 +93,10 @@ To read the token from a password manager instead, pipe it in: `pass show todois
 <details>
 <summary><strong>Theming</strong></summary>
 
-- 10 built-in themes: Rose Pine, Gruvbox Dark, Dracula, Nord, One Dark, Solarized Dark, Catppuccin Mocha, Tokyo Night, Monokai, Material Dark
-- Theme picker in Settings (`,` → theme)
+- Themes: a terminal default, ten Base16 built-ins and your own files, chosen with `[theme] name` in `config.toml` (`NO_COLOR` respected)
+- The Base16 built-ins: Rose Pine, Gruvbox Dark, Dracula, Nord, One Dark, Solarized Dark, Catppuccin Mocha, Tokyo Night, Monokai, Material Dark
 - Custom themes: drop any Base16 JSON file into `~/.config/ratatoist/themes/`
-- Theme and idle timeout preferences persisted across sessions
+- Unicode or Nerd Font glyphs with `[ui] icons`
 
 </details>
 
