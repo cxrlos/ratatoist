@@ -19,7 +19,7 @@ use crate::todoist::model::{Comment, Task};
 use crate::todoist::sync::SyncCommand;
 use crate::todoist::{CompletedQuery, LiveMessage};
 use crate::ui;
-use crate::ui::views::detail::{self, DetailField};
+use crate::ui::detail;
 
 /// What one event did: whether the screen changed, and what to ask the
 /// outside world for.
@@ -409,12 +409,12 @@ impl State {
             | Action::MoveToTop
             | Action::MoveToBottom
             | Action::HalfPageDown
-            | Action::HalfPageUp => self.move_cursor(action),
+            | Action::HalfPageUp => self.move_cursor(action, effects),
             Action::LineDown | Action::LineUp => {
                 self.active_pane == Pane::Detail && self.scroll_detail(action)
             }
             Action::FocusLeft => self.focus_left(),
-            Action::FocusRight => self.focus_right(),
+            Action::FocusRight => self.focus_right(effects),
             Action::Open => {
                 if self.active_pane != Pane::Tasks || self.selected_task().is_none() {
                     return false;
@@ -435,11 +435,14 @@ impl State {
             Action::Comment => open_prompt(self, PromptField::Comment),
             Action::ToggleFold => self.toggle_fold(),
             Action::OpenAllFolds => {
-                self.collapsed.clear();
+                self.keep_focus(|state| {
+                    state.collapsed.clear();
+                    state.overdue_section_collapsed = false;
+                });
                 true
             }
             Action::CloseAllFolds => {
-                self.close_all_folds();
+                self.keep_focus(Self::close_all_folds);
                 true
             }
             Action::FilterList => {
@@ -464,7 +467,7 @@ impl State {
         }
         self.screen = screen;
         self.active_pane = match screen {
-            Screen::Projects | Screen::Labels => Pane::Projects,
+            Screen::Projects | Screen::Labels => Pane::Browse,
             Screen::Inbox | Screen::Today | Screen::Upcoming => Pane::Tasks,
         };
         self.list_filter = ListFilter::default();
@@ -491,18 +494,20 @@ impl State {
         match self.active_pane {
             Pane::Detail => {
                 self.active_pane = Pane::Tasks;
-                self.detail_scroll = 0;
+                if !self.is_wide() {
+                    self.detail_scroll = 0;
+                }
                 true
             }
-            Pane::Tasks | Pane::Projects if self.list_filter != ListFilter::default() => {
+            Pane::Tasks if self.list_filter != ListFilter::default() => {
                 self.keep_focus(|state| state.list_filter = ListFilter::default());
                 true
             }
             Pane::Tasks if self.screen == Screen::Projects => {
-                self.active_pane = Pane::Projects;
+                self.active_pane = Pane::Browse;
                 true
             }
-            Pane::Tasks | Pane::Projects => false,
+            Pane::Tasks | Pane::Browse => false,
         }
     }
 
@@ -639,22 +644,56 @@ impl State {
         }
     }
 
-    /// Moves the cursor of the focused pane, or the detail's field cursor
-    /// and scroll.
-    fn move_cursor(&mut self, action: Action) -> bool {
-        match (self.active_pane, action) {
-            (Pane::Detail, Action::MoveDown) => self.move_detail_field(1),
-            (Pane::Detail, Action::MoveUp) => self.move_detail_field(-1),
-            (Pane::Detail, Action::MoveToTop) => self.detail_field = DetailField::Content,
-            (Pane::Detail, Action::MoveToBottom) => self.detail_field = DetailField::Description,
-            (Pane::Detail, _) => return self.scroll_detail(action),
-            (Pane::Tasks, _) => self.move_in_tasks(action),
-            (Pane::Projects, _) if self.screen == Screen::Projects => {
-                self.move_in_projects(action);
+    /// Moves the focus of the list, or scrolls the detail by rows. Beside
+    /// the list, the detail follows the focused task.
+    fn move_cursor(&mut self, action: Action, effects: &mut Vec<Effect>) -> bool {
+        match self.active_pane {
+            Pane::Detail => self.scroll_detail(action),
+            Pane::Tasks => {
+                let before = self.selected_task().map(|task| task.id.clone());
+                self.move_in_tasks(action);
+                let after = self.selected_task().map(|task| task.id.clone());
+                if before != after {
+                    self.follow_focus(effects);
+                }
+                true
             }
-            (Pane::Projects, _) => return false,
+            Pane::Browse if self.screen == Screen::Projects => {
+                self.move_in_projects(action);
+                true
+            }
+            Pane::Browse => false,
         }
-        true
+    }
+
+    /// Whether the list and the detail show side by side now: on a wide
+    /// terminal, on a task list or its detail.
+    pub(crate) fn shows_panes(&self) -> bool {
+        self.is_wide() && self.active_pane != Pane::Browse && !self.loading
+    }
+
+    /// Beside the list, shows the detail of the task the list focuses now:
+    /// from its top, with the comments loaded so far, asking for them when
+    /// none are.
+    fn follow_focus(&mut self, effects: &mut Vec<Effect>) {
+        if !self.shows_panes() {
+            return;
+        }
+        self.detail_scroll = 0;
+        let Some(task) = self.selected_task() else {
+            return;
+        };
+        let task_id = task.id.clone();
+        let wants_comments = task.note_count.unwrap_or(0) > 0;
+        match self.comments_by_task.get(&task_id) {
+            Some(cached) => self.comments = cached.clone(),
+            None => {
+                self.comments.clear();
+                if wants_comments {
+                    self.fetch_comments(task_id, effects);
+                }
+            }
+        }
     }
 
     /// Half the rows of the list on screen, the step of a half-page move.
@@ -732,27 +771,30 @@ impl State {
         }
     }
 
-    /// From the detail back to its list. The list and the detail show one
-    /// at a time, so there is no pane to its left otherwise.
+    /// From the detail to the list beside it. Below the wide layout only
+    /// one of them shows, so neither has a pane beside it.
     fn focus_left(&mut self) -> bool {
-        if self.active_pane != Pane::Detail {
+        if !self.shows_panes() || self.active_pane != Pane::Detail {
             return false;
         }
         self.active_pane = Pane::Tasks;
-        self.detail_scroll = 0;
         true
     }
 
-    /// The list and the detail show one at a time, so there is no pane to
-    /// the right of either.
-    fn focus_right(&mut self) -> bool {
-        false
+    /// From the list to the detail beside it, when a task is focused.
+    fn focus_right(&mut self, effects: &mut Vec<Effect>) -> bool {
+        if !self.shows_panes() || self.active_pane != Pane::Tasks || self.selected_task().is_none()
+        {
+            return false;
+        }
+        self.open_detail(effects);
+        true
     }
 
     /// Opens the focused project's tasks from the Projects tree.
     fn open_list(&mut self) -> bool {
         if self.screen != Screen::Projects
-            || self.active_pane != Pane::Projects
+            || self.active_pane != Pane::Browse
             || self.folder_cursor.is_some()
             || self.projects.get(self.selected_project).is_none()
         {
@@ -782,13 +824,15 @@ impl State {
         open_prompt(self, field)
     }
 
-    /// Folds the focused row: the Overdue group in the Today view, a task's
-    /// subtasks, or the focused folder.
+    /// Folds the focused row: the Overdue group on Today, which lists no
+    /// subtasks, a task's subtasks in a project, or the focused folder.
     fn toggle_fold(&mut self) -> bool {
-        match self.active_pane {
-            Pane::Tasks if self.screen == Screen::Today => self.toggle_overdue_section(),
-            Pane::Tasks => self.toggle_collapse(),
-            Pane::Projects if self.screen == Screen::Projects => self.toggle_folder_collapse(),
+        match (self.active_pane, self.screen) {
+            (Pane::Tasks, Screen::Today) => self.keep_focus(|state| {
+                state.overdue_section_collapsed = !state.overdue_section_collapsed;
+            }),
+            (Pane::Tasks, Screen::Inbox | Screen::Projects) => self.toggle_collapse(),
+            (Pane::Browse, Screen::Projects) => self.toggle_folder_collapse(),
             _ => return false,
         }
         true
@@ -817,7 +861,6 @@ impl State {
 
         self.active_pane = Pane::Detail;
         self.detail_scroll = 0;
-        self.detail_field = DetailField::Content;
 
         // Serve cached comments immediately, refresh in background.
         if let Some(cached) = self.comments_by_task.get(&task_id) {
@@ -831,13 +874,6 @@ impl State {
     fn switch_to_project_tasks(&mut self) {
         self.selected_task = 0;
         self.detail_scroll = 0;
-    }
-
-    fn toggle_overdue_section(&mut self) {
-        self.overdue_section_collapsed = !self.overdue_section_collapsed;
-        if self.overdue_section_collapsed {
-            self.selected_task = 0;
-        }
     }
 
     fn complete_selected_task(&mut self, effects: &mut Vec<Effect>) {
@@ -1026,11 +1062,19 @@ impl State {
             item_id: Some(task_id.clone()),
             ..Comment::default()
         };
-        // The comment list is the open detail's; a comment from the list
-        // shows there only when that detail is on the same task.
-        if self.active_pane == Pane::Detail
-            && self.selected_task().map(|t| t.id.as_str()) == Some(task_id.as_str())
-        {
+        // The comment list is the shown detail's; a comment shows there
+        // when it is on the focused task, whose detail that is.
+        if self.selected_task().map(|t| t.id.as_str()) == Some(task_id.as_str()) {
+            let other_task = |c: &Comment| {
+                c.item_id.as_deref().or(c.task_id.as_deref()) != Some(task_id.as_str())
+            };
+            if self.comments.iter().any(other_task) {
+                self.comments = self
+                    .comments_by_task
+                    .get(&task_id)
+                    .cloned()
+                    .unwrap_or_default();
+            }
             self.comments.push(optimistic);
             self.comments_fetch_seq += 1;
         }
@@ -1173,14 +1217,6 @@ impl State {
         self.send_command(command, Some(op), effects);
     }
 
-    fn move_detail_field(&mut self, delta: i32) {
-        self.detail_field = if delta < 0 {
-            self.detail_field.prev()
-        } else {
-            self.detail_field.next()
-        };
-    }
-
     fn max_detail_scroll(&self) -> u16 {
         detail::max_scroll(self, self.screen_size())
     }
@@ -1196,8 +1232,10 @@ impl State {
         self.detail_scroll = match by {
             Action::HalfPageDown => current.saturating_add(half_page),
             Action::HalfPageUp => current.saturating_sub(half_page),
-            Action::LineDown => current.saturating_add(1),
-            Action::LineUp => current.saturating_sub(1),
+            Action::LineDown | Action::MoveDown => current.saturating_add(1),
+            Action::LineUp | Action::MoveUp => current.saturating_sub(1),
+            Action::MoveToTop => 0,
+            Action::MoveToBottom => max,
             _ => current,
         }
         .min(max);

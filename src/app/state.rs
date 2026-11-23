@@ -13,10 +13,14 @@ use crate::keys::Keymap;
 use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
 use crate::ui::icons::{IconSet, Icons};
 use crate::ui::theme::{self, Theme};
-use crate::ui::views::detail::DetailField;
 
 /// How long the session waits without a key before it counts as idle.
 pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 300;
+
+/// The narrowest terminal, in columns, that shows a task list and the
+/// focused task's detail side by side, unless `[ui] wide-layout-columns`
+/// says otherwise.
+pub const DEFAULT_WIDE_LAYOUT_COLUMNS: u16 = 120;
 
 /// Everything the screen shows, and nothing else: no client, channel,
 /// terminal or file handle. Rendering reads only this.
@@ -43,7 +47,12 @@ pub struct State {
     pub sections: Vec<Section>,
     pub selected_project: usize,
     pub selected_task: usize,
+    /// The pane that takes keys: a task list, the focused task's detail, or
+    /// the tree of the Projects or Labels screen.
     pub active_pane: Pane,
+    /// From this many columns on, a task list and the detail of its focused
+    /// task show side by side; below it the focused pane fills the body.
+    pub wide_layout_columns: u16,
     /// The keys in force: the preset and the overrides from `config.toml`.
     pub keymap: Keymap,
     /// Overlays, drawn bottom to top; the top one takes keys. A
@@ -83,7 +92,6 @@ pub struct State {
     /// How the task list on screen is sorted.
     pub sort: Sort,
     pub comments: Vec<Comment>,
-    pub detail_field: DetailField,
     pub current_user_id: Option<String>,
     pub user_names: HashMap<String, UserRecord>,
     /// What the task list on screen narrows to.
@@ -136,6 +144,7 @@ impl State {
             selected_project: 0,
             selected_task: 0,
             active_pane: Pane::Tasks,
+            wide_layout_columns: DEFAULT_WIDE_LAYOUT_COLUMNS,
             keymap: Keymap::default(),
             modals: Vec::new(),
             input: TextField::default(),
@@ -152,7 +161,6 @@ impl State {
             release: ReleaseState::default(),
             sort: Sort::default(),
             comments: Vec::new(),
-            detail_field: DetailField::Content,
             current_user_id: None,
             user_names: HashMap::new(),
             list_filter: ListFilter::default(),
@@ -210,6 +218,12 @@ impl State {
     /// The terminal size, assuming 80x24 when no terminal has reported one.
     pub fn screen_size(&self) -> Size {
         self.viewport.unwrap_or(Size::new(80, 24))
+    }
+
+    /// Whether the terminal is wide enough to show a task list and the
+    /// detail side by side.
+    pub fn is_wide(&self) -> bool {
+        self.screen_size().width >= self.wide_layout_columns
     }
 
     /// Shows the error screen for `error` in place of the task lists; no
@@ -442,9 +456,11 @@ impl Sort {
     }
 }
 
+/// What takes keys on the screen: the tree of the Projects or Labels
+/// screen, a task list, or the focused task's detail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
-    Projects,
+    Browse,
     Tasks,
     Detail,
 }
@@ -459,20 +475,19 @@ pub struct OverviewStats {
 #[derive(Debug, Clone)]
 pub struct UserRecord {
     pub id: String,
-    pub display: String,
+    /// What a comment names its author by: the full name, or else the
+    /// email, or else the id.
+    pub name: String,
 }
 
 impl UserRecord {
     pub fn new(id: String, full_name: Option<String>, email: Option<String>) -> Self {
-        let name = full_name.unwrap_or_default();
-        let mail = email.unwrap_or_default();
-        let display = match (name.is_empty(), mail.is_empty()) {
-            (false, false) => format!("{name} - {mail}"),
-            (false, true) => name.clone(),
-            (true, false) => mail.clone(),
-            _ => id.clone(),
-        };
-        Self { id, display }
+        let name = [full_name, email]
+            .into_iter()
+            .flatten()
+            .find(|name| !name.is_empty())
+            .unwrap_or_else(|| id.clone());
+        Self { id, name }
     }
 }
 

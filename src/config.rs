@@ -4,6 +4,7 @@
 //! ```toml
 //! [ui]
 //! icons = "unicode"          # or "nerd", for a patched Nerd Font
+//! wide-layout-columns = 120  # from this width on, the detail shows beside the list
 //!
 //! [keys]
 //! preset = "standard"        # or "vim", the default
@@ -54,6 +55,9 @@ pub struct Config {
     pub theme: Option<String>,
     /// `[ui] icons`.
     pub icons: IconSet,
+    /// `[ui] wide-layout-columns`: from this many columns on, a task list
+    /// and the focused task's detail show side by side.
+    pub wide_layout_columns: Option<u16>,
     /// `[sync] idle-timeout`.
     pub idle_timeout: Option<Duration>,
     /// `[keys]`: the preset and the changes to its keys.
@@ -210,7 +214,9 @@ pub fn parse(text: &str, user_themes: &[Theme]) -> Config {
             }
             match name_str {
                 "ui" => {
-                    config.icons = reader.section("ui", value, read_ui).icons;
+                    let ui = reader.section("ui", value, read_ui);
+                    config.icons = ui.icons;
+                    config.wide_layout_columns = ui.wide_layout_columns;
                 }
                 "keys" => config.keys = reader.keys(value),
                 "theme" => {
@@ -299,21 +305,26 @@ type Setting = Option<Result<(), String>>;
 #[derive(Default)]
 struct UiSection {
     icons: IconSet,
+    wide_layout_columns: Option<u16>,
 }
 
 fn read_ui(ui: &mut UiSection, key: &str, value: &Spanned<DeValue>) -> Setting {
-    if key != "icons" {
-        return None;
-    }
-    Some(
-        match value.get_ref().as_str().and_then(IconSet::from_name) {
+    const COLUMNS: RangeInclusive<u64> = 0..=65_535;
+    Some(match key {
+        "icons" => match value.get_ref().as_str().and_then(IconSet::from_name) {
             Some(icons) => {
                 ui.icons = icons;
                 Ok(())
             }
             None => Err("`ui.icons` must be \"unicode\" or \"nerd\"".to_owned()),
         },
-    )
+        "wide-layout-columns" => {
+            integer(value, "ui.wide-layout-columns", "columns", COLUMNS).map(|columns| {
+                ui.wide_layout_columns = Some(u16::try_from(columns).unwrap_or(u16::MAX));
+            })
+        }
+        _ => return None,
+    })
 }
 
 #[derive(Default)]
@@ -343,13 +354,20 @@ struct SyncSection {
 fn read_sync(sync: &mut SyncSection, key: &str, value: &Spanned<DeValue>) -> Setting {
     const SECONDS: RangeInclusive<u64> = 0..=86_400;
     Some(match key {
-        "idle-timeout" => integer(value, "sync.idle-timeout", SECONDS)
+        "idle-timeout" => integer(value, "sync.idle-timeout", "seconds", SECONDS)
             .map(|seconds| sync.idle_timeout = Some(Duration::from_secs(seconds))),
         _ => return None,
     })
 }
 
-fn integer(value: &Spanned<DeValue>, key: &str, range: RangeInclusive<u64>) -> Result<u64, String> {
+/// The whole number `value` holds, when it is in `range`; otherwise why
+/// not, naming `key` and the `unit` it counts.
+fn integer(
+    value: &Spanned<DeValue>,
+    key: &str,
+    unit: &str,
+    range: RangeInclusive<u64>,
+) -> Result<u64, String> {
     value
         .get_ref()
         .as_integer()
@@ -357,7 +375,7 @@ fn integer(value: &Spanned<DeValue>, key: &str, range: RangeInclusive<u64>) -> R
         .filter(|number| range.contains(number))
         .ok_or_else(|| {
             format!(
-                "`{key}` must be a whole number of seconds from {} to {}",
+                "`{key}` must be a whole number of {unit} from {} to {}",
                 range.start(),
                 range.end()
             )

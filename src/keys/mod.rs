@@ -99,10 +99,10 @@ pub fn screen_contexts(state: &State) -> Vec<Context> {
     }
     match (state.screen, state.active_pane) {
         (_, Pane::Detail) => vec![Context::Detail, Context::Global],
-        (Screen::Projects, Pane::Projects) => {
+        (Screen::Projects, Pane::Browse) => {
             vec![Context::Projects, Context::Browse, Context::Global]
         }
-        (Screen::Labels, _) => vec![Context::Browse, Context::Global],
-        (_, Pane::Tasks | Pane::Projects) => vec![Context::List, Context::Global],
+        (_, Pane::Browse) => vec![Context::Browse, Context::Global],
+        (_, Pane::Tasks) => vec![Context::List, Context::Global],
     }
 }

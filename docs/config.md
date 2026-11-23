@@ -5,6 +5,7 @@ ratatoist reads `config.toml` from `$XDG_CONFIG_HOME/ratatoist/`, which is `~/.c
 ```toml
 [ui]
 icons = "unicode"
+wide-layout-columns = 120
 
 [keys]
 preset = "vim"
@@ -24,6 +25,7 @@ idle-timeout = 300
 | Key | Values | Default | Effect |
 | --- | --- | --- | --- |
 | `icons` | `"unicode"` or `"nerd"` | `"unicode"` | The glyphs for task state, priority, recurring, comments, folds, project kinds, the focused row, failed writes and the Overdue and Today markers. `"nerd"` needs a patched Nerd Font. |
+| `wide-layout-columns` | 0 to 65535 | `120` | From this many columns on, a task list and the focused task's detail sit side by side and the pane keys (`h` and `l` in the vim preset) move between them. On a narrower terminal the list fills the body, Enter opens the detail and Esc goes back. |
 
 The Unicode set, which any terminal font has:
 

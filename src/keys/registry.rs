@@ -6,10 +6,6 @@ use super::{Context, Key};
 use crate::app::{self, Action, Editable, ListFilter, Modal, Pane, Screen, State};
 use crate::ui;
 
-/// The narrowest terminal, in columns, that shows the task list and the
-/// detail side by side.
-const WIDE_COLUMNS: u16 = 120;
-
 /// One action as the user sees it: what it is called, where it applies,
 /// when it can run and which keys run it by default (the vim preset).
 #[derive(Debug)]
@@ -1001,16 +997,19 @@ fn knows_newer_release(state: &State) -> bool {
     state.release.notice().is_some()
 }
 
+/// Whether a task list or a detail is on screen with a task to act on.
 fn has_focused_task(state: &State) -> bool {
-    state.selected_task().is_some()
+    state.active_pane != Pane::Browse && state.selected_task().is_some()
 }
 
 fn has_focused_project(state: &State) -> bool {
     state.projects.get(state.selected_project).is_some()
 }
 
+/// Whether the list and the detail show side by side, so `h` and `l` have
+/// a pane to move to.
 fn is_wide(state: &State) -> bool {
-    state.screen_size().width >= WIDE_COLUMNS
+    state.shows_panes()
 }
 
 fn can_move_down(_: &State) -> bool {
@@ -1051,10 +1050,14 @@ fn can_accept(state: &State) -> bool {
     }
 }
 
+/// Whether Esc has something to close or step back from: an overlay, the
+/// detail, a list filter, or a list opened from Projects or Labels.
 fn can_close(state: &State) -> bool {
     state.top_modal().is_some()
         || state.active_pane == Pane::Detail
-        || state.list_filter != ListFilter::default()
+        || (state.active_pane == Pane::Tasks
+            && (state.list_filter != ListFilter::default()
+                || matches!(state.screen, Screen::Projects | Screen::Labels)))
 }
 
 fn is_confirming(state: &State) -> bool {

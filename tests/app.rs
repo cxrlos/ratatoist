@@ -562,7 +562,8 @@ fn the_z_chord_folds_the_subtasks() {
 
     send(&mut app, [key('z'), key('a')]);
 
-    assert!(!shows(&app, "Book the train"));
+    let listed = app.state().visible_tasks();
+    assert!(listed.iter().all(|task| task.content != "Book the train"));
     assert!(app.state().modals.is_empty(), "the chord is over");
 }
 

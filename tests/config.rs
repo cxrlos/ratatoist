@@ -84,6 +84,23 @@ fn every_section_is_read() {
 }
 
 #[test]
+fn the_wide_layout_width_is_read_from_ui() {
+    let config = config::parse("[ui]\nwide-layout-columns = 140\n", &[]);
+
+    assert_eq!(config.warnings, Vec::<String>::new());
+    assert_eq!(config.wide_layout_columns, Some(140));
+}
+
+#[test]
+fn a_bad_wide_layout_width_warns_and_keeps_the_default() {
+    let config = config::parse("[ui]\nwide-layout-columns = \"wide\"\n", &[]);
+
+    assert_eq!(config.wide_layout_columns, None);
+    assert_eq!(config.warnings.len(), 1);
+    assert!(config.warnings[0].contains("ui.wide-layout-columns"));
+}
+
+#[test]
 fn a_theme_is_found_by_its_slug_and_kept_by_its_name() {
     let dir = TempDir::with_config("slug", "[theme]\nname = \"rose-pine\"\n");
 

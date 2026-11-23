@@ -162,23 +162,31 @@ fn enter_submits_a_field_edit_as_one_item_update() {
     assert!(shows(&app, "Call the dentist soon"));
 }
 
+/// Presses `edit`, one of the edit keys, on "Call the dentist" in the
+/// Inbox list at 80x24, where its detail does not show.
+fn edit_from_the_narrow_list(edit: char) -> App<TestBackend> {
+    let mut app = sized(80, 24);
+    send(&mut app, [key('1'), key('j'), key(edit)]);
+    app
+}
+
 /// Opens the detail and presses `edit`, one of the edit keys.
-fn edit_field(edit: char) -> App<TestBackend> {
-    let mut app = sized(120, 36);
+fn edit_in_the_detail(columns: u16, rows: u16, edit: char) -> App<TestBackend> {
+    let mut app = sized(columns, rows);
     open_call_detail(&mut app);
     send(&mut app, [key(edit)]);
     app
 }
 
 #[test]
-fn editing_the_content_says_so_in_the_title() {
-    let app = edit_field('e');
+fn editing_the_content_from_the_narrow_list_says_so_in_the_title() {
+    let app = edit_from_the_narrow_list('e');
     assert!(shows(&app, " Content of Call the dentist "));
 }
 
 #[test]
 fn editing_the_priority_opens_the_priority_picker() {
-    let app = edit_field('p');
+    let app = edit_in_the_detail(120, 36, 'p');
     assert!(matches!(
         app.state().top_modal(),
         Some(Modal::Picker(picker)) if picker.kind == PickerKind::Priority
@@ -187,15 +195,76 @@ fn editing_the_priority_opens_the_priority_picker() {
 }
 
 #[test]
-fn editing_the_due_date_says_so_in_the_title() {
-    let app = edit_field('d');
+fn editing_the_due_date_from_the_narrow_list_says_so_in_the_title() {
+    let app = edit_from_the_narrow_list('d');
     assert!(shows(&app, " Due date of Call the dentist "));
 }
 
 #[test]
-fn editing_the_description_says_so_in_the_title() {
-    let app = edit_field('E');
+fn editing_the_description_from_the_narrow_list_says_so_in_the_title() {
+    let app = edit_from_the_narrow_list('E');
     assert!(shows(&app, " Description of Call the dentist "));
+}
+
+#[test]
+fn each_edit_in_the_shown_detail_draws_in_place_without_a_popup_title() {
+    for (columns, rows) in [(120, 36), (80, 24)] {
+        for (edit, title) in [
+            ('e', " Content of Call the dentist "),
+            ('E', " Description of Call the dentist "),
+            ('d', " Due date of Call the dentist "),
+            ('c', " Comment on Call the dentist "),
+        ] {
+            let mut app = edit_in_the_detail(columns, rows, edit);
+            send(&mut app, "zq".chars().map(key));
+
+            assert!(!shows(&app, title));
+            assert!(shows(&app, "zq"));
+        }
+    }
+}
+
+#[test]
+fn a_comment_in_place_goes_under_new_comment_at_the_end_of_the_thread() {
+    let mut app = edit_in_the_detail(120, 36, 'c');
+    send(&mut app, "zq".chars().map(key));
+
+    let lines = screen(&app);
+    let heading = lines.iter().position(|line| line.contains("New comment"));
+    let input = lines.iter().position(|line| line.contains("zq"));
+    let last_comment = lines
+        .iter()
+        .position(|line| line.contains("Thanks, I will call after ten."));
+    assert!(heading.is_some());
+    assert!(last_comment < heading);
+    assert!(heading < input);
+}
+
+#[test]
+fn the_detail_takes_the_focus_while_it_edits_in_place() {
+    let mut app = sized(120, 36);
+    send(&mut app, [key('1'), key('j'), key('e')]);
+
+    let lines = screen(&app);
+    assert!(!shows(&app, " Content of Call the dentist "));
+    // The list loses the thick border to the detail.
+    assert!(lines[1].starts_with('┌'));
+    assert!(lines[1].contains('┏'));
+}
+
+#[test]
+fn an_in_place_edit_of_the_content_at_120x36() {
+    let mut app = sized(120, 36);
+    send(&mut app, [key('1'), key('j'), key('e')]);
+    send(&mut app, " soon".chars().map(key));
+    assert_snapshot!(app.backend());
+}
+
+#[test]
+fn an_in_place_comment_at_80x24() {
+    let mut app = edit_in_the_detail(80, 24, 'c');
+    send(&mut app, "Booked".chars().map(key));
+    assert_snapshot!(app.backend());
 }
 
 /// "Call the dentist" with a description of 60 numbered lines.

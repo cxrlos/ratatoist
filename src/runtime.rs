@@ -89,6 +89,9 @@ pub fn initial_state_from(
     state.keymap = Keymap::new(config.keys.preset, &config.keys.overrides);
     state.sync_token = sync_token;
     state.icon_set = config.icons;
+    if let Some(columns) = config.wide_layout_columns {
+        state.wide_layout_columns = columns;
+    }
     state.themes.extend(config.user_themes.iter().cloned());
     let mut lines = Vec::new();
     if let Some(name) = config.theme.as_deref() {

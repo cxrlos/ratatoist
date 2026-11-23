@@ -243,7 +243,7 @@ fn enter_on_a_task_focuses_it_in_its_project_s_list() {
 
 #[test]
 fn enter_on_a_folded_subtask_unfolds_its_parent() {
-    let mut app = list(120, 36);
+    let mut app = list(80, 24);
     send(&mut app, [key('j'), key('j'), key('j'), key('z'), key('a')]);
     assert!(!text(&app).contains("Book the train"));
 

@@ -226,8 +226,8 @@ fn items_that_do_not_fit_are_dropped_whole() {
 #[test]
 fn no_view_or_component_writes_a_key_hint() {
     let sources = [
-        include_str!("../src/ui/views/detail.rs"),
-        include_str!("../src/ui/views/tasks.rs"),
+        include_str!("../src/ui/detail.rs"),
+        include_str!("../src/ui/list.rs"),
         include_str!("../src/ui/views/projects.rs"),
         include_str!("../src/ui/prompt.rs"),
         include_str!("../src/ui/components/task_form.rs"),

@@ -188,7 +188,6 @@ fn open_project(state: &mut State, index: usize) {
         Screen::Projects
     };
     state.selected_project = index;
-    state.folder_cursor = None;
     state.list_filter = ListFilter::default();
     state.selected_task = 0;
     state.detail_scroll = 0;

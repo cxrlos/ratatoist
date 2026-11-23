@@ -17,8 +17,7 @@ use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::model::Priority;
 use ratatoist::ui::icons::{IconSet, Icons};
-use ratatoist::ui::views::tasks;
-use ratatui::Terminal;
+use ratatoist::ui::list;
 use ratatui::backend::TestBackend;
 
 /// The demo account at 120x36 with `icons`, on the Today list.
@@ -194,20 +193,9 @@ fn trip_row(icons: &Icons, folded: bool) -> String {
     if folded {
         state.collapsed.insert("t-trip".to_owned());
     }
-    let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
-    terminal
-        .draw(|frame| {
-            tasks::render_with_icons(frame, &state, frame.area(), true, icons);
-        })
-        .unwrap();
-    let buffer = terminal.backend().buffer();
-    let width = usize::from(buffer.area.width);
-    buffer
-        .content()
-        .chunks(width)
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .find(|row| row.contains("Plan the winter trip"))
-        .unwrap()
+    let trip = state.tasks.iter().find(|t| t.id == "t-trip").unwrap();
+    list::content_line(&state, trip, 0, icons)
+        .to_string()
         .trim_end()
         .to_owned()
 }

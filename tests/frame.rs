@@ -373,7 +373,7 @@ fn projects_enter_opens_the_project_and_esc_returns_to_the_same_row() {
     assert!(rows(&app)[1].contains(&name));
 
     send(&mut app, [press(KeyCode::Esc)]);
-    assert_eq!(app.state().active_pane, Pane::Projects);
+    assert_eq!(app.state().active_pane, Pane::Browse);
     assert_eq!(app.state().selected_project, focused);
 }
 

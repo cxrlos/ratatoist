@@ -4,9 +4,11 @@ pub mod cheatsheet;
 pub mod components;
 pub mod confirm;
 pub mod dates;
+pub mod detail;
 mod error;
 pub mod hints;
 pub mod icons;
+pub mod list;
 mod messages;
 pub mod palette;
 pub mod picker;
@@ -53,7 +55,11 @@ pub fn draw(frame: &mut Frame, state: &State) {
             Modal::Picker(picker) => picker::render(state, picker, frame, body_area),
             Modal::Confirm(confirm) => confirm::render(state, confirm, frame, body_area),
             Modal::Form(form) => components::task_form::render(frame, state, form),
-            Modal::Prompt(prompt) => prompt::render(state, prompt, frame, body_area),
+            // A prompt on the task whose detail shows draws in the detail.
+            Modal::Prompt(prompt) if list::prompt_in_place(state, body_area.width).is_none() => {
+                prompt::render(state, prompt, frame, body_area);
+            }
+            Modal::Prompt(_) => {}
             Modal::Cheatsheet { scroll } => cheatsheet::render(state, *scroll, frame, body_area),
             Modal::WhichKey { prefix } => which_key::render(state, prefix, frame, body_area),
             Modal::Messages { scroll } => messages::render(state, *scroll, frame, body_area),
@@ -66,8 +72,8 @@ pub fn draw(frame: &mut Frame, state: &State) {
 }
 
 /// The current screen in `area`: the loading line or an error screen until
-/// the tasks are in, then the screen's list, tree or the focused task's
-/// detail.
+/// the tasks are in, then the screen's tree, or its task list with the
+/// focused task's detail.
 fn render_body(state: &State, frame: &mut Frame, area: Rect) {
     let title = state.screen.title();
     if let Some(load_error) = state.load_error {
@@ -85,45 +91,11 @@ fn render_body(state: &State, frame: &mut Frame, area: Rect) {
         error::render_loading(state.theme(), title, frame, area);
         return;
     }
-    if state.active_pane == Pane::Detail {
-        render_detail(state, frame, area);
-        return;
+    match (state.screen, state.active_pane) {
+        (Screen::Projects, Pane::Browse) => views::projects::render_block(frame, state, area),
+        (Screen::Labels, _) => error::render_not_built(state.theme(), title, frame, area),
+        _ => list::render(state, frame, area),
     }
-    match state.screen {
-        Screen::Inbox | Screen::Today => {
-            views::tasks::render_block(frame, state, area, state.list_title());
-        }
-        Screen::Upcoming => upcoming::render(state, frame, area),
-        Screen::Projects if state.active_pane == Pane::Projects => {
-            views::projects::render_block(frame, state, area);
-        }
-        Screen::Projects => views::tasks::render_block(frame, state, area, state.list_title()),
-        Screen::Labels => error::render_not_built(state.theme(), title, frame, area),
-    }
-}
-
-/// The focused task's detail, filling `area`, under why its last write was
-/// rolled back when it was.
-fn render_detail(state: &State, frame: &mut Frame, area: Rect) {
-    let Some(task) = state.selected_task() else {
-        return;
-    };
-    let reason = rollback_lines(state, area.width);
-    let [reason_area, area] = split_detail(area, reason.len());
-    frame.render_widget(Paragraph::new(reason), reason_area);
-    views::detail::render(
-        frame,
-        task,
-        &state.comments,
-        &state.user_names,
-        state.current_user_id.as_deref(),
-        area,
-        state.detail_scroll,
-        state.detail_field,
-        state.today,
-        state.theme(),
-        state.icons(),
-    );
 }
 
 /// Every tab's title, as [`tab_title`] has it. When they do not fit in
@@ -227,51 +199,30 @@ pub fn body_area(state: &State, viewport: Size) -> Rect {
     body_area
 }
 
-/// How many task rows fit in the body of a `viewport`-sized terminal,
-/// inside its border. Page moves use it.
+/// How many task rows fit in the list pane of a `viewport`-sized
+/// terminal, inside its border. Page moves use it.
 pub fn list_rows(state: &State, viewport: Size) -> usize {
-    usize::from(body_area(state, viewport).height.saturating_sub(2))
+    let area = list::panes_area(state, body_area(state, viewport));
+    let (list, _) = list::panes(state, area);
+    list.map_or(0, |(area, _)| usize::from(area.height.saturating_sub(2)))
 }
 
-/// Where the focused task's detail is drawn in a `viewport`-sized terminal:
-/// the body, under why its last write was rolled back when it was.
-pub fn detail_area(state: &State, viewport: Size) -> Rect {
-    let body = body_area(state, viewport);
-    let [_, detail] = split_detail(body, rollback_lines(state, body.width).len());
-    detail
+/// Where the text of the focused task's detail goes in a
+/// `viewport`-sized terminal, inside its border; `None` when the detail
+/// does not show.
+pub fn detail_rows(state: &State, viewport: Size) -> Option<Rect> {
+    if state.active_pane == Pane::Browse {
+        return None;
+    }
+    let area = list::panes_area(state, body_area(state, viewport));
+    let (_, detail) = list::panes(state, area);
+    detail.map(|(area, _)| Block::bordered().inner(area))
 }
 
 /// How many rows of the messages log do not fit in a `viewport`-sized
 /// terminal, so scrolling stops at its last row.
 pub fn messages_max_scroll(state: &State, viewport: Size) -> u16 {
     messages::max_scroll(state, body_area(state, viewport))
-}
-
-/// `area` split into `reason_rows` rows on top and the detail under them.
-fn split_detail(area: Rect, reason_rows: usize) -> [Rect; 2] {
-    Layout::vertical([
-        Constraint::Length(u16::try_from(reason_rows).unwrap_or(0)),
-        Constraint::Fill(1),
-    ])
-    .areas(area)
-}
-
-/// Why the focused task's last write was rolled back, in the error style,
-/// in rows of `width` cells; none when it was not.
-fn rollback_lines(state: &State, width: u16) -> Vec<Line<'static>> {
-    let Some(failure) = state
-        .selected_task()
-        .and_then(|task| state.rollback_reason(&task.id))
-    else {
-        return Vec::new();
-    };
-    let reason = format!(
-        "{} Could not {}: {}",
-        state.icons().failed,
-        failure.action,
-        failure.message
-    );
-    notice_lines(&reason, width, style::error(state.theme()))
 }
 
 /// The notice under the body, cut into rows of `width` cells: the newest

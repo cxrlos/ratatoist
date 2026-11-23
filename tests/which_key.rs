@@ -84,12 +84,12 @@ fn after_z_the_popup_lists_the_folds() {
 
 #[test]
 fn the_popup_sits_bottom_right_of_the_body() {
-    let mut app = list(120, 36);
+    let mut app = list(119, 36);
 
     send(&mut app, [key('z')]);
 
     let rows = screen(&app);
-    let bottom = rows.iter().rposition(|row| row.contains('┘')).unwrap();
+    let bottom = rows.iter().rposition(|row| row.ends_with("┘│")).unwrap();
     let bar_top = usize::from(36 - ratatoist::ui::hints::ROWS);
     assert_eq!(bottom, bar_top - 2, "inside the body's bottom border");
     assert!(rows[bottom].ends_with("┘│"), "{}", rows[bottom]);

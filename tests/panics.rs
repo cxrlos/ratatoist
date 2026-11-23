@@ -231,13 +231,12 @@ fn multi_byte_author_ids_urls_and_timestamps_render_without_panicking() {
     let app = detail_with_comments(comments);
 
     let screen = screen(&app);
-    assert!(screen.contains("abcdefgé"), "{screen}");
-    assert!(!screen.contains("abcdefgé-"), "{screen}");
+    assert!(screen.contains("abcdefgé-uid"), "{screen}");
+    assert!(screen.contains("[+]"), "{screen}");
     assert!(
-        screen.contains(&url.chars().take(50).collect::<String>()),
+        screen.contains("https://files.example.invalid/"),
         "{screen}"
     );
-    assert!(!screen.contains("notes.pdf"), "{screen}");
 }
 
 #[test]
@@ -248,7 +247,12 @@ fn comment_times_are_formatted_from_the_parsed_time() {
         comment("c3", "u2", "not a time"),
     ]);
 
+    // The age depends on the local time zone, so only its shape is checked.
     let screen = screen(&app);
-    assert!(screen.contains("2026-11-21 10:05"), "{screen}");
-    assert!(screen.contains("not a time"), "{screen}");
+    let aged = screen
+        .lines()
+        .filter(|line| line.contains(" · ") && (line.contains(" ago") || line.contains("just now")))
+        .count();
+    assert_eq!(aged, 2, "{screen}");
+    assert!(screen.contains("comment c3"), "{screen}");
 }

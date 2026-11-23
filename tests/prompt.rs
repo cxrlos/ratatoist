@@ -91,7 +91,9 @@ fn each_edit_key_opens_the_prompt_named_for_its_field_and_the_task() {
         ('E', PromptField::Description, "Description of"),
         ('d', PromptField::DueDate, "Due date of"),
     ] {
-        let mut app = demo_at(120, 36);
+        // Below the wide layout the detail is not on screen, so the prompt
+        // is the popup.
+        let mut app = demo_at(119, 36);
         let (id, content) = focused(&app);
 
         send(&mut app, [key(edit)]);

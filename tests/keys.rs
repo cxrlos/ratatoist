@@ -12,7 +12,6 @@ use ratatoist::config;
 use ratatoist::keys::{ACTIONS, Key, Preset, STANDARD};
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
-use ratatoist::ui::views::detail::DetailField;
 use ratatui::backend::TestBackend;
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
@@ -192,7 +191,7 @@ fn the_standard_preset_switches_panes_with_tab_and_shift_tab() {
     send(&mut app, [back_tab()]);
     assert_eq!(app.state().active_pane, Pane::Tasks);
     send(&mut app, [press(KeyCode::Tab)]);
-    assert_eq!(app.state().active_pane, Pane::Tasks);
+    assert_eq!(app.state().active_pane, Pane::Detail);
 }
 
 #[test]
@@ -204,7 +203,7 @@ fn vim_keys_switch_panes_with_h_and_l() {
     send(&mut app, [key('h')]);
     assert_eq!(app.state().active_pane, Pane::Tasks);
     send(&mut app, [key('l')]);
-    assert_eq!(app.state().active_pane, Pane::Tasks);
+    assert_eq!(app.state().active_pane, Pane::Detail);
 }
 
 #[test]
@@ -356,20 +355,17 @@ fn esc_steps_back_from_the_detail_and_the_list() {
     send(&mut app, [esc()]);
     assert_eq!(app.state().active_pane, Pane::Tasks);
     send(&mut app, [esc()]);
-    assert_eq!(app.state().active_pane, Pane::Projects);
+    assert_eq!(app.state().active_pane, Pane::Browse);
 }
 
 #[test]
-fn the_detail_moves_its_field_cursor_and_scrolls() {
+fn moves_in_the_detail_scroll_it_and_keep_the_focused_task() {
     let mut app = vim();
     send(&mut app, [key('1'), key('j'), enter()]);
 
-    send(&mut app, [key('j')]);
-    assert_eq!(app.state().detail_field, DetailField::Priority);
-    send(&mut app, [key('G')]);
-    assert_eq!(app.state().detail_field, DetailField::Description);
-    send(&mut app, [key('g'), key('g')]);
-    assert_eq!(app.state().detail_field, DetailField::Content);
+    send(&mut app, [key('j'), key('G'), key('g'), key('g'), key('k')]);
+    assert_eq!(app.state().active_pane, Pane::Detail);
+    assert_eq!(selected(&app), "t-call");
     send(&mut app, [key('h')]);
     assert_eq!(app.state().active_pane, Pane::Tasks);
 }
@@ -561,7 +557,8 @@ fn an_edit_from_the_list_changes_the_task_it_opened_on_after_a_sync_reorders_the
             .get("id")
             .or_else(|| sent[0].args.get("item_id"));
         assert_eq!(target.and_then(|id| id.as_str()), Some("t-call"));
-        assert!(app.state().comments.is_empty());
+        let shown = &app.state().comments;
+        assert!(shown.iter().all(|comment| comment.content != "On my way"));
     }
 }
 

@@ -32,11 +32,12 @@ pub use picker::{Choice, Entry, Picker, PickerKind, open_picker};
 pub use prompt::{Prompt, PromptField, open_prompt};
 pub use release::ReleaseState;
 pub use state::{
-    COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, Indicator, ListFilter, OverviewStats, Pane,
-    ProjectEntry, ProjectNavItem, Screen, Sort, State, SyncHealth, UserRecord,
+    COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_WIDE_LAYOUT_COLUMNS, Indicator, ListFilter,
+    OverviewStats, Pane, ProjectEntry, ProjectNavItem, Screen, Sort, State, SyncHealth, UserRecord,
 };
 pub use text_field::TextField;
 pub use update::{Update, perform, update};
+pub use view::{Group, GroupKind, ListRow};
 
 use ratatui::Terminal;
 use ratatui::backend::Backend;

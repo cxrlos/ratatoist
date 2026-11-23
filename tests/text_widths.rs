@@ -44,14 +44,27 @@ fn row_with(buffer: &Buffer, needle: &str) -> u16 {
         .unwrap()
 }
 
-/// The last column text may take in the tasks pane at 80 columns: the
-/// pane's right border is at 79 and its padding at 78.
-const PANE_EDGE: u16 = 77;
+/// The column of the priority label (`P1` to `P4`) in row `y`.
+fn priority_column(buffer: &Buffer, y: u16) -> Option<u16> {
+    (1..buffer.area.width.saturating_sub(1)).rev().find(|&x| {
+        buffer[(x - 1, y)].symbol() == " "
+            && buffer[(x, y)].symbol() == "P"
+            && buffer[(x + 1, y)].symbol().parse::<u8>().is_ok()
+    })
+}
 
+/// The row holding `needle` is cut with `…` before its priority, which
+/// lines up with every other task row's.
 fn assert_cut_at_the_pane_edge(app: &App<TestBackend>, needle: &str) {
     let buffer = app.backend().buffer();
     let y = row_with(buffer, needle);
-    assert_eq!(buffer[(PANE_EDGE, y)].symbol(), "…");
+    let row: String = (0..buffer.area.width)
+        .map(|x| buffer[(x, y)].symbol())
+        .collect();
+    assert!(row.contains('…'));
+    let other = row_with(buffer, "P4");
+    assert!(priority_column(buffer, y).is_some());
+    assert_eq!(priority_column(buffer, y), priority_column(buffer, other));
 }
 
 #[test]
