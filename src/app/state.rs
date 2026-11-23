@@ -10,7 +10,7 @@ use super::sync::OptimisticOp;
 use super::text_field::TextField;
 use crate::keys::Keymap;
 use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
-use crate::ui::theme::Theme;
+use crate::ui::theme::{self, Theme};
 use crate::ui::views::detail::DetailField;
 
 /// How long the session waits without a key before it counts as idle.
@@ -44,7 +44,6 @@ pub struct State {
     /// The text of the open prompt, or of the add-task form's active text
     /// field.
     pub input: TextField,
-    pub settings_selection: usize,
     pub collapsed: HashSet<String>,
     /// Rows the task detail is scrolled down by. Scroll keys keep it within
     /// the content at [`State::screen_size`].
@@ -69,6 +68,7 @@ pub struct State {
     pub task_filter: TaskFilter,
     pub dock_focus: Option<usize>,
     pub dock_filter: Option<DockItem>,
+    /// The themes the theme picker offers; `theme_idx` is the one drawn.
     pub themes: Vec<Theme>,
     pub theme_idx: usize,
     pub websocket_connected: bool,
@@ -111,7 +111,6 @@ impl State {
             keymap: Keymap::default(),
             modals: Vec::new(),
             input: TextField::default(),
-            settings_selection: 0,
             collapsed: HashSet::new(),
             detail_scroll: 0,
             viewport: None,
@@ -127,7 +126,7 @@ impl State {
             task_filter: TaskFilter::Active,
             dock_focus: None,
             dock_filter: None,
-            themes: Theme::builtin(),
+            themes: Theme::built_ins(),
             theme_idx: 0,
             websocket_connected: false,
             sync_token: "*".to_owned(),
@@ -157,11 +156,6 @@ impl State {
             .unwrap_or_else(|| fallback_theme())
     }
 
-    /// Whether the Settings pane shows, which is whenever it has focus.
-    pub fn settings_open(&self) -> bool {
-        self.active_pane == Pane::Settings
-    }
-
     pub fn top_modal(&self) -> Option<&Modal> {
         self.modals.last()
     }
@@ -187,9 +181,15 @@ impl State {
         self.idle_timeout_secs > 0 && (self.now - self.last_activity).num_seconds() >= timeout
     }
 
-    /// Whether `theme` names one of the loaded themes; selects it if so.
+    /// Whether `name` names one of the loaded themes, by its name or the
+    /// same in lower case with hyphens for spaces; selects it if so.
     pub fn select_theme_named(&mut self, name: &str) -> bool {
-        match self.themes.iter().position(|t| t.name == name) {
+        let wanted = theme::slug(name);
+        match self
+            .themes
+            .iter()
+            .position(|t| theme::slug(&t.name) == wanted)
+        {
             Some(idx) => {
                 self.theme_idx = idx;
                 true
@@ -201,47 +201,7 @@ impl State {
 
 fn fallback_theme() -> &'static Theme {
     static FALLBACK: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    FALLBACK.get_or_init(|| {
-        use crate::ui::theme::{DueColors, PriorityColors};
-        use ratatui::style::Color;
-        use ratatui::style::{Modifier, Style};
-        Theme {
-            name: "terminal".to_owned(),
-            background: Color::Reset,
-            accent: Color::Cyan,
-            error: Color::Red,
-            border: Color::Reset,
-            selection: Style::new().add_modifier(Modifier::REVERSED),
-            priorities: PriorityColors {
-                p1: Color::Red,
-                p2: Color::LightRed,
-                p3: Color::Blue,
-                p4: Color::DarkGray,
-            },
-            due: DueColors {
-                overdue: Color::Red,
-                today: Color::Cyan,
-                this_week: Color::Reset,
-                later: Color::DarkGray,
-            },
-            base: Color::Reset,
-            surface: Color::Reset,
-            overlay: Color::DarkGray,
-            muted: Color::DarkGray,
-            subtle: Color::Gray,
-            text: Color::Reset,
-            bg_alt: Color::Reset,
-            fg_alt: Color::White,
-            red: Color::Red,
-            orange: Color::LightRed,
-            yellow: Color::Yellow,
-            green: Color::Green,
-            cyan: Color::Cyan,
-            blue: Color::Blue,
-            purple: Color::Magenta,
-            maroon: Color::LightMagenta,
-        }
-    })
+    FALLBACK.get_or_init(Theme::default)
 }
 
 /// The screens of the tab row, in its order.
@@ -307,7 +267,6 @@ pub enum Pane {
     Projects,
     Tasks,
     Detail,
-    Settings,
     StatsDock,
 }
 

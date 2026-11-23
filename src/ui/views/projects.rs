@@ -1,6 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -65,7 +65,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                 let count = stats.overdue + stats.due_today;
                 let mut spans = vec![
                     Span::raw("  "),
-                    Span::styled("⊙ ", Style::default().fg(Color::Yellow)),
+                    Span::styled("⊙ ", theme.due_today()),
                     Span::styled("Today", theme.normal_text()),
                 ];
                 if count > 0 {
@@ -77,7 +77,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
             ProjectEntry::Project(i) => {
                 let project = &state.projects[*i];
                 let indent = "  ".repeat(state.project_indent(project));
-                let dot_color = theme.color_for(&project.color);
+                let dot = theme.project_dot(&project.color);
                 let is_parent = state
                     .projects
                     .iter()
@@ -88,9 +88,9 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
                 } else if project.is_favorite {
                     Span::styled("★ ", theme.favorite_icon())
                 } else if is_parent {
-                    Span::styled(" ", Style::default().fg(dot_color))
+                    Span::styled(" ", dot)
                 } else {
-                    Span::styled("# ", Style::default().fg(dot_color))
+                    Span::styled("# ", dot)
                 };
 
                 Line::from(vec![
@@ -111,7 +111,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let highlight_style = if is_active {
         theme.selected_item()
     } else {
-        theme.subtle_text()
+        theme.unfocused_selection()
     };
 
     let list = List::new(items).highlight_style(highlight_style);

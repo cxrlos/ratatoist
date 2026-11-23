@@ -77,7 +77,7 @@ mod tests {
         };
         let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
         terminal
-            .draw(|frame| render(frame, &error, &Theme::builtin()[0]))
+            .draw(|frame| render(frame, &error, &Theme::built_ins()[0]))
             .unwrap();
 
         let buffer = terminal.backend().buffer();

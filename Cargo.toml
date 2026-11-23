@@ -8,7 +8,7 @@ repository = "https://github.com/cxrlos/ratatoist"
 homepage = "https://github.com/cxrlos/ratatoist"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-include = ["/src/**/*.rs", "/themes/*.json", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
+include = ["/src/**/*.rs", "/src/ui/themes/*.json", "/README.md", "/CHANGELOG.md", "/LICENSE*"]
 
 [[bin]]
 name = "ratatoist"

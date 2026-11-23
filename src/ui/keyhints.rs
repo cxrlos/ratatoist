@@ -32,11 +32,6 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
 
     let hints = match (state.keymap.preset(), &state.active_pane) {
         (_, Pane::StatsDock) => vec![("h/l", "navigate"), ("Enter", "filter"), ("Esc", "clear")],
-        (_, Pane::Settings) => vec![
-            ("j/k", "navigate"),
-            ("Enter/Space", "toggle"),
-            ("Esc", "close"),
-        ],
         (_, Pane::Detail) => vec![
             ("j/k", "field"),
             ("Ctrl-d/u", "scroll"),
@@ -49,7 +44,6 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
             ("j/k", "navigate"),
             ("g/G", "top/bottom"),
             ("l/Tab", "tasks"),
-            (",", "settings"),
             ("?", "help"),
             ("q", "quit"),
         ],
@@ -67,7 +61,6 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
         (Preset::Standard, Pane::Projects) => vec![
             ("↑/↓", "navigate"),
             ("Tab", "tasks"),
-            (",", "settings"),
             ("?", "help"),
             ("q", "quit"),
         ],

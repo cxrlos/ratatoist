@@ -22,7 +22,6 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
                 .unwrap_or("Task");
             format!("  {project_name} ▸ {task_name}")
         }
-        Pane::Settings => "  Settings".to_string(),
         Pane::StatsDock => format!("  {project_name} ▸ weekly progress"),
     };
 

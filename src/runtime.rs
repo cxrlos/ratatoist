@@ -23,7 +23,7 @@ use crate::keys::Keymap;
 use crate::sync_state::SyncState;
 use crate::todoist::sync::SyncRequest;
 use crate::todoist::{CompletedQuery, TodoistClient};
-use crate::ui::theme::Theme;
+use crate::ui::theme::{self, Theme};
 
 /// How often the clock moves on. Ticks redraw only when they change what
 /// shows (the idle state or the date).
@@ -31,7 +31,10 @@ const TICK: Duration = Duration::from_secs(1);
 
 const UI_SETTINGS: &str = "ui_settings.json";
 
-/// What the Settings pane saved last time, from `ui_settings.json`.
+/// What the Settings pane of versions before 0.7.0 saved in
+/// `ui_settings.json`. ratatoist reads it once at startup, to carry its
+/// values into a session and say which `config.toml` lines replace it, and
+/// never writes or deletes it.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct UiSettings {
     pub theme: Option<String>,
@@ -55,42 +58,62 @@ impl UiSettings {
     }
 }
 
-/// The first state, with "now" read from the clock and the saved settings
-/// and sync token read from `files`. With `None` nothing is read: no saved
-/// settings and a full sync.
+/// The first state, with "now" read from the clock, `NO_COLOR` from the
+/// environment, and the old saved settings and the sync token read from
+/// `files`. With `None` nothing is read: no saved settings and a full sync.
 pub fn initial_state(config: &Config, files: Option<&Path>) -> State {
     let ui = files.map(UiSettings::load).unwrap_or_default();
     let sync_token = files
         .map(|dir| SyncState::load(dir).sync_token)
         .unwrap_or_else(|| "*".to_owned());
-    initial_state_from(config, &ui, sync_token, clock())
+    let no_color = theme::no_color_requested(std::env::var_os(theme::NO_COLOR_VAR).as_deref());
+    initial_state_from(config, &ui, sync_token, clock(), no_color)
 }
 
 /// The first state from what was read. Where `config` and `ui` both set the
-/// theme or the idle timeout, `config` wins.
+/// theme or the idle timeout, `config` wins; a value only `ui` sets applies
+/// for this session, and the notice names the `config.toml` line that keeps
+/// it. With `no_color` the one theme is [`Theme::no_color`].
 pub fn initial_state_from(
     config: &Config,
     ui: &UiSettings,
     sync_token: String,
     now: DateTime<Local>,
+    no_color: bool,
 ) -> State {
     let mut state = State::new(now);
     state.keymap = Keymap::new(config.keys.preset, &config.keys.overrides);
     state.sync_token = sync_token;
-    state.themes = Theme::builtin();
     state.themes.extend(config.user_themes.iter().cloned());
-    let chosen = config
-        .theme
-        .as_deref()
-        .is_some_and(|name| state.select_theme_named(name));
-    if !chosen && let Some(name) = ui.theme.as_deref() {
+    let mut lines = Vec::new();
+    if let Some(name) = config.theme.as_deref() {
         state.select_theme_named(name);
+    } else if let Some(name) = ui.theme.as_deref()
+        && state.select_theme_named(name)
+    {
+        lines.push(format!(
+            "[theme] name = \"{}\"",
+            theme::slug(&state.theme().name)
+        ));
     }
-    state.idle_timeout_secs = config
-        .idle_timeout
-        .map(|timeout| timeout.as_secs())
-        .or(ui.idle_timeout())
-        .unwrap_or(DEFAULT_IDLE_TIMEOUT_SECS);
+    state.idle_timeout_secs = match (config.idle_timeout, ui.idle_timeout()) {
+        (Some(timeout), _) => timeout.as_secs(),
+        (None, Some(secs)) => {
+            lines.push(format!("[sync] idle-timeout = {secs}"));
+            secs
+        }
+        (None, None) => DEFAULT_IDLE_TIMEOUT_SECS,
+    };
+    if !lines.is_empty() {
+        state.notice = Some(format!(
+            "{UI_SETTINGS} is no longer read; to keep its settings, add to config.toml: {}",
+            lines.join(" and ")
+        ));
+    }
+    if no_color {
+        state.themes = vec![Theme::no_color()];
+        state.theme_idx = 0;
+    }
     state
 }
 
@@ -229,16 +252,6 @@ impl<C: TodoistClient> Outside<'_, C> {
                     warn!(error = %error, "failed to persist sync token");
                 }
             }
-            Effect::SaveUiSettings {
-                theme,
-                idle_timeout_secs,
-            } => {
-                if let Some(dir) = &self.files
-                    && let Err(error) = save_ui_settings(dir, &theme, idle_timeout_secs)
-                {
-                    warn!(error = %error, "failed to save ui settings");
-                }
-            }
         }
         ControlFlow::Continue(())
     }
@@ -257,16 +270,6 @@ impl<C: TodoistClient> Outside<'_, C> {
             let _ = answers.send(answer.await);
         });
     }
-}
-
-fn save_ui_settings(dir: &Path, theme: &str, idle_timeout_secs: u64) -> anyhow::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    let json = serde_json::json!({
-        "theme": theme,
-        "idle_timeout_secs": idle_timeout_secs,
-    });
-    std::fs::write(dir.join(UI_SETTINGS), serde_json::to_string_pretty(&json)?)?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -295,7 +298,7 @@ mod tests {
     }
 
     fn start(config: &Config, ui: &UiSettings) -> State {
-        initial_state_from(config, ui, "*".to_owned(), now())
+        initial_state_from(config, ui, "*".to_owned(), now(), false)
     }
 
     #[test]
@@ -319,6 +322,7 @@ mod tests {
             &ui("Dracula", 120),
             "saved-token".to_owned(),
             now(),
+            false,
         );
 
         assert_eq!(state.theme().name, "Dracula");
@@ -327,18 +331,101 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_config_theme_falls_back_to_ui_settings() {
+    fn ui_settings_values_come_with_a_notice_naming_the_config_lines() {
+        let state = start(&Config::default(), &ui("Rose Pine", 120));
+
+        assert_eq!(
+            state.notice.as_deref(),
+            Some(
+                "ui_settings.json is no longer read; to keep its settings, add to \
+                 config.toml: [theme] name = \"rose-pine\" and [sync] idle-timeout = 120"
+            )
+        );
+    }
+
+    #[test]
+    fn the_notice_names_only_what_config_toml_leaves_out() {
         let config = Config {
-            theme: Some("No Such Theme".to_owned()),
+            theme: Some("Nord".to_owned()),
             ..Config::default()
         };
 
-        assert_eq!(start(&config, &ui("Dracula", 120)).theme().name, "Dracula");
+        let state = start(&config, &ui("Dracula", 120));
+
+        assert_eq!(state.theme().name, "Nord");
+        assert_eq!(
+            state.notice.as_deref(),
+            Some(
+                "ui_settings.json is no longer read; to keep its settings, add to \
+                 config.toml: [sync] idle-timeout = 120"
+            )
+        );
+    }
+
+    #[test]
+    fn there_is_no_notice_when_config_toml_sets_both_or_there_is_no_file() {
+        let config = Config {
+            theme: Some("Nord".to_owned()),
+            idle_timeout: Some(Duration::from_secs(900)),
+            ..Config::default()
+        };
+
+        assert_eq!(start(&config, &ui("Dracula", 120)).notice, None);
+        assert_eq!(
+            start(&Config::default(), &UiSettings::default()).notice,
+            None
+        );
+    }
+
+    #[test]
+    fn a_saved_theme_that_no_longer_exists_is_left_out_of_the_notice() {
+        let state = start(&Config::default(), &ui("Paper", 60));
+
+        assert_eq!(state.theme(), &Theme::default());
+        assert_eq!(
+            state.notice.as_deref(),
+            Some(
+                "ui_settings.json is no longer read; to keep its settings, add to \
+                 config.toml: [sync] idle-timeout = 60"
+            )
+        );
+    }
+
+    #[test]
+    fn ui_settings_json_is_read_from_the_folder_given_and_left_in_place() {
+        let dir =
+            std::env::temp_dir().join(format!("ratatoist-ui-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let json = r#"{"theme":"Nord","idle_timeout_secs":120}"#;
+        std::fs::write(dir.join(UI_SETTINGS), json).unwrap();
+
+        let state = initial_state(&Config::default(), Some(&dir));
+        let left = std::fs::read_to_string(dir.join(UI_SETTINGS)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(state.theme().name, "Nord");
+        assert_eq!(state.idle_timeout_secs, 120);
+        assert!(state.notice.is_some());
+        assert_eq!(left, json);
+    }
+
+    #[test]
+    fn no_color_draws_with_the_no_color_theme_whatever_the_config_picks() {
+        let config = Config {
+            theme: Some("Nord".to_owned()),
+            ..Config::default()
+        };
+
+        let state =
+            initial_state_from(&config, &UiSettings::default(), "*".to_owned(), now(), true);
+
+        assert_eq!(state.theme(), &Theme::no_color());
     }
 
     #[test]
     fn a_user_theme_from_config_can_be_chosen() {
-        let mut custom = Theme::builtin().remove(0);
+        let mut custom = Theme::built_in("nord").unwrap();
         custom.name = "Mine".to_owned();
         let config = Config {
             theme: Some("Mine".to_owned()),

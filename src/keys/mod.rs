@@ -104,6 +104,5 @@ pub fn screen_contexts(state: &State) -> Vec<Context> {
         Pane::Tasks => vec![Context::List, Context::Global],
         Pane::Detail => vec![Context::Detail, Context::Global],
         Pane::StatsDock => vec![Context::Browse, Context::Global],
-        Pane::Settings => vec![Context::Global],
     }
 }

@@ -414,7 +414,7 @@ impl State {
                 self.clamp_selected_task();
                 true
             }
-            Pane::Tasks | Pane::Settings | Pane::StatsDock => {
+            Pane::Tasks | Pane::StatsDock => {
                 self.active_pane = Pane::Projects;
                 true
             }
@@ -457,7 +457,7 @@ impl State {
     fn accept(&mut self, effects: &mut Vec<Effect>) -> bool {
         match self.top_modal() {
             Some(Modal::PriorityPicker { .. }) => self.select_priority(effects),
-            Some(Modal::ThemePicker { .. }) => self.select_theme(effects),
+            Some(Modal::ThemePicker { .. }) => self.select_theme(),
             Some(Modal::Input(_)) => {
                 self.submit_input(effects);
                 true
@@ -477,7 +477,7 @@ impl State {
             }
             Some(Modal::ThemePicker { selection }) if (1..=themes).contains(&usize::from(n)) => {
                 *selection = usize::from(n) - 1;
-                self.select_theme(effects)
+                self.select_theme()
             }
             _ => false,
         }
@@ -495,12 +495,11 @@ impl State {
         true
     }
 
-    fn select_theme(&mut self, effects: &mut Vec<Effect>) -> bool {
+    fn select_theme(&mut self) -> bool {
         let Some(Modal::ThemePicker { selection }) = self.modals.pop() else {
             return false;
         };
         self.theme_idx = selection;
-        effects.push(self.save_ui_settings());
         true
     }
 
@@ -518,7 +517,7 @@ impl State {
             (Pane::Detail, _) => return self.scroll_detail(action),
             (Pane::Tasks, _) => self.move_in_tasks(action),
             (Pane::Projects, _) => self.move_in_projects(action),
-            (Pane::Settings | Pane::StatsDock, _) => return false,
+            (Pane::StatsDock, _) => return false,
         }
         true
     }
@@ -697,13 +696,6 @@ impl State {
             _ => return false,
         }
         true
-    }
-
-    fn save_ui_settings(&self) -> Effect {
-        Effect::SaveUiSettings {
-            theme: self.theme().name.clone(),
-            idle_timeout_secs: self.idle_timeout_secs,
-        }
     }
 
     fn cycle_task_filter(&mut self, effects: &mut Vec<Effect>) {

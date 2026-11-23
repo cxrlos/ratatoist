@@ -16,7 +16,7 @@
 //! noop = ["gg", "<C-d>"]            # these keys do nothing, and leave every hint
 //!
 //! [theme]
-//! name = "Nord"              # a built-in, or the name inside a themes/*.json file
+//! name = "nord"              # a built-in, or the name inside a themes/*.json file
 //!
 //! [sync]
 //! idle-timeout = 300         # seconds without a key press before the session is idle
@@ -39,7 +39,7 @@ use toml::de::{DeTable, DeValue};
 use toml_parser::parser::{Event, EventKind};
 
 use crate::keys::{self, Change, Context, KeySequence, Override, Preset, Target};
-use crate::ui::theme::{Base16Scheme, Theme};
+use crate::ui::theme::{Theme, slug};
 
 /// The config file's name inside the config folder.
 pub const FILE: &str = "config.toml";
@@ -152,11 +152,10 @@ fn load_user_themes(dir: &Path) -> (Vec<Theme>, Vec<String>) {
         let loaded = fs::read_to_string(&path)
             .map_err(|error| format!("{name}: could not read it ({error})"))
             .and_then(|json| {
-                serde_json::from_str::<Base16Scheme>(&json)
-                    .map_err(|error| format!("{name}:{}:{}: {error}", error.line(), error.column()))
-            })
-            .and_then(|scheme| {
-                Theme::from_scheme(&scheme).map_err(|error| format!("{name}: {error}"))
+                Theme::from_base16_json(&json).map_err(|error| match error.at {
+                    Some((line, column)) => format!("{name}:{line}:{column}: {error}"),
+                    None => format!("{name}: {error}"),
+                })
             });
         match loaded {
             Ok(theme) => themes.push(theme),
@@ -349,12 +348,6 @@ fn integer(value: &Spanned<DeValue>, key: &str, range: RangeInclusive<u64>) -> R
         })
 }
 
-/// A theme name as a slug: lower case, spaces as hyphens, so
-/// `rose-pine` finds "Rose Pine".
-fn slug(name: &str) -> String {
-    name.trim().to_lowercase().replace([' ', '_'], "-")
-}
-
 struct Reader<'a> {
     text: &'a str,
     /// Each warning with the byte offset it points at, for sorting.
@@ -403,7 +396,7 @@ impl Reader<'_> {
     /// built-in or a user theme, matched by name or slug. `None`, with a
     /// warning, when there is no such theme.
     fn theme(&mut self, wanted: &str, offset: usize, user_themes: &[Theme]) -> Option<String> {
-        let all: Vec<String> = Theme::builtin()
+        let all: Vec<String> = Theme::built_ins()
             .into_iter()
             .chain(user_themes.iter().cloned())
             .map(|theme| theme.name)

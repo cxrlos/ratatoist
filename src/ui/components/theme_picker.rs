@@ -34,15 +34,12 @@ pub fn render(frame: &mut Frame, state: &State, selection: usize) {
         .iter()
         .map(|t| {
             let swatches: Vec<Span> = t
-                .user_colors()
+                .swatch()
                 .iter()
                 .map(|&c| Span::styled("● ", Style::default().fg(c)))
                 .collect();
 
-            let mut spans = vec![Span::styled(
-                pad(&t.name, 20),
-                theme.normal_text().fg(theme.text),
-            )];
+            let mut spans = vec![Span::styled(pad(&t.name, 20), theme.normal_text())];
             spans.extend(swatches);
 
             ListItem::new(Line::from(spans))

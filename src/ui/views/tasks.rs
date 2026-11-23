@@ -1,7 +1,7 @@
 use crate::todoist::model::Task;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -123,7 +123,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let highlight_style = if is_active {
         theme.selected_item()
     } else {
-        theme.subtle_text()
+        theme.unfocused_selection()
     };
 
     let list = List::new(items).highlight_style(highlight_style);
@@ -169,7 +169,7 @@ fn task_line<'a>(task: &'a Task, state: &State, theme: &Theme, show_project: boo
         ));
     } else {
         spans.push(Span::styled(
-            Theme::priority_dot(task.priority),
+            if task.priority > 1 { "● " } else { "  " },
             theme.priority_style(task.priority),
         ));
         spans.push(Span::styled(&task.content, theme.normal_text()));
@@ -177,16 +177,7 @@ fn task_line<'a>(task: &'a Task, state: &State, theme: &Theme, show_project: boo
 
     if !task.labels.is_empty() && !task.checked {
         for label_name in &task.labels {
-            let color = state
-                .labels
-                .iter()
-                .find(|l| &l.name == label_name)
-                .map(|l| theme.color_for(&l.color))
-                .unwrap_or(theme.purple);
-            spans.push(Span::styled(
-                format!("  {label_name}"),
-                Style::default().fg(color),
-            ));
+            spans.push(Span::styled(format!("  {label_name}"), theme.label_tag()));
         }
     }
 

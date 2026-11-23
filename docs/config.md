@@ -13,7 +13,7 @@ preset = "vim"
 move-down = { prepend = ["n"] }
 
 [theme]
-name = "Nord"
+name = "nord"
 
 [sync]
 idle-timeout = 300
@@ -23,9 +23,13 @@ idle-timeout = 300
 
 | Key | Values | Default | Effect |
 | --- | --- | --- | --- |
-| `name` | The name of a built-in theme, or the `name` inside a file in `themes/`. Case, spaces and hyphens do not matter, so `"rose-pine"` finds "Rose Pine". | Rose Pine | The colours ratatoist draws with. |
+| `name` | The name of a built-in theme, or the `name` inside a file in `themes/`. Case, spaces and hyphens do not matter, so `"rose-pine"` finds "Rose Pine". | `terminal` | The colours ratatoist draws with. |
 
-The built-in themes are Catppuccin Mocha, Dracula, Gruvbox Dark, Material Dark, Monokai, Nord, One Dark, Rose Pine, Solarized Dark and Tokyo Night.
+The built-in themes are `terminal`, `catppuccin-mocha`, `dracula`, `gruvbox-dark`, `material-dark`, `monokai`, `nord`, `one-dark`, `rose-pine`, `solarized-dark` and `tokyo-night`. `terminal`, the default, draws with my terminal's own colours and paints no background. Every other theme paints its background behind the whole screen, since its colours are only legible on it.
+
+Every theme draws with a few roles: text, muted for what is inactive or secondary, accent (always bold) for what I can act on now, error, the border, and the focused row, which is reversed. Priorities p1 to p3 take the theme's red, orange and blue and p4 is muted; a due date is in the error colour when overdue, the accent today, text in the next six days and muted after. Muted text is lightened toward the text colour until it reaches a 3:1 contrast with the background, so it stays readable in every theme.
+
+When the `NO_COLOR` environment variable is set to anything but an empty string, ratatoist draws with no colour at all, whatever `[theme] name` says. Bold still marks what I can act on and reverse video still marks the focused row. ratatoist reads `NO_COLOR` once, at startup.
 
 ## `[sync]`
 
@@ -33,9 +37,9 @@ The built-in themes are Catppuccin Mocha, Dracula, Gruvbox Dark, Material Dark, 
 | --- | --- | --- | --- |
 | `idle-timeout` | Whole seconds, 0 to 86400. 0 turns idle detection off. | 300 | How long without a key press before the session counts as idle. |
 
-## `config.toml` and the Settings pane
+## `ui_settings.json`
 
-The Settings pane saves the theme and idle timeout you pick there to `ui_settings.json` in the same folder. At startup a value set in `config.toml` wins over the saved one; `ui_settings.json` only fills in what `config.toml` leaves out, or a `[theme] name` that matches no theme. So if I set `[theme] name` in `config.toml`, a theme picked in the Settings pane lasts only until the next start.
+Versions before 0.7.0 had a Settings pane that saved the theme and idle timeout to `ui_settings.json` in the same folder. That pane is gone and nothing writes the file any more. If it is still there at startup, ratatoist reads it once: a theme or idle timeout that `config.toml` does not set applies for that session, and a notice names the `config.toml` lines that keep it, such as `[theme] name = "nord"` and `[sync] idle-timeout = 120`. ratatoist never changes or deletes the file, so the notice comes back on each start until `config.toml` sets both values or I delete the file.
 
 ## `[keys]`
 
@@ -71,7 +75,7 @@ The table is accepted and takes no settings yet. A key inside it is reported as 
 
 ## Theme files
 
-Every `*.json` file in `themes/` beside `config.toml` is read as a Base16 scheme: a `name` and the colours `base00` to `base0F` as six-digit hex, with or without `#`. Each one becomes a theme you can pick by its `name`. A file that cannot be read or parsed is reported and skipped; the others still load.
+Every `*.json` file in `themes/` beside `config.toml` is read as a Base16 scheme: a `name` and the colours `base00` to `base0F` as `#rgb` or `#rrggbb` hex, the `#` optional. Each one becomes a theme I can pick by its `name`. The roles come from `base00` (background), `base03` (muted and borders), `base05` (text), `base08` (error and p1), `base09` (p2), `base0C` (accent) and `base0D` (p3); project dots also use `base0B` and `base0E`. A file that cannot be read or parsed is reported and skipped; the others still load.
 
 ## When something is wrong
 
@@ -84,8 +88,8 @@ config.toml:5:16: `sync.idle-timeout` must be a whole number of seconds from 0 t
 - A syntax error resets only the section it is in; the other sections still apply. A syntax error before the first `[section]` header resets the whole file to its defaults.
 - A bad value resets its whole section to its defaults.
 - An unknown key or table is reported and ignored.
-- A `[theme] name` that matches no theme is reported, and the theme saved by the Settings pane, or else the default, is used.
-- A theme file that fails to load is reported as `themes/FILE.json:LINE:COL: problem; the theme is skipped`.
+- A `[theme] name` that matches no theme is reported, and the default theme is used.
+- A theme file that fails to load is reported as `themes/FILE.json:LINE:COL: problem; the theme is skipped`, or `themes/FILE.json: baseNN: problem; the theme is skipped` for a colour that is not one.
 
 ratatoist still starts in every case, and the file is never rewritten.
 

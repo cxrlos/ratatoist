@@ -29,7 +29,13 @@ fn now() -> DateTime<Local> {
 fn state_with(config: &str) -> State {
     let config = config::parse(config, &[]);
     assert_eq!(config.warnings, Vec::<String>::new());
-    initial_state_from(&config, &UiSettings::default(), "*".to_owned(), now())
+    initial_state_from(
+        &config,
+        &UiSettings::default(),
+        "*".to_owned(),
+        now(),
+        false,
+    )
 }
 
 /// The app at 120x36 with `config` as `config.toml`, after the full sync.

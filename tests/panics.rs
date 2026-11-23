@@ -11,7 +11,7 @@ use ratatoist::app::{App, Effect, Event, State};
 use ratatoist::config;
 use ratatoist::todoist::model::Comment;
 use ratatoist::todoist::sync::SyncResponse;
-use ratatoist::ui::theme::{Base16Scheme, Theme};
+use ratatoist::ui::theme::Theme;
 use ratatui::backend::TestBackend;
 use ratatui::style::Color;
 
@@ -29,40 +29,39 @@ fn scheme_json(name: &str, key: &str, value: &str) -> String {
 }
 
 fn theme(key: &str, value: &str) -> Result<Theme, String> {
-    let scheme: Base16Scheme = serde_json::from_str(&scheme_json("Test", key, value)).unwrap();
-    Theme::from_scheme(&scheme)
+    Theme::from_base16_json(&scheme_json("Test", key, value)).map_err(|error| error.to_string())
 }
 
 #[test]
 fn a_three_digit_colour_doubles_each_digit() {
-    let white = theme("base07", "#fff").unwrap();
+    let white = theme("base05", "#fff").unwrap();
     let teal = theme("base0C", "#0a8").unwrap();
 
-    assert_eq!(white.fg_alt, Color::Rgb(255, 255, 255));
-    assert_eq!(teal.cyan, Color::Rgb(0x00, 0xaa, 0x88));
+    assert_eq!(white.text, Color::Rgb(255, 255, 255));
+    assert_eq!(teal.accent, Color::Rgb(0x00, 0xaa, 0x88));
 }
 
 #[test]
 fn the_hash_is_optional_as_in_base16_files() {
     assert_eq!(
-        theme("base08", "eb6f92").unwrap().red,
+        theme("base08", "eb6f92").unwrap().error,
         Color::Rgb(0xeb, 0x6f, 0x92)
     );
     assert_eq!(
-        theme("base07", "fff").unwrap().fg_alt,
+        theme("base05", "fff").unwrap().text,
         Color::Rgb(255, 255, 255)
     );
 }
 
 #[test]
 fn every_built_in_theme_loads() {
-    assert_eq!(Theme::builtin().len(), 10);
+    assert_eq!(Theme::built_ins().len(), 11);
 }
 
 #[test]
 fn a_six_digit_colour_parses_in_either_case() {
     assert_eq!(
-        theme("base08", "#EB6f92").unwrap().red,
+        theme("base08", "#EB6f92").unwrap().error,
         Color::Rgb(0xeb, 0x6f, 0x92)
     );
 }
@@ -113,7 +112,7 @@ impl Drop for TempDir {
 fn theme_files_with_bad_colours_load_without_panicking() {
     let dir = TempDir::new("colours");
     fs::write(dir.0.join("config.toml"), "[theme]\nname = \"Two\"\n").unwrap();
-    dir.theme("short.json", &scheme_json("Short", "base07", "#fff"));
+    dir.theme("short.json", &scheme_json("Short", "base05", "#fff"));
     dir.theme("two.json", &scheme_json("Two", "base08", "#ff"));
     dir.theme("accent.json", &scheme_json("Accent", "base0A", "#ffé000"));
     dir.theme("word.json", &scheme_json("Word", "base0D", "red"));
@@ -122,7 +121,7 @@ fn theme_files_with_bad_colours_load_without_panicking() {
 
     let names: Vec<&str> = config.user_themes.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["Short"]);
-    assert_eq!(config.user_themes[0].fg_alt, Color::Rgb(255, 255, 255));
+    assert_eq!(config.user_themes[0].text, Color::Rgb(255, 255, 255));
     for (file, key) in [
         ("themes/two.json", "base08"),
         ("themes/accent.json", "base0A"),

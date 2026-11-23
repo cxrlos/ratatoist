@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
 use crate::app::{DOCK_ITEMS, DockItem, Pane, SortMode, State, TaskFilter};
+use crate::todoist::model::Priority;
 
 const STATS_HEIGHT: u16 = 4;
 use crate::ui::theme::Theme;
@@ -31,27 +32,11 @@ pub fn render(frame: &mut Frame, state: &State) {
 
     let projects_active = matches!(state.active_pane, Pane::Projects);
     let stats_active = matches!(state.active_pane, Pane::StatsDock);
-    let settings_active = matches!(state.active_pane, Pane::Settings);
+    let [projects_area, stats_area] =
+        Layout::vertical([Constraint::Min(1), Constraint::Length(STATS_HEIGHT)]).areas(left_area);
 
-    if state.settings_open() {
-        let [projects_area, stats_area, settings_area] = Layout::vertical([
-            Constraint::Min(1),
-            Constraint::Length(STATS_HEIGHT),
-            Constraint::Length(5),
-        ])
-        .areas(left_area);
-
-        render_projects_block(frame, state, projects_area, projects_active);
-        render_stats_block(frame, state, stats_area, stats_active);
-        views::settings::render(frame, state, settings_area, settings_active);
-    } else {
-        let [projects_area, stats_area] =
-            Layout::vertical([Constraint::Min(1), Constraint::Length(STATS_HEIGHT)])
-                .areas(left_area);
-
-        render_projects_block(frame, state, projects_area, projects_active);
-        render_stats_block(frame, state, stats_area, stats_active);
-    }
+    render_projects_block(frame, state, projects_area, projects_active);
+    render_stats_block(frame, state, stats_area, stats_active);
 
     if matches!(state.active_pane, Pane::Detail) {
         if let Some(task) = state.selected_task() {
@@ -107,13 +92,10 @@ fn render_projects_block(frame: &mut Frame, state: &State, area: Rect, active: b
 
 fn dock_filter_color(filter: DockItem, theme: &Theme) -> Color {
     match filter {
-        DockItem::DueOverdue => theme.red,
-        DockItem::DueToday => theme.yellow,
-        DockItem::DueWeek => theme.cyan,
-        DockItem::Priority(4) => theme.red,
-        DockItem::Priority(3) => theme.yellow,
-        DockItem::Priority(2) => theme.maroon,
-        DockItem::Priority(_) => theme.subtle,
+        DockItem::DueOverdue => theme.due.overdue,
+        DockItem::DueToday => theme.due.today,
+        DockItem::DueWeek => theme.due.this_week,
+        DockItem::Priority(priority) => theme.priority(Priority::from_api(priority)),
     }
 }
 
@@ -182,18 +164,14 @@ fn render_filter_banner(frame: &mut Frame, state: &State, area: Rect) {
         return;
     };
     let color = dock_filter_color(filter, theme);
-    let banner = Style::default()
-        .fg(theme.base)
-        .bg(color)
-        .add_modifier(Modifier::BOLD);
-    let hint = Style::default().fg(color).bg(theme.surface);
+    let banner = theme.selection.fg(color).add_modifier(Modifier::BOLD);
+    let hint = theme.base_bg().fg(color);
     let line = Line::from(vec![
         Span::styled(format!(" ◈ {}  ", filter.hint()), banner),
         Span::styled("Esc: clear", hint),
     ]);
     frame.render_widget(
-        Paragraph::new(text::fit_line(line, usize::from(area.width)))
-            .style(Style::default().bg(theme.surface)),
+        Paragraph::new(text::fit_line(line, usize::from(area.width))).style(theme.surface_bg()),
         area,
     );
 }

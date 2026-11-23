@@ -1,6 +1,5 @@
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
@@ -53,23 +52,9 @@ pub fn render(frame: &mut Frame, progress: f64, status: &str, theme: &Theme) {
 }
 
 fn render_progress_bar(frame: &mut Frame, area: Rect, progress: f64, theme: &Theme) {
-    let gradient = [
-        theme.muted,
-        theme.red,
-        theme.orange,
-        theme.yellow,
-        theme.green,
-        theme.cyan,
-        theme.blue,
-        theme.purple,
-        theme.text,
-    ];
-
     let bar_width = (area.width as usize).min(60);
     let padding = (area.width as usize).saturating_sub(bar_width) / 2;
     let filled = ((bar_width as f64) * progress.clamp(0.0, 1.0)) as usize;
-
-    let unfilled_color = theme.overlay;
 
     let mut spans = Vec::new();
     if padding > 0 {
@@ -77,13 +62,10 @@ fn render_progress_bar(frame: &mut Frame, area: Rect, progress: f64, theme: &The
     }
 
     for i in 0..bar_width {
-        let gradient_pos = (i as f64 / bar_width as f64 * (gradient.len() - 1) as f64) as usize;
-        let color: Color = gradient[gradient_pos.min(gradient.len() - 1)];
-
         if i < filled {
-            spans.push(Span::styled("━", Style::default().fg(color)));
+            spans.push(Span::styled("━", theme.active_border()));
         } else {
-            spans.push(Span::styled("━", Style::default().fg(unfilled_color)));
+            spans.push(Span::styled("━", theme.muted_text()));
         }
     }
 

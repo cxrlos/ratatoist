@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect, Size};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap};
 
@@ -274,8 +274,6 @@ fn lines<'a>(
             theme.muted_text(),
         )));
     } else {
-        let user_colors = theme.user_colors();
-        let mut seen_users: Vec<String> = Vec::new();
         let mut prev_user: Option<String> = None;
 
         for comment in comments {
@@ -284,13 +282,6 @@ fn lines<'a>(
                 .as_deref()
                 .unwrap_or("you")
                 .to_string();
-
-            if !seen_users.contains(&user_id) {
-                seen_users.push(user_id.clone());
-            }
-            let color_idx =
-                seen_users.iter().position(|u| u == &user_id).unwrap_or(0) % user_colors.len();
-            let user_color = user_colors[color_idx];
 
             let same_user = prev_user.as_deref() == Some(&user_id);
             let timestamp = comment
@@ -314,11 +305,9 @@ fn lines<'a>(
                     resolved
                 };
                 let name_style = if is_me {
-                    Style::default()
-                        .fg(user_color)
-                        .add_modifier(Modifier::BOLD | Modifier::ITALIC)
+                    theme.active_title().add_modifier(Modifier::ITALIC)
                 } else {
-                    Style::default().fg(user_color).add_modifier(Modifier::BOLD)
+                    theme.active_title()
                 };
                 lines.push(Line::from(Span::styled(display_name, name_style)));
             }
@@ -328,7 +317,7 @@ fn lines<'a>(
             if !comment.content.is_empty() {
                 for content_line in comment.content.lines() {
                     lines.push(Line::from(vec![
-                        Span::styled("│ ", Style::default().fg(user_color)),
+                        Span::styled("│ ", theme.muted_text()),
                         Span::styled(content_line.to_string(), theme.normal_text()),
                     ]));
                 }
@@ -353,7 +342,7 @@ fn lines<'a>(
                 };
 
                 lines.push(Line::from(vec![
-                    Span::styled("│ ", Style::default().fg(user_color)),
+                    Span::styled("│ ", theme.muted_text()),
                     Span::styled(
                         display,
                         theme.due_upcoming().add_modifier(Modifier::UNDERLINED),
@@ -363,7 +352,7 @@ fn lines<'a>(
 
             if comment.content.is_empty() && !has_attachment {
                 lines.push(Line::from(vec![
-                    Span::styled("│ ", Style::default().fg(user_color)),
+                    Span::styled("│ ", theme.muted_text()),
                     Span::styled("(empty)", theme.muted_text()),
                 ]));
             }

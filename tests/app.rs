@@ -38,7 +38,13 @@ fn app() -> App<TestBackend> {
 fn configured(config: &str) -> App<TestBackend> {
     let config = ratatoist::config::parse(config, &[]);
     assert_eq!(config.warnings, Vec::<String>::new());
-    let state = initial_state_from(&config, &UiSettings::default(), "*".to_owned(), now());
+    let state = initial_state_from(
+        &config,
+        &UiSettings::default(),
+        "*".to_owned(),
+        now(),
+        false,
+    );
     let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
     app.handle(Event::Synced(Ok(full_sync()))).unwrap();
     app
@@ -238,15 +244,14 @@ fn an_unbound_key_under_an_overlay_does_not_redraw() {
 }
 
 #[test]
-fn the_settings_pane_draws_with_an_out_of_range_theme() {
+fn the_screen_draws_with_an_out_of_range_theme() {
     let mut state = State::new(now());
     update(&mut state, Event::Synced(Ok(full_sync())));
-    state.active_pane = Pane::Settings;
     state.theme_idx = state.themes.len();
 
     let app = App::new(TestBackend::new(120, 36), state).unwrap();
 
-    assert!(shows(&app, &app.state().theme().name));
+    assert!(shows(&app, "Inbox"));
 }
 
 #[test]
@@ -566,20 +571,25 @@ fn the_standard_preset_completes_with_ctrl_x() {
 }
 
 #[test]
-fn choosing_a_theme_saves_the_ui_settings() {
+fn choosing_a_theme_saves_nothing() {
     let mut app = configured(THEME_ON_COMMA);
     send(&mut app, [key(','), key('j')]);
 
     let effects = send(&mut app, [press(KeyCode::Enter)]);
 
-    assert_eq!(
-        effects,
-        [Effect::SaveUiSettings {
-            theme: app.state().theme().name.clone(),
-            idle_timeout_secs: 300,
-        }]
-    );
+    assert!(effects.is_empty());
     assert_ne!(app.state().theme_idx, 0);
+}
+
+#[test]
+fn there_is_no_settings_pane_and_nothing_saves_settings() {
+    let mut app = app();
+
+    let effects = send(&mut app, [key(','), key('j'), press(KeyCode::Enter)]);
+
+    assert!(!shows(&app, "Settings"));
+    assert!(effects.iter().all(|effect| !matches!(effect, Effect::Quit)));
+    assert_eq!(app.state().theme_idx, 0);
 }
 
 #[test]

@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn a_timed_due_earlier_today_reads_and_looks_like_today() {
-        let theme = &Theme::builtin()[0];
+        let theme = &Theme::built_in("nord").unwrap();
 
         let formatted = format_due(&due("2026-11-22T09:00:00"), sunday(), theme);
 
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn a_timed_due_yesterday_looks_overdue() {
-        let theme = &Theme::builtin()[0];
+        let theme = &Theme::built_in("nord").unwrap();
 
         let formatted = format_due(&due("2026-11-21T18:30:00Z"), sunday(), theme);
 
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn a_due_without_a_string_reads_as_a_short_date() {
-        let theme = &Theme::builtin()[0];
+        let theme = &Theme::built_in("nord").unwrap();
         let formatted = format_due(&due("2026-12-12T18:00:00"), sunday(), theme);
         assert_eq!(formatted.text, "Dec 12");
         assert_eq!(formatted.style, theme.due_future());
