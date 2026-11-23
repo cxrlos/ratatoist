@@ -168,6 +168,8 @@ impl State {
                 let before = std::mem::take(&mut self.tasks);
                 self.tasks = items.into_iter().filter(|t| !t.is_deleted).collect();
                 self.keep_marks_of_unchanged_tasks(&before);
+                // A full sync carries every due date as Todoist parsed it.
+                self.pending_due.clear();
             }
             if let Some(labels) = resp.labels {
                 self.labels = labels
@@ -238,6 +240,7 @@ impl State {
                         continue;
                     }
                     self.rolled_back.remove(&item.id);
+                    self.pending_due.remove(&item.id);
                     if item.is_deleted {
                         self.tasks.retain(|t| t.id != item.id);
                     } else if let Some(e) = self.tasks.iter_mut().find(|t| t.id == item.id) {
@@ -399,6 +402,7 @@ impl State {
             return;
         };
         if let Some(task_id) = self.revert_optimistic(op) {
+            self.pending_due.remove(&task_id);
             self.rolled_back.insert(task_id, failure.clone());
         }
     }

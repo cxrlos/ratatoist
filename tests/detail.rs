@@ -6,7 +6,6 @@ use insta::assert_snapshot;
 use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::keys::{Keymap, Preset};
 use ratatoist::todoist::sync::SyncResponse;
-use ratatoist::ui::views::detail::DetailField;
 use ratatui::backend::TestBackend;
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
@@ -174,8 +173,7 @@ fn edit_field(edit: char) -> App<TestBackend> {
 #[test]
 fn editing_the_content_says_so_in_the_title() {
     let app = edit_field('e');
-    assert_eq!(app.state().detail_field, DetailField::Content);
-    assert!(shows(&app, " Edit Content "), "{:#?}", screen(&app));
+    assert!(shows(&app, " Content of Call the dentist "));
 }
 
 #[test]
@@ -191,15 +189,13 @@ fn editing_the_priority_opens_the_priority_picker() {
 #[test]
 fn editing_the_due_date_says_so_in_the_title() {
     let app = edit_field('d');
-    assert_eq!(app.state().detail_field, DetailField::Due);
-    assert!(shows(&app, " Edit Due Date "), "{:#?}", screen(&app));
+    assert!(shows(&app, " Due date of Call the dentist "));
 }
 
 #[test]
 fn editing_the_description_says_so_in_the_title() {
     let app = edit_field('E');
-    assert_eq!(app.state().detail_field, DetailField::Description);
-    assert!(shows(&app, " Edit Description "), "{:#?}", screen(&app));
+    assert!(shows(&app, " Description of Call the dentist "));
 }
 
 /// "Call the dentist" with a description of 60 numbered lines.

@@ -1,6 +1,7 @@
 use super::confirm::Confirm;
 use super::palette::Palette;
 use super::picker::Picker;
+use super::prompt::Prompt;
 use crate::keys::Key;
 
 /// One overlay over the main screen. [`super::State::modals`] keeps them as
@@ -22,24 +23,8 @@ pub enum Modal {
     Messages { scroll: u16 },
     /// The add-task form.
     Form(TaskForm),
-    /// A one-line prompt; what it writes to depends on its kind.
-    Input(InputKind),
-}
-
-/// What a submitted [`Modal::Input`] writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputKind {
-    /// A new comment on the focused task.
-    Comment,
-    /// The focused task's content.
-    Content,
-    /// The focused task's description.
-    Description,
-    /// The focused task's due date, as a due string.
-    DueDate,
-    /// The selected detail field of the focused task. The direct edit keys
-    /// replace it.
-    Field,
+    /// The one-line prompt for a comment or a field of a task.
+    Prompt(Prompt),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

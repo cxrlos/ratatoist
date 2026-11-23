@@ -53,7 +53,7 @@ pub fn render(state: &State, confirm: &Confirm, frame: &mut Frame, area: Rect) {
 }
 
 /// The first key of each of `actions` in the overlay, joined, then `word`.
-fn keys(state: &State, actions: &[Action], word: &str) -> Vec<Span<'static>> {
+pub(super) fn keys(state: &State, actions: &[Action], word: &str) -> Vec<Span<'static>> {
     let keys: Vec<String> = actions
         .iter()
         .filter_map(|&action| {

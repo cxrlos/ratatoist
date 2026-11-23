@@ -6,7 +6,7 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatoist::app::{
-    App, Effect, Event, InputKind, ListFilter, Modal, Pane, PickerKind, Screen, Sort, State,
+    App, Effect, Event, ListFilter, Modal, Pane, PickerKind, PromptField, Screen, Sort, State,
 };
 use ratatoist::config;
 use ratatoist::keys::{ACTIONS, Key, Preset, STANDARD};
@@ -263,22 +263,18 @@ fn the_keys_both_presets_share_run_the_same_actions() {
         send(&mut app, [esc()]);
 
         for (edit, field) in [
-            ('e', DetailField::Content),
-            ('E', DetailField::Description),
-            ('d', DetailField::Due),
+            ('e', PromptField::Content),
+            ('E', PromptField::Description),
+            ('d', PromptField::DueDate),
+            ('c', PromptField::Comment),
         ] {
             send(&mut app, [key(edit)]);
-            assert_eq!(
-                app.state().modals,
-                [Modal::Input(InputKind::Field)],
-                "an edit key opens the field prompt"
+            assert!(
+                matches!(app.state().modals.as_slice(), [Modal::Prompt(prompt)] if prompt.field == field),
+                "an edit key opens the prompt for its field"
             );
-            assert_eq!(app.state().detail_field, field);
             send(&mut app, [esc()]);
         }
-
-        send(&mut app, [key('c')]);
-        assert_eq!(app.state().modals, [Modal::Input(InputKind::Comment)]);
         send(&mut app, [esc()]);
 
         send(&mut app, [key('?')]);
@@ -436,7 +432,10 @@ fn a_text_field_takes_typed_keys_before_the_keymap() {
 
     assert!(effects.is_empty());
     assert_eq!(input(&app), "q? jk 1");
-    assert_eq!(app.state().modals, [Modal::Input(InputKind::Comment)]);
+    assert!(matches!(
+        app.state().modals.as_slice(),
+        [Modal::Prompt(prompt)] if prompt.field == PromptField::Comment
+    ));
 }
 
 #[test]
@@ -459,7 +458,7 @@ fn the_cursor_moves_and_edits_in_a_text_field() {
     send(&mut app, [press(KeyCode::Home), press(KeyCode::Right)]);
     send(&mut app, [press(KeyCode::Delete)]);
     assert_eq!(input(&app), ">ello");
-    assert!(screen(&app).contains(">▎ello"));
+    assert!(screen(&app).contains("> >ello"));
 }
 
 #[test]

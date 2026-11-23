@@ -51,6 +51,18 @@ impl ActionSpec {
         }
     }
 
+    /// Where the bottom bar shows it on `state`: its hint, but with the word
+    /// the open prompt uses for Enter, as `send` for a comment.
+    pub fn hint_in(&self, state: &State) -> Option<Hint> {
+        match (self.action, state.top_modal()) {
+            (Action::Accept, Some(Modal::Prompt(prompt))) => self.hint.map(|hint| Hint {
+                word: prompt.field.verb(),
+                ..hint
+            }),
+            _ => self.hint,
+        }
+    }
+
     /// Whether it can run now.
     pub fn availability(&self, state: &State) -> Availability {
         if (self.available)(state) {
@@ -218,7 +230,7 @@ impl OverlayKind {
             Modal::WhichKey { .. } => return None,
             Modal::Picker(_) => OverlayKind::List,
             Modal::Palette(_) => OverlayKind::Palette,
-            Modal::Input(_) => OverlayKind::Prompt,
+            Modal::Prompt(_) => OverlayKind::Prompt,
             Modal::Form(_) => OverlayKind::Form,
             Modal::Confirm(_) => OverlayKind::Confirm,
             Modal::Messages { .. } => OverlayKind::Messages,
@@ -1034,7 +1046,7 @@ fn can_accept(state: &State) -> bool {
         Some(Modal::Palette(_)) => app::palette_has_selection(state),
         other => matches!(
             other,
-            Some(Modal::Picker(_) | Modal::Input(_) | Modal::Form(_) | Modal::Confirm(_))
+            Some(Modal::Picker(_) | Modal::Prompt(_) | Modal::Form(_) | Modal::Confirm(_))
         ),
     }
 }

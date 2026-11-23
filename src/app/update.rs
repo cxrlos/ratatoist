@@ -6,9 +6,10 @@ use tracing::info;
 
 use super::confirm;
 use super::failure::{ErrorKind, Failure};
-use super::modal::{InputKind, Modal, TaskForm};
+use super::modal::{Modal, TaskForm};
 use super::palette::{self, Palette};
 use super::picker::{self, Choice, PickerKind, open_picker};
+use super::prompt::{PromptField, open_prompt};
 use super::state::{ListFilter, Pane, ProjectNavItem, Screen};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
 use super::text_field::TextField;
@@ -152,6 +153,7 @@ enum TextEdit {
     Backspace,
     Delete,
     DeleteWord,
+    Clear,
     Left,
     Right,
     Home,
@@ -167,6 +169,7 @@ impl TextEdit {
             (Key::named(KeyCode::Backspace), TextEdit::Backspace),
             (Key::named(KeyCode::Delete), TextEdit::Delete),
             (Key::ctrl('w'), TextEdit::DeleteWord),
+            (Key::ctrl('u'), TextEdit::Clear),
             (Key::named(KeyCode::Left), TextEdit::Left),
             (Key::named(KeyCode::Right), TextEdit::Right),
             (Key::named(KeyCode::Home), TextEdit::Home),
@@ -186,6 +189,11 @@ impl TextEdit {
             TextEdit::Backspace => field.backspace(),
             TextEdit::Delete => field.delete(),
             TextEdit::DeleteWord => field.delete_word(),
+            TextEdit::Clear => {
+                let changed = !field.is_empty();
+                *field = TextField::default();
+                changed
+            }
             TextEdit::Left => field.left(),
             TextEdit::Right => field.right(),
             TextEdit::Home => field.home(),
@@ -204,6 +212,7 @@ impl TextEdit {
             TextEdit::Backspace => {
                 query.pop();
             }
+            TextEdit::Clear => query.clear(),
             TextEdit::DeleteWord => {
                 let kept = query.trim_end().rfind(' ').map_or(0, |space| space + 1);
                 query.truncate(kept);
@@ -226,7 +235,7 @@ impl TextEdit {
 /// add-task form's active text field.
 fn focused_field(state: &mut State) -> Option<&mut TextField> {
     match state.top_modal() {
-        Some(Modal::Input(_)) => Some(&mut state.input),
+        Some(Modal::Prompt(_)) => Some(&mut state.input),
         Some(Modal::Form(form)) if form.editing() => Some(&mut state.input),
         _ => None,
     }
@@ -271,6 +280,11 @@ fn edit_query(query: &mut String, edit: TextEdit) -> bool {
             true
         }
         TextEdit::Backspace => query.pop().is_some(),
+        TextEdit::Clear => {
+            let changed = !query.is_empty();
+            query.clear();
+            changed
+        }
         TextEdit::DeleteWord => {
             let kept = query.trim_end().rfind(' ').map_or(0, |space| space + 1);
             let changed = kept < query.len();
@@ -418,14 +432,7 @@ impl State {
                 true
             }
             Action::Edit(field) => self.edit(field),
-            Action::Comment => {
-                let Some(task) = self.selected_task() else {
-                    return false;
-                };
-                self.edit_task = Some(task.id.clone());
-                self.start_input_for(InputKind::Comment, String::new());
-                true
-            }
+            Action::Comment => open_prompt(self, PromptField::Comment),
             Action::ToggleFold => self.toggle_fold(),
             Action::OpenAllFolds => {
                 self.collapsed.clear();
@@ -471,7 +478,7 @@ impl State {
     /// project's list to the Projects tree.
     fn close(&mut self) -> bool {
         match self.top_modal() {
-            Some(Modal::Input(_) | Modal::Form(_)) => {
+            Some(Modal::Prompt(_) | Modal::Form(_)) => {
                 self.cancel_input();
                 return true;
             }
@@ -562,8 +569,8 @@ impl State {
                 Some(choice) => self.choose(choice, effects),
                 None => false,
             },
-            Some(Modal::Input(_)) => {
-                self.submit_input(effects);
+            Some(Modal::Prompt(_)) => {
+                self.submit_prompt(effects);
                 true
             }
             Some(Modal::Form(_)) => self.accept_form(effects),
@@ -759,21 +766,20 @@ impl State {
     /// Opens the edit of `field` of the focused task: the priority picker,
     /// or the prompt for the matching detail field.
     fn edit(&mut self, field: Editable) -> bool {
-        let Some(task) = self.selected_task() else {
-            return false;
-        };
-        self.edit_task = Some(task.id.clone());
-        self.detail_field = match field {
+        let field = match field {
             Editable::Priority => {
+                let Some(task) = self.selected_task() else {
+                    return false;
+                };
+                self.edit_task = Some(task.id.clone());
                 open_picker(self, PickerKind::Priority);
                 return true;
             }
-            Editable::Content => DetailField::Content,
-            Editable::Description => DetailField::Description,
-            Editable::DueDate => DetailField::Due,
+            Editable::Content => PromptField::Content,
+            Editable::Description => PromptField::Description,
+            Editable::DueDate => PromptField::DueDate,
         };
-        self.start_field_edit();
-        true
+        open_prompt(self, field)
     }
 
     /// Folds the focused row: the Overdue group in the Today view, a task's
@@ -889,25 +895,23 @@ impl State {
         self.input = TextField::default();
     }
 
-    fn start_input_for(&mut self, target: InputKind, prefill: String) {
-        self.modals.push(Modal::Input(target));
-        self.input = TextField::new(prefill);
-    }
-
-    fn submit_input(&mut self, effects: &mut Vec<Effect>) {
-        let content = self.input.text().trim().to_string();
-
-        if let Some(Modal::Input(target)) = self.top_modal() {
-            if !content.is_empty() {
-                match target {
-                    InputKind::Comment => self.submit_comment(content, effects),
-                    InputKind::Field => self.submit_field_edit(content, effects),
-                    // The edit keys open the Field prompt; nothing opens these.
-                    InputKind::Content | InputKind::Description | InputKind::DueDate => {}
-                }
-            }
-            self.cancel_input();
+    /// Enter in the prompt: sends what it writes, or keeps it open with the
+    /// reason when the text cannot be sent.
+    fn submit_prompt(&mut self, effects: &mut Vec<Effect>) {
+        let text = self.input.text().trim().to_owned();
+        let Some(Modal::Prompt(prompt)) = self.modals.last_mut() else {
+            return;
+        };
+        if let Some(reason) = prompt.field.refusal(&text) {
+            prompt.error = Some(reason);
+            return;
         }
+        let field = prompt.field;
+        match field {
+            PromptField::Comment => self.submit_comment(text, effects),
+            _ => self.submit_field_edit(field, text, effects),
+        }
+        self.cancel_input();
     }
 
     /// Enter in the add-task form: on a text field it adds the task; on the
@@ -1041,31 +1045,32 @@ impl State {
         self.send_command(command, Some(op), effects);
     }
 
-    fn submit_field_edit(&mut self, value: String, effects: &mut Vec<Effect>) {
+    fn submit_field_edit(&mut self, field: PromptField, value: String, effects: &mut Vec<Effect>) {
         let Some(before) = self.edit_target() else {
             return;
         };
         let task_id = before.id.clone();
 
-        let args = match self.detail_field {
-            DetailField::Content => {
+        let args = match field {
+            PromptField::Content => {
                 if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
                     t.content = value.clone();
                 }
                 serde_json::json!({ "id": task_id, "content": value })
             }
-            DetailField::Due => {
-                // Due string: the server parses it and returns the Due object,
-                // so there is nothing to show optimistically.
+            PromptField::DueDate => {
+                // Todoist parses the string and sends the Due object back with
+                // a later sync; until then the task shows what was typed.
+                self.pending_due.insert(task_id.clone(), value.clone());
                 serde_json::json!({ "id": task_id, "due_string": value })
             }
-            DetailField::Description => {
+            PromptField::Description => {
                 if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
                     t.description = value.clone();
                 }
                 serde_json::json!({ "id": task_id, "description": value })
             }
-            DetailField::Priority => return,
+            PromptField::Comment => return,
         };
 
         let command = SyncCommand {
@@ -1083,7 +1088,7 @@ impl State {
 
     fn cancel_input(&mut self) {
         self.modals
-            .retain(|m| !matches!(m, Modal::Input(_) | Modal::Form(_)));
+            .retain(|m| !matches!(m, Modal::Prompt(_) | Modal::Form(_)));
         self.input = TextField::default();
         self.edit_task = None;
     }
@@ -1166,30 +1171,6 @@ impl State {
             before: Box::new(before),
         };
         self.send_command(command, Some(op), effects);
-    }
-
-    fn start_field_edit(&mut self) {
-        let Some(task) = self.selected_task() else {
-            return;
-        };
-        let id = task.id.clone();
-
-        let prefill = match self.detail_field {
-            DetailField::Content => task.content.clone(),
-            DetailField::Priority => {
-                self.edit_task = Some(id);
-                open_picker(self, PickerKind::Priority);
-                return;
-            }
-            DetailField::Due => task
-                .due
-                .as_ref()
-                .and_then(|d| d.string.clone())
-                .unwrap_or_default(),
-            DetailField::Description => task.description.clone(),
-        };
-        self.edit_task = Some(id);
-        self.start_input_for(InputKind::Field, prefill);
     }
 
     fn move_detail_field(&mut self, delta: i32) {

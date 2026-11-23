@@ -10,6 +10,7 @@ pub mod icons;
 mod messages;
 pub mod palette;
 pub mod picker;
+pub mod prompt;
 pub mod release;
 pub mod style;
 pub mod text;
@@ -52,7 +53,7 @@ pub fn draw(frame: &mut Frame, state: &State) {
             Modal::Picker(picker) => picker::render(state, picker, frame, body_area),
             Modal::Confirm(confirm) => confirm::render(state, confirm, frame, body_area),
             Modal::Form(form) => components::task_form::render(frame, state, form),
-            Modal::Input(target) => components::input_popup::render(frame, state, *target),
+            Modal::Prompt(prompt) => prompt::render(state, prompt, frame, body_area),
             Modal::Cheatsheet { scroll } => cheatsheet::render(state, *scroll, frame, body_area),
             Modal::WhichKey { prefix } => which_key::render(state, prefix, frame, body_area),
             Modal::Messages { scroll } => messages::render(state, *scroll, frame, body_area),

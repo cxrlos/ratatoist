@@ -74,6 +74,10 @@ pub struct State {
     /// Tasks whose last write was rolled back, with why. Their rows show the
     /// failed mark until they change again.
     pub rolled_back: HashMap<String, Failure>,
+    /// Due strings sent for tasks whose parsed due date has not come back
+    /// yet, by task id. The task shows the string until Todoist answers
+    /// with the parsed date.
+    pub pending_due: HashMap<String, String>,
     /// What is known about newer releases, for the tab row.
     pub release: ReleaseState,
     /// How the task list on screen is sorted.
@@ -144,6 +148,7 @@ impl State {
             show_failure: false,
             failures: ErrorLog::default(),
             rolled_back: HashMap::new(),
+            pending_due: HashMap::new(),
             release: ReleaseState::default(),
             sort: Sort::default(),
             comments: Vec::new(),
@@ -186,6 +191,12 @@ impl State {
     /// The glyphs of the icon set in use.
     pub fn icons(&self) -> &'static Icons {
         self.icon_set.icons()
+    }
+
+    /// The due string sent for `task_id` whose parsed date has not come back
+    /// yet, if any.
+    pub fn pending_due(&self, task_id: &str) -> Option<&str> {
+        self.pending_due.get(task_id).map(String::as_str)
     }
 
     pub fn top_modal(&self) -> Option<&Modal> {

@@ -10,6 +10,7 @@ mod failure;
 mod modal;
 mod palette;
 mod picker;
+mod prompt;
 mod release;
 mod state;
 mod sync;
@@ -22,12 +23,13 @@ pub use confirm::{Confirm, Confirmed};
 pub use effect::Effect;
 pub use event::Event;
 pub use failure::{ERROR_LOG_CAP, ErrorKind, ErrorLog, Failure, LoadError};
-pub use modal::{InputKind, Modal, TaskForm};
+pub use modal::{Modal, TaskForm};
 pub use palette::{
     Palette, PaletteEntry, palette_can_step_down, palette_has_selection, palette_highlight,
     palette_matches,
 };
 pub use picker::{Choice, Entry, Picker, PickerKind, open_picker};
+pub use prompt::{Prompt, PromptField, open_prompt};
 pub use release::ReleaseState;
 pub use state::{
     COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, Indicator, ListFilter, OverviewStats, Pane,

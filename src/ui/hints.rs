@@ -84,7 +84,7 @@ fn line_items(state: &State, rows: &[HintRow]) -> (HintRow, Vec<Item>) {
 /// add-task form's active text field, or the palette's or a picker's query.
 fn takes_text(state: &State) -> bool {
     match state.top_modal() {
-        Some(Modal::Input(_) | Modal::Palette(_) | Modal::Picker(_)) => true,
+        Some(Modal::Prompt(_) | Modal::Palette(_) | Modal::Picker(_)) => true,
         Some(Modal::Form(form)) => form.editing(),
         _ => false,
     }
@@ -102,7 +102,7 @@ fn items(state: &State, row: HintRow) -> Vec<Item> {
     let mut shown = Vec::new();
     for &context in &contexts {
         for spec in ACTIONS.iter().filter(|s| s.contexts.contains(&context)) {
-            let Some(hint) = spec.hint.filter(|hint| hint.row == row) else {
+            let Some(hint) = spec.hint_in(state).filter(|hint| hint.row == row) else {
                 continue;
             };
             if shown.contains(&spec.action) {

@@ -107,7 +107,7 @@ fn picker(size: (u16, u16)) -> App<TestBackend> {
 fn text_field(size: (u16, u16)) -> App<TestBackend> {
     let mut app = list(size);
     send(&mut app, [key('c')]);
-    assert!(matches!(app.state().top_modal(), Some(Modal::Input(_))));
+    assert!(matches!(app.state().top_modal(), Some(Modal::Prompt(_))));
     app
 }
 
@@ -197,9 +197,9 @@ fn a_text_field_leaves_out_the_keys_that_would_type() {
     let app = text_field(NARROW);
 
     let bar = bar(&app);
-    assert!(bar.contains("Enter choose"), "{bar}");
-    assert!(bar.contains("Esc close"), "{bar}");
-    assert!(!bar.contains("j/"), "{bar}");
+    assert!(bar.contains("Enter set") || bar.contains("Enter send"));
+    assert!(bar.contains("Esc close"));
+    assert!(!bar.contains("j/"));
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn no_view_or_component_writes_a_key_hint() {
         include_str!("../src/ui/views/detail.rs"),
         include_str!("../src/ui/views/tasks.rs"),
         include_str!("../src/ui/views/projects.rs"),
-        include_str!("../src/ui/components/input_popup.rs"),
+        include_str!("../src/ui/prompt.rs"),
         include_str!("../src/ui/components/task_form.rs"),
         include_str!("../src/ui/picker.rs"),
         include_str!("../src/ui/confirm.rs"),
