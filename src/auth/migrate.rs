@@ -23,8 +23,11 @@ impl Legacy {
     /// The `api_token` in `config_dir/config.toml`, if the file parses and
     /// holds a valid one. A file that does not parse is left to the config
     /// loader to report.
+    ///
+    /// A symlinked `config.toml` (a dotfiles checkout, say) resolves to its
+    /// target, so the rewrite edits the real file and leaves the link alone.
     pub(super) fn find(config_dir: &Path) -> Option<Self> {
-        let path = config_dir.join(FILE);
+        let path = fs::canonicalize(config_dir.join(FILE)).ok()?;
         let text = fs::read_to_string(&path).ok()?;
         let document = toml_edit::Document::parse(text.as_str()).ok()?;
         let (key, item) = document.as_table().get_key_value("api_token")?;
@@ -49,14 +52,18 @@ impl Legacy {
     }
 
     /// Rewrites the file without the `api_token` line, through a temporary
-    /// file in the same folder with the same mode, renamed over it. Returns
+    /// file in the same folder with the same mode, renamed over it. The
+    /// temporary name carries the process id, so two starts at once never
+    /// share one. Returns
     /// the path on success, or why it failed.
     pub(super) fn remove(self) -> Result<String, String> {
         let shown = self.path.display().to_string();
         let mut kept = String::with_capacity(self.text.len());
         kept.push_str(&self.text[..self.lines.start]);
         kept.push_str(&self.text[self.lines.end..]);
-        let temporary = self.path.with_extension("toml.ratatoist-tmp");
+        let temporary = self
+            .path
+            .with_extension(format!("toml.ratatoist-{}.tmp", std::process::id()));
         let mode = fs::metadata(&self.path)
             .map(|metadata| metadata.permissions().mode())
             .unwrap_or(0o600);

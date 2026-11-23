@@ -328,6 +328,30 @@ fn a_config_that_does_not_parse_is_left_alone() {
     assert_eq!(dir.read_config(), text);
 }
 
+#[test]
+fn migration_edits_the_target_of_a_symlinked_config_and_keeps_the_link() {
+    let dir = TempDir::new("migratesymlink");
+    let dotfiles = dir.0.join("dotfiles");
+    let config = dir.0.join("config");
+    fs::create_dir_all(&dotfiles).unwrap();
+    fs::create_dir_all(&config).unwrap();
+    let target = dotfiles.join("config.toml");
+    fs::write(&target, LEGACY).unwrap();
+    std::os::unix::fs::symlink(&target, config.join("config.toml")).unwrap();
+    let keyring = MemoryKeyring::default();
+
+    let (resolved, notes) = resolve(None, &keyring, &config);
+
+    assert_eq!(resolved.unwrap().source, Source::Keyring);
+    assert_eq!(keyring.stored().unwrap().expose(), SECRET);
+    let link = fs::symlink_metadata(config.join("config.toml")).unwrap();
+    assert!(link.file_type().is_symlink());
+    assert_eq!(fs::read_to_string(&target).unwrap(), MIGRATED);
+    assert_eq!(fs::read_dir(&dotfiles).unwrap().count(), 1);
+    assert_eq!(fs::read_dir(&config).unwrap().count(), 1);
+    assert!(notes.contains("dotfiles"), "{notes}");
+}
+
 // Commands
 
 #[tokio::test]

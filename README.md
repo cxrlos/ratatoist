@@ -31,7 +31,7 @@
 - **Fast**: incremental delta sync, real-time WebSocket updates, exponential-backoff retries
 - **Vim-native**: `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
 - **Polished**: task comments, priority indicators, human-readable dates, 10 built-in themes
-- **Secure**: the token lives in the OS keyring, never in a file, the log or on screen
+- **Secure**: the token lives in the OS keyring (or `TODOIST_API_TOKEN`), never in the log or on screen; a pre-0.6.0 `api_token` in `config.toml` moves to the keyring on first start
 
 ## Quick start
 

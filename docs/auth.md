@@ -36,7 +36,7 @@ Versions before 0.6.0 kept the token as `api_token` in `config.toml`. When ratat
 - If the keyring already holds a token, that token wins, and the `api_token` line is removed the same way.
 - If the keyring is unavailable, the file stays as it is and ratatoist prints the error with the `TODOIST_API_TOKEN` hint.
 
-Only the `api_token` line goes; every other byte of the file, comments included, stays, and the file keeps its mode. If the file cannot be rewritten (a read-only folder, say), the token is still in the keyring and ratatoist asks you to delete the line by hand. This is the only time ratatoist writes `config.toml`, and nothing reads `api_token` as a token afterwards.
+Only the `api_token` line goes; every other byte of the file, comments included, stays, and the file keeps its mode. When `config.toml` is a symlink (into a dotfiles repo, say), ratatoist edits the file it points to and leaves the link in place, so the token leaves the copy you might commit. If that file was ever committed, the token is still in the repo's history: I recommend issuing a new token in Todoist and logging in again. If the file cannot be rewritten (a read-only folder, say), the token is still in the keyring and ratatoist asks you to delete the line by hand. This is the only time ratatoist writes `config.toml`, and nothing reads `api_token` as a token afterwards.
 
 ## The keyring on each system
 
