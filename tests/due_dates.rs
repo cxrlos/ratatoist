@@ -17,10 +17,10 @@ fn now() -> DateTime<Local> {
     Local.from_local_datetime(&naive).earliest().unwrap()
 }
 
-/// One inbox holding a due of every kind: timed and all-day, on each side
-/// of today and of the week's end, checked, a subtask, and one assigned to
-/// someone else.
-const SYNC: &str = r#"{
+/// A hypothetical full sync, not recorded from Todoist. One inbox holds a
+/// due of every kind: timed and all-day, on each side of today and of the
+/// week's end, checked, a subtask, and one assigned to someone else.
+const HYPOTHETICAL_SYNC: &str = r#"{
   "full_sync": true,
   "sync_token": "due-dates-1",
   "user": { "id": "u1", "full_name": "Ada Example", "email": "ada@example.com" },
@@ -58,7 +58,7 @@ const SYNC: &str = r#"{
 
 fn synced() -> State {
     let mut state = State::new(now());
-    let response: SyncResponse = serde_json::from_str(SYNC).unwrap();
+    let response: SyncResponse = serde_json::from_str(HYPOTHETICAL_SYNC).unwrap();
     update(&mut state, Event::Synced(Ok(Box::new(response))));
     state
 }
