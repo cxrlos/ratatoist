@@ -453,6 +453,9 @@ impl State {
 
     /// Moves the highlight of the overlay on top by `step`.
     fn scroll_overlay(&mut self, step: isize) -> bool {
+        if let Some(Modal::Cheatsheet { .. }) = self.top_modal() {
+            return self.scroll_cheatsheet(step);
+        }
         if let Some(&Modal::Messages { scroll: before }) = self.top_modal() {
             let max = ui::messages_max_scroll(self, self.screen_size());
             let after = if step > 0 {
@@ -470,6 +473,24 @@ impl State {
             Some(Modal::Form(_)) => self.move_form_field(if step > 0 { 1 } else { -1 }),
             _ => false,
         }
+    }
+
+    /// Scrolls the cheatsheet on top one row, never past its last row;
+    /// whether it moved. Starting from the clamped offset makes the first
+    /// key up move at once after the terminal grew.
+    fn scroll_cheatsheet(&mut self, step: isize) -> bool {
+        let max = ui::cheatsheet_max_scroll(self, self.screen_size());
+        let Some(Modal::Cheatsheet { scroll }) = self.modals.last_mut() else {
+            return false;
+        };
+        let before = *scroll;
+        let current = before.min(max);
+        *scroll = if step > 0 {
+            current.saturating_add(1).min(max)
+        } else {
+            current.saturating_sub(1)
+        };
+        *scroll != before
     }
 
     /// Chooses what the overlay on top has highlighted, or submits it.

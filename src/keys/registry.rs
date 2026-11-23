@@ -4,6 +4,7 @@ use crossterm::event::KeyCode;
 
 use super::{Context, Key};
 use crate::app::{Action, Editable, ListFilter, Modal, Pane, Screen, State};
+use crate::ui;
 
 /// The narrowest terminal, in columns, that shows the task list and the
 /// detail side by side.
@@ -1008,12 +1009,22 @@ fn can_move_up(_: &State) -> bool {
     true
 }
 
+/// Whether the overlay on top has somewhere further down to go: the
+/// cheatsheet a hidden row below.
 fn can_scroll_down(state: &State) -> bool {
-    state.top_modal().is_some()
+    match state.top_modal() {
+        Some(Modal::Cheatsheet { scroll }) => {
+            *scroll < ui::cheatsheet_max_scroll(state, state.screen_size())
+        }
+        other => other.is_some(),
+    }
 }
 
 fn can_scroll_up(state: &State) -> bool {
-    state.top_modal().is_some()
+    match state.top_modal() {
+        Some(Modal::Cheatsheet { scroll }) => *scroll > 0,
+        other => other.is_some(),
+    }
 }
 
 fn can_accept(state: &State) -> bool {

@@ -1,5 +1,6 @@
 //! Rendering: a pure function of [`State`].
 
+pub mod cheatsheet;
 pub mod components;
 pub mod confirm;
 pub mod dates;
@@ -15,6 +16,7 @@ pub mod text;
 pub mod theme;
 mod upcoming;
 pub mod views;
+pub mod which_key;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Position, Rect, Size};
@@ -22,7 +24,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Tabs};
 
 use crate::app::{Action, Modal, Pane, Screen, State};
-use crate::keys;
+use crate::keys::{self, Context};
 
 /// The most rows the notice above the bottom bar takes.
 pub const MAX_NOTICE_ROWS: usize = 3;
@@ -60,11 +62,10 @@ pub fn draw(frame: &mut Frame, state: &State) {
             Modal::Confirm(confirm) => confirm::render(state, confirm, frame, body_area),
             Modal::Form(form) => components::task_form::render(frame, state, form),
             Modal::Input(target) => components::input_popup::render(frame, state, *target),
-            Modal::Cheatsheet { .. } => {
-                components::cheatsheet::render(frame, state.keymap.preset(), theme);
-            }
+            Modal::Cheatsheet { scroll } => cheatsheet::render(state, *scroll, frame, body_area),
+            Modal::WhichKey { prefix } => which_key::render(state, prefix, frame, body_area),
             Modal::Messages { scroll } => messages::render(state, *scroll, frame, body_area),
-            Modal::WhichKey { .. } | Modal::Palette(_) => {}
+            Modal::Palette(_) => {}
         }
     }
 }
@@ -338,6 +339,28 @@ pub fn centered(area: Rect, width: u16, height: u16) -> Rect {
         y: area.y + (area.height - height) / 2,
         width,
         height,
+    }
+}
+
+/// How many rows the cheatsheet scrolls before its last row shows, on a
+/// terminal of `viewport`.
+pub fn cheatsheet_max_scroll(state: &State, viewport: Size) -> u16 {
+    cheatsheet::max_scroll(state, body_area(state, viewport))
+}
+
+/// The bottom border of a popup: the key that closes it.
+fn close_hint(state: &State) -> Line<'static> {
+    match state
+        .keymap
+        .keys_for(Action::Close, &[Context::Overlay])
+        .first()
+    {
+        Some(key) => Line::from(vec![
+            Span::raw(" "),
+            Span::styled(key.to_string(), style::accent(state.theme())),
+            Span::raw(" close "),
+        ]),
+        None => Line::default(),
     }
 }
 

@@ -423,6 +423,6 @@ fn the_cheatsheet_names_the_scroll_keys() {
 
     send(&mut app, [key('?')]);
 
-    assert!(shows(&app, "Ctrl-d / Ctrl-u"), "{:#?}", screen(&app));
-    assert!(shows(&app, "Ctrl-e / Ctrl-y"), "{:#?}", screen(&app));
+    assert!(shows(&app, "C-d/C-u"), "{:#?}", screen(&app));
+    assert!(shows(&app, "C-e/C-y"), "{:#?}", screen(&app));
 }
