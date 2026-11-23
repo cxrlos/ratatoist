@@ -97,13 +97,14 @@ fn screen(app: &App<TestBackend>) -> String {
 /// The Projects screen with `name`'s list open.
 fn on_project(app: &mut App<TestBackend>, name: &str) {
     send(app, [key('4')]);
-    for _ in 0..app.state().projects.len() {
-        if app.state().selected_project_name() == name {
+    let focused = |app: &App<TestBackend>| app.state().tree_project().map(|p| p.name.clone());
+    for _ in 0..app.state().tree_rows().len() {
+        if focused(app).as_deref() == Some(name) {
             break;
         }
         send(app, [key('j')]);
     }
-    assert_eq!(app.state().selected_project_name(), name);
+    assert_eq!(focused(app).as_deref(), Some(name));
     send(app, [enter()]);
 }
 
