@@ -55,12 +55,11 @@ impl UiSettings {
 }
 
 /// The first state, with "now" read from the clock and the saved settings
-/// and sync token read from the config folder.
-pub fn initial_state(config: &Config) -> State {
-    let dir = crate::paths::config_dir().ok();
-    let ui = dir.as_deref().map(UiSettings::load).unwrap_or_default();
-    let sync_token = dir
-        .as_deref()
+/// and sync token read from `files`. With `None` nothing is read: no saved
+/// settings and a full sync.
+pub fn initial_state(config: &Config, files: Option<&Path>) -> State {
+    let ui = files.map(UiSettings::load).unwrap_or_default();
+    let sync_token = files
         .map(|dir| SyncState::load(dir).sync_token)
         .unwrap_or_else(|| "*".to_owned());
     initial_state_from(config, &ui, sync_token, Local::now())
@@ -94,27 +93,9 @@ pub fn initial_state_from(
 }
 
 /// Runs until the app asks to quit, `shutdown` resolves or terminal input
-/// ends, saving files in the config folder.
+/// ends, saving the sync token and settings in `files`, or nowhere when it
+/// is `None`.
 pub async fn run<B, C, I, S>(
-    app: &mut App<B>,
-    client: &C,
-    input: I,
-    shutdown: S,
-) -> anyhow::Result<()>
-where
-    B: Backend,
-    B::Error: Send + Sync + 'static,
-    C: TodoistClient,
-    I: Stream<Item = io::Result<TerminalEvent>> + Unpin,
-    S: Future<Output = ()>,
-{
-    let files = crate::paths::config_dir().ok();
-    run_in(app, client, input, shutdown, files.as_deref()).await
-}
-
-/// [`run`], saving the sync token and settings in `files`, or nowhere when
-/// it is `None`.
-pub async fn run_in<B, C, I, S>(
     app: &mut App<B>,
     client: &C,
     mut input: I,
@@ -373,12 +354,37 @@ mod tests {
 
         let shutdown = tokio::time::sleep(Duration::from_secs(5));
         let no_input = futures_util::stream::pending();
-        run_in(&mut app, &FakeClient::new(), no_input, shutdown, None)
+        run(&mut app, &FakeClient::new(), no_input, shutdown, None)
             .await
             .unwrap();
 
         assert!(!app.state().loading);
         assert!(app.state().error.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_sync_token_is_saved_only_in_the_folder_given() {
+        let dir = std::env::temp_dir().join(format!("ratatoist-runtime-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for files in [None, Some(dir.as_path())] {
+            let state = initial_state(&Config::default(), files);
+            assert_eq!(state.sync_token, "*");
+            let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+            let shutdown = tokio::time::sleep(Duration::from_secs(5));
+            let no_input = futures_util::stream::pending();
+            run(&mut app, &FakeClient::new(), no_input, shutdown, files)
+                .await
+                .unwrap();
+            assert_eq!(SyncState::path(&dir).exists(), files.is_some());
+        }
+
+        let resumed = initial_state(&Config::default(), Some(&dir)).sync_token;
+        let without_files = initial_state(&Config::default(), None).sync_token;
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(resumed, "fake");
+        assert_eq!(without_files, "*");
     }
 
     #[tokio::test(start_paused = true)]
@@ -389,7 +395,7 @@ mod tests {
         let input = futures_util::stream::iter([Ok(TerminalEvent::Key(q))])
             .chain(futures_util::stream::pending());
 
-        run_in(
+        run(
             &mut app,
             &FakeClient::new(),
             input,

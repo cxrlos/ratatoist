@@ -59,7 +59,8 @@ impl Pty {
     }
 
     /// `program` with `args` and the environment variables `env`, its HOME
-    /// and XDG directories fresh and empty.
+    /// and XDG directories fresh and empty but for an empty
+    /// `$XDG_CONFIG_HOME/ratatoist`.
     fn spawn_with(program: &Path, args: &[&str], env: &[(&str, &str)]) -> Self {
         let home = TempDir::new();
         let pair = native_pty_system()
@@ -88,6 +89,9 @@ impl Pty {
             fs::create_dir(&path).unwrap();
             command.env(var, path);
         }
+        // As on a machine that has run ratatoist before, so a stray write to
+        // the config folder lands and the file checks see it.
+        fs::create_dir(home.0.join("config").join("ratatoist")).unwrap();
         let child = pair.slave.spawn_command(command).unwrap();
 
         let output = Arc::new(Mutex::new(Vec::new()));
