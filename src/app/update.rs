@@ -1,16 +1,18 @@
 use std::collections::HashSet;
 
 use crossterm::event::KeyEvent;
+use ratatui::layout::Size;
 use tracing::info;
 
 use super::modal::{InputTarget, Modal, TaskForm};
 use super::state::{InputMode, Pane, TaskFilter, VimState};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
 use super::{Effect, Event, State};
-use crate::keys::{self, KeyAction};
+use crate::keys::{self, DetailScroll, KeyAction};
 use crate::todoist::model::{Comment, Task};
 use crate::todoist::sync::SyncCommand;
 use crate::todoist::{CompletedQuery, LiveMessage};
+use crate::ui::views::detail::{self, DetailField};
 
 /// What one event did: whether the screen changed, and what to ask the
 /// outside world for.
@@ -48,7 +50,11 @@ pub fn update(state: &mut State, event: Event) -> Update {
         }
         Event::Key(key) => on_key(state, key),
         Event::Shutdown => Update::quit(),
-        Event::Resize { .. } => Update::redraw(effects),
+        Event::Resize { width, height } => {
+            state.screen = Some(Size::new(width, height));
+            state.detail_scroll = state.detail_scroll.min(state.max_detail_scroll());
+            Update::redraw(effects)
+        }
         Event::Tick { now } => {
             let before = (state.is_idle(), state.today);
             state.now = now;
@@ -203,6 +209,7 @@ fn perform(state: &mut State, action: KeyAction, effects: &mut Vec<Effect>) {
         KeyAction::CancelInput => state.cancel_input(),
         KeyAction::DetailFieldUp => state.move_detail_field(-1),
         KeyAction::DetailFieldDown => state.move_detail_field(1),
+        KeyAction::ScrollDetail(by) => state.scroll_detail(by),
         KeyAction::OpenThemePicker => state.modals.push(Modal::ThemePicker {
             selection: state.theme_idx,
         }),
@@ -272,7 +279,7 @@ impl State {
 
         self.active_pane = Pane::Detail;
         self.detail_scroll = 0;
-        self.detail_field = 0;
+        self.detail_field = DetailField::Content;
 
         // Serve cached comments immediately, refresh in background.
         if let Some(cached) = self.comments_by_task.get(&task_id) {
@@ -490,24 +497,24 @@ impl State {
         };
 
         let args = match self.detail_field {
-            0 => {
+            DetailField::Content => {
                 if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
                     t.content = value.clone();
                 }
                 serde_json::json!({ "id": task_id, "content": value })
             }
-            2 => {
+            DetailField::Due => {
                 // Due string: the server parses it and returns the Due object,
                 // so there is nothing to show optimistically.
                 serde_json::json!({ "id": task_id, "due_string": value })
             }
-            3 => {
+            DetailField::Description => {
                 if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
                     t.description = value.clone();
                 }
                 serde_json::json!({ "id": task_id, "description": value })
             }
-            _ => return,
+            DetailField::Priority => return,
         };
 
         let command = SyncCommand {
@@ -665,32 +672,49 @@ impl State {
             return;
         };
 
-        if self.detail_field == 1 {
-            let selection = task.priority;
-            self.modals.push(Modal::PriorityPicker { selection });
-            return;
-        }
-
         let prefill = match self.detail_field {
-            0 => task.content.clone(),
-            2 => task
+            DetailField::Content => task.content.clone(),
+            DetailField::Priority => {
+                let selection = task.priority;
+                self.modals.push(Modal::PriorityPicker { selection });
+                return;
+            }
+            DetailField::Due => task
                 .due
                 .as_ref()
                 .and_then(|d| d.string.clone())
                 .unwrap_or_default(),
-            3 => task.description.clone(),
-            _ => return,
+            DetailField::Description => task.description.clone(),
         };
         self.start_input_for(InputTarget::Field, prefill);
     }
 
     fn move_detail_field(&mut self, delta: i32) {
-        const FIELDS: usize = 4;
         self.detail_field = if delta < 0 {
-            (self.detail_field + FIELDS - 1) % FIELDS
+            self.detail_field.prev()
         } else {
-            (self.detail_field + 1) % FIELDS
+            self.detail_field.next()
         };
+    }
+
+    fn max_detail_scroll(&self) -> u16 {
+        detail::max_scroll(self, self.screen_size())
+    }
+
+    /// Scrolls the task detail, never past its last row. Starting from the
+    /// clamped offset makes the first key up move at once even when the
+    /// content shrank since the last scroll.
+    fn scroll_detail(&mut self, by: DetailScroll) {
+        let max = self.max_detail_scroll();
+        let half_page = (detail::page_height(self, self.screen_size()) / 2).max(1);
+        let current = self.detail_scroll.min(max);
+        self.detail_scroll = match by {
+            DetailScroll::HalfPageDown => current.saturating_add(half_page),
+            DetailScroll::HalfPageUp => current.saturating_sub(half_page),
+            DetailScroll::LineDown => current.saturating_add(1),
+            DetailScroll::LineUp => current.saturating_sub(1),
+        }
+        .min(max);
     }
 
     fn toggle_collapse(&mut self) {

@@ -35,7 +35,8 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect) {
             ("Esc", "close"),
         ],
         (_, Pane::Detail) => vec![
-            ("j/k", "scroll"),
+            ("j/k", "field"),
+            ("Ctrl-d/u", "scroll"),
             ("x", "complete"),
             ("Esc/h", "back"),
             ("?", "help"),

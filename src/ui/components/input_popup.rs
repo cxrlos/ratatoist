@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
 use crate::app::{InputTarget, State};
+use crate::ui::views::detail::DetailField;
 
 use super::popup::{centered_rect, render_dim_overlay};
 
@@ -19,10 +20,10 @@ pub fn render(frame: &mut Frame, state: &State, target: InputTarget) {
         " Add Comment "
     } else if target == InputTarget::Field {
         match state.detail_field {
-            0 => " Edit Content ",
-            1 => " Edit Due Date ",
-            2 => " Edit Description ",
-            _ => " Edit ",
+            DetailField::Content => " Edit Content ",
+            DetailField::Priority => " Edit Priority ",
+            DetailField::Due => " Edit Due Date ",
+            DetailField::Description => " Edit Description ",
         }
     } else {
         " Add Task "
@@ -44,7 +45,8 @@ pub fn render(frame: &mut Frame, state: &State, target: InputTarget) {
     let mut lines = Vec::new();
 
     if state.input_buffer.is_empty() {
-        let placeholder = if target == InputTarget::Field && state.detail_field == 2 {
+        let placeholder = if target == InputTarget::Field && state.detail_field == DetailField::Due
+        {
             "e.g. tomorrow, next monday, 2026-03-15, 28/02/2026..."
         } else if target == InputTarget::Comment {
             "write a comment..."

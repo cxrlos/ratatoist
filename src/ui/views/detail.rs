@@ -2,16 +2,49 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, NaiveDate};
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Layout, Position, Rect, Size};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap};
 
 use crate::todoist::model::{Comment, Task};
 
-use crate::app::UserRecord;
+use crate::app::{State, UserRecord};
 use crate::ui::dates;
 use crate::ui::theme::Theme;
+
+/// The task fields the detail's cursor moves over, top to bottom. The
+/// cursor, the edit it starts and the edit popup's title all match on this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailField {
+    Content,
+    Priority,
+    Due,
+    Description,
+}
+
+impl DetailField {
+    /// The next field down, wrapping to the top.
+    pub fn next(self) -> Self {
+        match self {
+            DetailField::Content => DetailField::Priority,
+            DetailField::Priority => DetailField::Due,
+            DetailField::Due => DetailField::Description,
+            DetailField::Description => DetailField::Content,
+        }
+    }
+
+    /// The next field up, wrapping to the bottom.
+    pub fn prev(self) -> Self {
+        match self {
+            DetailField::Content => DetailField::Description,
+            DetailField::Priority => DetailField::Content,
+            DetailField::Due => DetailField::Priority,
+            DetailField::Description => DetailField::Due,
+        }
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn render(
@@ -22,32 +55,129 @@ pub fn render(
     current_user_id: Option<&str>,
     area: Rect,
     scroll: u16,
-    selected_field: usize,
+    selected_field: DetailField,
     today: NaiveDate,
     theme: &Theme,
 ) {
-    let block = Block::default()
+    let block = block(theme);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let lines = lines(
+        task,
+        comments,
+        user_names,
+        current_user_id,
+        selected_field,
+        today,
+        theme,
+    );
+    let scroll = scroll.min(overflow(&lines, inner));
+    frame.render_widget(paragraph(lines).scroll((scroll, 0)), inner);
+}
+
+/// How far the selected task's detail scrolls before its last row reaches
+/// the bottom, on a terminal of `screen`.
+pub fn max_scroll(state: &State, screen: Size) -> u16 {
+    let Some(task) = state.selected_task() else {
+        return 0;
+    };
+    let theme = state.theme();
+    let lines = lines(
+        task,
+        &state.comments,
+        &state.user_names,
+        state.current_user_id.as_deref(),
+        state.detail_field,
+        state.today,
+        theme,
+    );
+    overflow(&lines, text_area(screen, theme))
+}
+
+/// The rows of text the detail shows at once on a terminal of `screen`.
+pub fn page_height(state: &State, screen: Size) -> u16 {
+    text_area(screen, state.theme()).height
+}
+
+/// Where the detail's text goes: inside the detail block, which takes the
+/// right of the main area as `ui::layout` splits it.
+fn text_area(screen: Size, theme: &Theme) -> Rect {
+    let [main, _status, _hints] = Layout::vertical([
+        Constraint::Min(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(Rect::from((Position::ORIGIN, screen)));
+    let [_left, right] =
+        Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)]).areas(main);
+    block(theme).inner(right)
+}
+
+fn block(theme: &Theme) -> Block<'static> {
+    Block::default()
         .title(" Task Detail ")
         .title_style(theme.active_title())
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(theme.active_border())
         .padding(Padding::new(2, 2, 1, 1))
-        .style(theme.base_bg());
+        .style(theme.base_bg())
+}
 
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+fn paragraph(lines: Vec<Line<'_>>) -> Paragraph<'_> {
+    Paragraph::new(lines).wrap(Wrap { trim: false })
+}
 
+/// The rows `lines` take past the bottom of `area` once wrapped.
+fn overflow(lines: &[Line], area: Rect) -> u16 {
+    rendered_rows(lines, area.width).saturating_sub(area.height)
+}
+
+/// The rows `lines` fill when wrapped to `width`, found by drawing them off
+/// screen: ratatui's own count sits behind an unstable feature. The last
+/// line is the key hint, never blank, so the last row drawn is the end.
+fn rendered_rows(lines: &[Line], width: u16) -> u16 {
+    if width == 0 {
+        return 0;
+    }
+    // A word-wrapped row and the one after it hold more than `width` cells
+    // between them, so a line `w` cells wide takes under `2 * (w / width + 1)`
+    // rows.
+    let bound: usize = lines
+        .iter()
+        .map(|line| 2 * (line.width() / usize::from(width) + 1))
+        .sum();
+    let height = u16::try_from(bound).unwrap_or(u16::MAX);
+    let area = Rect::new(0, 0, width, height);
+    let mut buffer = Buffer::empty(area);
+    paragraph(lines.to_vec()).render(area, &mut buffer);
+    (0..height)
+        .rev()
+        .find(|&y| (0..width).any(|x| buffer[(x, y)].symbol() != " "))
+        .map_or(0, |y| y + 1)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lines<'a>(
+    task: &'a Task,
+    comments: &[Comment],
+    user_names: &HashMap<String, UserRecord>,
+    current_user_id: Option<&str>,
+    selected_field: DetailField,
+    today: NaiveDate,
+    theme: &Theme,
+) -> Vec<Line<'a>> {
     let mut lines: Vec<Line> = Vec::new();
 
-    let content_style = if selected_field == 0 {
+    let content_style = if selected_field == DetailField::Content {
         theme.active_title().add_modifier(Modifier::UNDERLINED)
     } else {
         theme.active_title()
     };
     lines.push(Line::from(vec![
         Span::styled(&task.content, content_style),
-        field_hint(selected_field == 0, theme),
+        field_hint(selected_field == DetailField::Content, theme),
     ]));
     lines.push(Line::default());
 
@@ -57,7 +187,7 @@ pub fn render(
         2 => "Priority 3 (medium)",
         _ => "Priority 4 (normal)",
     };
-    let priority_active = selected_field == 1;
+    let priority_active = selected_field == DetailField::Priority;
     lines.push(Line::from(vec![
         Span::styled(
             "Priority  ",
@@ -74,7 +204,8 @@ pub fn render(
         field_hint(priority_active, theme),
     ]));
 
-    let due_style = if selected_field == 2 {
+    let due_active = selected_field == DetailField::Due;
+    let due_style = if due_active {
         theme.due_upcoming().add_modifier(Modifier::UNDERLINED)
     } else {
         theme.muted_text()
@@ -86,13 +217,13 @@ pub fn render(
         lines.push(Line::from(vec![
             Span::styled("Due       ", due_style),
             Span::styled(due_display, formatted.style),
-            field_hint(selected_field == 2, theme),
+            field_hint(due_active, theme),
         ]));
     } else {
         lines.push(Line::from(vec![
             Span::styled("Due       ", due_style),
             Span::styled("not set", theme.muted_text()),
-            field_hint(selected_field == 2, theme),
+            field_hint(due_active, theme),
         ]));
     }
 
@@ -111,7 +242,8 @@ pub fn render(
         ]));
     }
 
-    let desc_style = if selected_field == 3 {
+    let description_active = selected_field == DetailField::Description;
+    let desc_style = if description_active {
         theme.normal_text().add_modifier(Modifier::UNDERLINED)
     } else {
         theme.normal_text()
@@ -119,7 +251,7 @@ pub fn render(
     lines.push(Line::default());
     lines.push(Line::from(vec![
         Span::styled("Description", theme.subtle_text()),
-        field_hint(selected_field == 3, theme),
+        field_hint(description_active, theme),
     ]));
     if task.description.is_empty() {
         lines.push(Line::from(Span::styled("(empty)", theme.muted_text())));
@@ -261,11 +393,7 @@ pub fn render(
         Span::styled(" back", theme.muted_text()),
     ]));
 
-    let paragraph = Paragraph::new(lines)
-        .scroll((scroll, 0))
-        .wrap(Wrap { trim: false });
-
-    frame.render_widget(paragraph, inner);
+    lines
 }
 
 fn field_hint(active: bool, theme: &Theme) -> Span<'static> {

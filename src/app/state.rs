@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Local, NaiveDate};
+use ratatui::layout::Size;
 
 use super::modal::Modal;
 use super::sync::OptimisticOp;
 use crate::todoist::model::{Comment, Folder, Label, Project, Section, Task, Workspace};
 use crate::ui::theme::Theme;
+use crate::ui::views::detail::DetailField;
 
 /// How long the session waits without a key before it counts as idle.
 pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 300;
@@ -36,10 +38,14 @@ pub struct State {
     pub input_buffer: String,
     pub settings_selection: usize,
     pub collapsed: HashSet<String>,
+    /// Rows the task detail is scrolled down by. Scroll keys keep it within
+    /// the content at [`State::screen_size`].
     pub detail_scroll: u16,
+    /// The terminal size from the last resize, or `None` before the first.
+    pub screen: Option<Size>,
     pub sort_mode: SortMode,
     pub comments: Vec<Comment>,
-    pub detail_field: usize,
+    pub detail_field: DetailField,
     pub current_user_id: Option<String>,
     pub user_names: HashMap<String, UserRecord>,
     pub task_filter: TaskFilter,
@@ -92,9 +98,10 @@ impl State {
             settings_selection: 0,
             collapsed: HashSet::new(),
             detail_scroll: 0,
+            screen: None,
             sort_mode: SortMode::Default,
             comments: Vec::new(),
-            detail_field: 0,
+            detail_field: DetailField::Content,
             current_user_id: None,
             user_names: HashMap::new(),
             task_filter: TaskFilter::Active,
@@ -142,6 +149,11 @@ impl State {
 
     pub fn top_modal_mut(&mut self) -> Option<&mut Modal> {
         self.modals.last_mut()
+    }
+
+    /// The terminal size, assuming 80x24 until the first resize says.
+    pub fn screen_size(&self) -> Size {
+        self.screen.unwrap_or(Size::new(80, 24))
     }
 
     pub fn sync_age_label(&self) -> String {

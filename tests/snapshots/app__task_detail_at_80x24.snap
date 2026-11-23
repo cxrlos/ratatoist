@@ -25,4 +25,4 @@ expression: app.backend()
 "│ P    ● 2  ● 1  ● 1   ││                                                      │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────────╯"
 " NORMAL   Inbox ▸ Call the dentist                                    Offline ○ "
-" j/k scroll  x complete  Esc/h back  ? help  q quit                             "
+" j/k field  Ctrl-d/u scroll  x complete  Esc/h back  ? help  q quit             "

@@ -36,6 +36,7 @@ pub enum KeyAction {
     CancelInput,
     DetailFieldUp,
     DetailFieldDown,
+    ScrollDetail(DetailScroll),
     OpenThemePicker,
     SelectTheme,
     CloseThemePicker,
@@ -44,6 +45,15 @@ pub enum KeyAction {
     CycleIdleTimeout,
     Consumed,
     None,
+}
+
+/// How far a scroll key moves the task detail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailScroll {
+    HalfPageDown,
+    HalfPageUp,
+    LineDown,
+    LineUp,
 }
 
 /// Keys while the first sync runs: only quitting works.
@@ -161,16 +171,10 @@ fn handle_input(state: &mut State, key: KeyEvent) -> KeyAction {
 
     match key.code {
         KeyCode::Esc => {
-            if let Some(field) = form_field {
-                if field == 0 {
-                    KeyAction::CancelInput
-                } else {
-                    KeyAction::FormEscNormal
-                }
-            } else if matches!(state.input_mode, InputMode::Standard) {
-                KeyAction::CancelInput
+            if form_field.is_some_and(|field| field != 0) {
+                KeyAction::FormEscNormal
             } else {
-                KeyAction::SubmitInput
+                KeyAction::CancelInput
             }
         }
         KeyCode::Enter => KeyAction::SubmitInput,
@@ -283,7 +287,12 @@ fn handle_priority_picker(state: &mut State, key: KeyEvent) -> KeyAction {
 }
 
 fn handle_detail(_state: &mut State, key: KeyEvent) -> KeyAction {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     match key.code {
+        KeyCode::Char('d') if ctrl => KeyAction::ScrollDetail(DetailScroll::HalfPageDown),
+        KeyCode::Char('u') if ctrl => KeyAction::ScrollDetail(DetailScroll::HalfPageUp),
+        KeyCode::Char('e') if ctrl => KeyAction::ScrollDetail(DetailScroll::LineDown),
+        KeyCode::Char('y') if ctrl => KeyAction::ScrollDetail(DetailScroll::LineUp),
         KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left | KeyCode::BackTab => {
             KeyAction::CloseDetail
         }
