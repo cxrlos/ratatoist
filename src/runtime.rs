@@ -62,11 +62,16 @@ impl UiSettings {
 /// environment, and the old saved settings and the sync token read from
 /// `files`. With `None` nothing is read: no saved settings and a full sync.
 pub fn initial_state(config: &Config, files: Option<&Path>) -> State {
+    let no_color = theme::no_color_requested(std::env::var_os(theme::NO_COLOR_VAR).as_deref());
+    initial_state_read(config, files, no_color)
+}
+
+/// [`initial_state`] with `no_color` given instead of read.
+fn initial_state_read(config: &Config, files: Option<&Path>, no_color: bool) -> State {
     let ui = files.map(UiSettings::load).unwrap_or_default();
     let sync_token = files
         .map(|dir| SyncState::load(dir).sync_token)
         .unwrap_or_else(|| "*".to_owned());
-    let no_color = theme::no_color_requested(std::env::var_os(theme::NO_COLOR_VAR).as_deref());
     initial_state_from(config, &ui, sync_token, clock(), no_color)
 }
 
@@ -107,7 +112,7 @@ pub fn initial_state_from(
     };
     if !lines.is_empty() {
         state.notice = Some(format!(
-            "{UI_SETTINGS} is no longer read; to keep its settings, add to config.toml: {}",
+            "{UI_SETTINGS} is read until config.toml sets these; to keep them, add to config.toml: {}",
             lines.join(" and ")
         ));
     }
@@ -338,7 +343,7 @@ mod tests {
         assert_eq!(
             state.notice.as_deref(),
             Some(
-                "ui_settings.json is no longer read; to keep its settings, add to \
+                "ui_settings.json is read until config.toml sets these; to keep them, add to \
                  config.toml: [theme] name = \"rose-pine\" and [sync] idle-timeout = 120"
             )
         );
@@ -357,7 +362,7 @@ mod tests {
         assert_eq!(
             state.notice.as_deref(),
             Some(
-                "ui_settings.json is no longer read; to keep its settings, add to \
+                "ui_settings.json is read until config.toml sets these; to keep them, add to \
                  config.toml: [sync] idle-timeout = 120"
             )
         );
@@ -386,7 +391,7 @@ mod tests {
         assert_eq!(
             state.notice.as_deref(),
             Some(
-                "ui_settings.json is no longer read; to keep its settings, add to \
+                "ui_settings.json is read until config.toml sets these; to keep them, add to \
                  config.toml: [sync] idle-timeout = 60"
             )
         );
@@ -401,7 +406,7 @@ mod tests {
         let json = r#"{"theme":"Nord","idle_timeout_secs":120}"#;
         std::fs::write(dir.join(UI_SETTINGS), json).unwrap();
 
-        let state = initial_state(&Config::default(), Some(&dir));
+        let state = initial_state_read(&Config::default(), Some(&dir), false);
         let left = std::fs::read_to_string(dir.join(UI_SETTINGS)).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
 
