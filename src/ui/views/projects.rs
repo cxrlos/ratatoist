@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
-use crate::app::{App, ProjectEntry};
+use crate::app::legacy::{App, ProjectEntry};
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     let theme = app.theme();

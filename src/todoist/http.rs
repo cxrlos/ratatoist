@@ -6,6 +6,9 @@ use tracing::{debug, error, info, warn};
 
 use super::model::{Comment, CompletedTasksResponse, Paginated, Task, UserInfo};
 use super::sync::{SyncRequest, SyncResponse};
+use super::{ClientError, CompletedQuery, LiveMessage, TodoistClient};
+use crate::auth::ApiToken;
+use futures_util::Stream;
 
 const BASE_URL: &str = "https://api.todoist.com/api/v1";
 const SYNC_URL: &str = "https://api.todoist.com/api/v1/sync";
@@ -28,14 +31,15 @@ impl std::fmt::Display for RateLimitError {
 
 impl std::error::Error for RateLimitError {}
 
-pub struct TodoistClient {
+#[derive(Clone)]
+pub struct HttpClient {
     client: reqwest::Client,
 }
 
-impl TodoistClient {
-    pub fn new(token: &str) -> Result<Self> {
+impl HttpClient {
+    pub fn new(token: &ApiToken) -> Result<Self> {
         let mut headers = HeaderMap::new();
-        let auth = format!("Bearer {token}");
+        let auth = format!("Bearer {}", token.expose());
         headers.insert(
             AUTHORIZATION,
             HeaderValue::from_str(&auth).context("invalid API token characters")?,
@@ -299,5 +303,35 @@ impl TodoistClient {
         );
 
         Ok(sync_resp)
+    }
+}
+
+impl TodoistClient for HttpClient {
+    async fn sync(&self, request: SyncRequest) -> Result<SyncResponse, ClientError> {
+        HttpClient::sync(self, &request)
+            .await
+            .map_err(|e| ClientError::from_anyhow(&e))
+    }
+
+    async fn user(&self) -> Result<UserInfo, ClientError> {
+        self.get_user()
+            .await
+            .map_err(|e| ClientError::from_anyhow(&e))
+    }
+
+    async fn comments(&self, task_id: &str) -> Result<Vec<Comment>, ClientError> {
+        self.get_comments(task_id)
+            .await
+            .map_err(|e| ClientError::from_anyhow(&e))
+    }
+
+    async fn completed_tasks(&self, query: CompletedQuery) -> Result<Vec<Task>, ClientError> {
+        self.get_completed_tasks(query.project_id.as_deref(), query.since.as_deref())
+            .await
+            .map_err(|e| ClientError::from_anyhow(&e))
+    }
+
+    fn live_events(&self, _url: &str) -> impl Stream<Item = LiveMessage> + Send + 'static {
+        futures_util::stream::empty()
     }
 }

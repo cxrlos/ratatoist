@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SyncRequest {
     pub sync_token: String,
     pub resource_types: Vec<String>,
     pub commands: Vec<SyncCommand>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SyncCommand {
     pub r#type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -18,7 +18,7 @@ pub struct SyncCommand {
     pub args: serde_json::Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct SyncResponse {
     pub full_sync: bool,
     pub sync_token: String,
@@ -36,6 +36,17 @@ pub struct SyncResponse {
     pub sync_status: HashMap<String, SyncCommandResult>,
     #[serde(default)]
     pub temp_id_mapping: HashMap<String, String>,
+}
+
+impl SyncResponse {
+    /// A response that changes nothing, carrying a placeholder sync token.
+    pub fn empty(full_sync: bool) -> Self {
+        Self {
+            full_sync,
+            sync_token: "fake".to_owned(),
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

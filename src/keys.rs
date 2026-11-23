@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app::{App, DOCK_ITEMS, InputMode, Pane, ProjectNavItem, VimState};
+use crate::app::legacy::{App, DOCK_ITEMS, InputMode, Pane, ProjectNavItem, VimState};
 
 pub enum KeyAction {
     Quit,

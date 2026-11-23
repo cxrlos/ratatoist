@@ -6,7 +6,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
 use crate::todoist::model::priority_label;
 
-use crate::app::{App, TaskForm};
+use crate::app::legacy::{App, TaskForm};
 
 use super::popup::{centered_rect, render_dim_overlay};
 

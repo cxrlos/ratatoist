@@ -3,7 +3,7 @@ use ratatui::layout::Alignment;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
-use crate::app::InputMode;
+use crate::app::legacy::InputMode;
 use crate::ui::theme::Theme;
 
 use super::popup::{centered_rect, render_dim_overlay};

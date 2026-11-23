@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 use crate::sync_state::SyncState;
-use crate::todoist::client::TodoistClient;
+use crate::todoist::HttpClient;
 use crate::todoist::model::{Comment, Folder, Label, Project, Section, Task, Workspace};
 use crate::todoist::sync::{SyncCommand, SyncRequest, SyncResponse};
 
@@ -360,11 +360,13 @@ pub struct App {
     temp_id_pending: HashMap<String, OptimisticOp>,
     bg_tx: mpsc::Sender<BgResult>,
     bg_rx: mpsc::Receiver<BgResult>,
-    client: Arc<TodoistClient>,
+    client: Arc<HttpClient>,
 }
 
 fn load_theme_idx(themes: &[crate::ui::theme::Theme]) -> usize {
-    let path = crate::config::Config::config_dir().join("ui_settings.json");
+    let path = crate::paths::config_dir()
+        .unwrap_or_default()
+        .join("ui_settings.json");
     if let Ok(src) = std::fs::read_to_string(&path)
         && let Ok(val) = serde_json::from_str::<serde_json::Value>(&src)
         && let Some(name) = val["theme"].as_str()
@@ -376,7 +378,9 @@ fn load_theme_idx(themes: &[crate::ui::theme::Theme]) -> usize {
 }
 
 fn load_idle_timeout_secs() -> u64 {
-    let path = crate::config::Config::config_dir().join("ui_settings.json");
+    let path = crate::paths::config_dir()
+        .unwrap_or_default()
+        .join("ui_settings.json");
     if let Ok(src) = std::fs::read_to_string(&path)
         && let Ok(val) = serde_json::from_str::<serde_json::Value>(&src)
     {
@@ -446,7 +450,7 @@ impl App {
         if self.ephemeral {
             return;
         }
-        let dir = crate::config::Config::config_dir();
+        let dir = crate::paths::config_dir().unwrap_or_default();
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("ui_settings.json");
         let name = &self.themes[self.theme_idx].name;
@@ -460,13 +464,15 @@ impl App {
         );
     }
 
-    pub fn new(client: TodoistClient, idle_forcer: bool, ephemeral: bool) -> Self {
+    pub fn new(client: HttpClient, idle_forcer: bool, ephemeral: bool) -> Self {
         let (bg_tx, bg_rx) = mpsc::channel(64);
         let mut themes = crate::ui::theme::Theme::builtin();
-        let user_themes_dir = crate::config::Config::config_dir().join("themes");
+        let user_themes_dir = crate::paths::config_dir()
+            .unwrap_or_default()
+            .join("themes");
         themes.extend(crate::ui::theme::Theme::load_user_themes(&user_themes_dir));
         let theme_idx = load_theme_idx(&themes);
-        let config_dir = crate::config::Config::config_dir();
+        let config_dir = crate::paths::config_dir().unwrap_or_default();
         let sync_token = if ephemeral {
             "*".to_string()
         } else {
@@ -942,7 +948,7 @@ impl App {
         if self.ephemeral {
             return;
         }
-        let config_dir = crate::config::Config::config_dir();
+        let config_dir = crate::paths::config_dir().unwrap_or_default();
         let state = SyncState {
             sync_token: self.sync_token.clone(),
         };

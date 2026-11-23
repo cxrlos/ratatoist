@@ -5,7 +5,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
-use crate::app::{App, InputMode};
+use crate::app::legacy::{App, InputMode};
 use crate::ui::dates;
 use crate::ui::theme::Theme;
 

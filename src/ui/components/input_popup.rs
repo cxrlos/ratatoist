@@ -4,7 +4,7 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
-use crate::app::App;
+use crate::app::legacy::App;
 
 use super::popup::{centered_rect, render_dim_overlay};
 

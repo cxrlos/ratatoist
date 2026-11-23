@@ -3,7 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Padding};
 
-use crate::app::App;
+use crate::app::legacy::App;
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect, is_active: bool) {
     let theme = app.theme();

@@ -3,7 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::app::{App, DOCK_ITEMS, InputMode, Pane};
+use crate::app::legacy::{App, DOCK_ITEMS, InputMode, Pane};
 
 pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let theme = app.theme();

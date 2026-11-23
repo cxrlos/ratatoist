@@ -15,8 +15,10 @@ pub const LOGO: &str = r#"
 "#;
 
 use ratatui::Frame;
+use ratatui::widgets::Paragraph;
 
-use crate::app::App;
+use crate::app::State;
+use crate::app::legacy::App;
 
 pub fn draw(frame: &mut Frame, app: &App) {
     layout::render(frame, app);
@@ -38,4 +40,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if let Some(error) = &app.error {
         components::error_popup::render(frame, error, app.theme());
     }
+}
+
+/// Draws the event-driven core's screen.
+pub fn draw_state(frame: &mut Frame, state: &State) {
+    let _ = state;
+    frame.render_widget(Paragraph::new(LOGO), frame.area());
 }

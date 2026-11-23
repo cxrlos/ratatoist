@@ -38,6 +38,7 @@ pub struct Base16Scheme {
     base0f: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct Theme {
     pub name: String,
     pub base: Color,

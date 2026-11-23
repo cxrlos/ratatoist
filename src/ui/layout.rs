@@ -4,7 +4,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
-use crate::app::{App, DOCK_ITEMS, DockItem, Pane, SortMode, TaskFilter};
+use crate::app::legacy::{App, DOCK_ITEMS, DockItem, Pane, SortMode, TaskFilter};
 
 const STATS_HEIGHT: u16 = 4;
 use crate::ui::theme::Theme;

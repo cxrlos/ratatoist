@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph, Wrap};
 
 use crate::todoist::model::{Comment, Task};
 
-use crate::app::UserRecord;
+use crate::app::legacy::UserRecord;
 use crate::ui::dates;
 use crate::ui::theme::Theme;
 
