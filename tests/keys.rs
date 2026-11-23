@@ -671,3 +671,37 @@ fn a_bad_preset_resets_the_keys_and_nothing_else() {
         Some(std::time::Duration::from_secs(60))
     );
 }
+
+/// Source files under `dir`, recursively.
+fn sources(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(sources(&path));
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+    files
+}
+
+#[test]
+fn no_key_is_bound_outside_the_registry() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let keys = src.join("keys");
+    let offenders: Vec<_> = sources(&src)
+        .into_iter()
+        .filter(|path| !path.starts_with(&keys))
+        .filter(|path| {
+            let text = std::fs::read_to_string(path).unwrap();
+            let code = text.split("#[cfg(test)]").next().unwrap_or_default();
+            code.contains("KeyCode::Char")
+        })
+        .collect();
+
+    assert!(
+        offenders.is_empty(),
+        "a KeyCode::Char match outside src/keys/ binds a key the registry does not know"
+    );
+}
