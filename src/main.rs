@@ -1,5 +1,6 @@
 use std::io;
 use std::path::Path;
+use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Parser;
@@ -12,9 +13,21 @@ use ratatoist::config::{self, Config};
 use ratatoist::todoist::{FakeClient, HttpClient, TodoistClient};
 use ratatoist::{auth, logging, paths, runtime, terminal};
 
+/// Prints a failure as its plain message on stderr and exits 1. Every
+/// terminal guard has dropped by the time `start` returns, so the message
+/// lands on the restored screen.
 #[tokio::main]
-async fn main() -> Result<()> {
-    let cli = Cli::parse();
+async fn main() -> ExitCode {
+    match start(Cli::parse()).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{error:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+async fn start(cli: Cli) -> Result<()> {
     if let Some(Command::Auth(command)) = cli.command {
         return auth::run(command).await;
     }

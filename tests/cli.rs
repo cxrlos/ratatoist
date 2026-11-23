@@ -141,3 +141,26 @@ fn a_demo_run_writes_no_shell_rc_file() {
         assert!(!home.0.join(rc).exists(), "{rc} was written");
     }
 }
+
+/// A startup error prints as its plain message, with no prefix or debug
+/// formatting, and the exit status is 1.
+#[test]
+fn a_startup_error_prints_only_its_message() {
+    let home = TempHome::new("startup-error");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ratatoist"))
+        .env_clear()
+        .env("HOME", &home.0)
+        .env("XDG_CONFIG_HOME", home.0.join("config"))
+        .env("XDG_STATE_HOME", home.0.join("state"))
+        .env("TODOIST_API_TOKEN", "not a token")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "TODOIST_API_TOKEN does not hold a valid API token: the API token holds a space \
+         or a non-ASCII character; paste it exactly as Todoist shows it\n"
+    );
+    assert!(output.stdout.is_empty());
+}
