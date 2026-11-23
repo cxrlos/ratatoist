@@ -1,0 +1,49 @@
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+all-features = true
+
+[advisories]
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = [
+    # No maintained 0.4 release exists. Drop once the date code moves to jiff,
+    # as lrat uses.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained; ratatoist moves its date code to jiff" },
+    # Url::origin() recurses on nested blob: URLs. `cargo tree -i url` shows
+    # reqwest as url's only dependent, and neither reqwest 0.12's src/ nor
+    # ratatoist's calls origin(). Recheck both if the tree changes. Drop on or
+    # after 2026-12-04, once the fixed 2.5.9 (2026-11-20) has been out two weeks.
+    { id = "RUSTSEC-2026-0592", reason = "no dependency calls Url::origin()" },
+]
+
+[licenses]
+# One license per line, sorted, so parallel additions merge cleanly.
+allow = [
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+# Each exception covers one crate, not new ones.
+exceptions = [
+    # Mozilla's root certificate data under a permissive data licence. Reached
+    # through rustls-tls-webpki-roots; drop it when the TLS stack moves to the
+    # platform verifier, as lrat uses.
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

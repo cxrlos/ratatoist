@@ -15,14 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/ratatoist-core">
-    <img src="https://img.shields.io/crates/v/ratatoist-core?style=for-the-badge&label=core&color=9ccfd8" alt="core on crates.io">
-  </a>
-  <a href="https://crates.io/crates/ratatoist-tui">
-    <img src="https://img.shields.io/crates/v/ratatoist-tui?style=for-the-badge&label=tui&color=9ccfd8" alt="tui on crates.io">
-  </a>
-  <a href="https://crates.io/crates/ratatoist-tui">
-    <img src="https://img.shields.io/crates/d/ratatoist-tui?style=for-the-badge&label=downloads&color=c4a7e7" alt="crates.io downloads">
+  <a href="https://crates.io/crates/ratatoist">
+    <img src="https://img.shields.io/crates/v/ratatoist?style=for-the-badge&color=9ccfd8" alt="ratatoist on crates.io">
   </a>
   <img src="https://img.shields.io/badge/MSRV-1.88-orange?style=for-the-badge&logo=rust&logoColor=white" alt="MSRV 1.88">
   <a href="https://github.com/cxrlos/ratatoist/stargazers">
@@ -34,41 +28,27 @@
 
 <!-- video later -->
 
-- **Fast** — incremental delta sync, real-time WebSocket updates, exponential-backoff retries
-- **Vim-native** — `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
-- **Polished** — task comments, priority indicators, human-readable dates, 10 built-in themes
-- **Secure** — token never logged, config file permissions validated
-
-## Packages
-
-| Crate                                      | Description                                  |
-| ------------------------------------------ | -------------------------------------------- |
-| [`ratatoist-core`](crates/ratatoist-core/) | Todoist Sync API client, config, logging     |
-| [`ratatoist-tui`](crates/ratatoist-tui/)   | Terminal UI binary (installs as `ratatoist`) |
-| [`ratatoist-nvim`](crates/ratatoist-nvim/) | Neovim plugin — coming soon                  |
+- **Fast**: incremental delta sync, real-time WebSocket updates, exponential-backoff retries
+- **Vim-native**: `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
+- **Polished**: task comments, priority indicators, human-readable dates, 10 built-in themes
+- **Secure**: the token lives in the OS keyring (or `TODOIST_API_TOKEN`), never in the log or on screen; a pre-0.6.0 `api_token` in `config.toml` moves to the keyring on first start
 
 ## Quick start
 
 ```sh
-git clone https://github.com/cxrlos/ratatoist.git
-cd ratatoist
-cargo install --path crates/ratatoist-tui
+cargo install ratatoist
 ```
 
-Run the guided setup (validates your token and optionally writes a shell alias):
+To look around first, `ratatoist --demo` opens the app on a fictional account. It needs no token and never touches the network, and anything you change there lasts until you quit. A due date typed there can be `today`, `tomorrow`, a weekday or `YYYY-MM-DD`; it reads nothing fancier.
+
+Log in once. ratatoist asks for your API token (from [Todoist settings](https://app.todoist.com/app/settings/integrations/developer)) without echoing it, checks it with Todoist and keeps it in your OS keyring:
 
 ```sh
-ratatoist --new-user
-```
-
-Or configure manually (token from [Todoist settings](https://app.todoist.com/app/settings/integrations)):
-
-```sh
-mkdir -p ~/.config/ratatoist
-echo 'api_token = "your-token"' > ~/.config/ratatoist/config.toml
-chmod 600 ~/.config/ratatoist/config.toml
+ratatoist auth login
 ratatoist
 ```
+
+To read the token from a password manager instead, pipe it in: `pass show todoist | ratatoist auth login --stdin`. `TODOIST_API_TOKEN`, when set, wins over the keyring. [docs/auth.md](docs/auth.md) has the details.
 
 ## Features
 
@@ -90,7 +70,7 @@ ratatoist
 <details>
 <summary><strong>Task operations</strong></summary>
 
-- Complete / uncomplete (`x`) with optimistic UI — instant feedback, reverts on error
+- Complete / uncomplete (`x`) with optimistic UI: instant feedback, reverts on error
 - Quick-add (`a`) with multi-field form: content, priority, due date, project
 - Inline field editing in detail pane (`i` / `Enter`)
 - Priority picker popup with visual selector
@@ -123,12 +103,11 @@ ratatoist
 <details>
 <summary><strong>Developer experience</strong></summary>
 
-- Structured JSON logging (`--debug`)
+- Logs live in `$XDG_STATE_HOME/ratatoist/` (by default `~/.local/state/ratatoist/`, on macOS too), one file a day (named by the UTC date) for a week; set the level with `RATATOIST_LOG`, for example `RATATOIST_LOG=debug`
 - Error popups with context and suggestions
 - Dimmed background overlay on popups
 - Keybinding cheatsheet (`?`)
-- `--new-user` onboarding: token entry + shell alias setup
-- `--idle-forcer` flag for testing idle timeout (adds 5 s option)
+- `ratatoist auth login | status | logout` for the token in the OS keyring
 
 </details>
 
@@ -142,30 +121,15 @@ ratatoist
 
 |                                                             |                                                    |
 | ----------------------------------------------------------- | -------------------------------------------------- |
-| [TUI keybindings and usage](crates/ratatoist-tui/README.md) | Full key reference for both Vim and Standard modes |
-| [Core library API](crates/ratatoist-core/README.md)         | Using the Todoist client in your own Rust projects |
 | [Changelog](CHANGELOG.md)                                   | Version history                                    |
+| [Logging in](docs/auth.md)                                  | The token, the keyring and `ratatoist auth`        |
 
 ## Development
 
-```sh
-cargo run -p ratatoist-tui              # run TUI
-cargo run -p ratatoist-tui -- --debug   # with debug logs
-cargo build --workspace --release       # build all
-./scripts/format.sh                     # format code
-cargo clippy --workspace                # lint
-cargo test --workspace                  # test
-```
-
-## Roadmap
-
-- [ ] Delete task with confirmation
-- [ ] Global search (`/`) with ranked results
-- [ ] Move task between projects
-- [ ] Undo / redo stack
-- [ ] Calendar and Board views
-- [ ] Neovim plugin
+[CONTRIBUTING.md](CONTRIBUTING.md) covers setup, and the Commands section of [AGENTS.md](AGENTS.md) lists every check CI runs.
 
 ## License
 
-MIT
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT), at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in ratatoist by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

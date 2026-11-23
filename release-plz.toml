@@ -1,0 +1,29 @@
+[workspace]
+# dist creates the GitHub release from the tag, once, with every asset attached.
+# Releases are immutable here, so a release made by release-plz would block that.
+git_release_enable = false
+git_tag_name = "v{{ version }}"
+# Release only when a release PR is merged, not on every push to main.
+release_always = false
+# Open a release PR only for commits that change what users get, or any breaking
+# commit. The package includes README.md, so without this a docs commit that
+# touches it would propose a version with no changelog entry.
+release_commits = '^(feat|fix|perf|refactor|revert)[(:!]|^[a-z]+(\([^)]*\))?!:|(?m:^BREAKING[ -]CHANGE:)'
+# The library exists for tests and the binary; it is not a public API.
+semver_check = false
+# Each milestone ships as one squash-merged feat, which should be a minor release
+# on 0.x, not a patch.
+features_always_increment_minor = true
+
+[changelog]
+protect_breaking_commits = true
+commit_parsers = [
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^perf", group = "Performance" },
+    { message = "^revert", group = "Reverted" },
+    { message = "^refactor", group = "Changed" },
+    { message = "^docs", group = "Documentation" },
+    { message = "^(build|chore|ci|style|test)", skip = true },
+    { message = ".*", group = "Other" },
+]

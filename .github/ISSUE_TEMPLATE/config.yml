@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question or share an idea
+    url: https://github.com/cxrlos/ratatoist/discussions
+    about: Questions, setup help and early ideas go to Discussions.
+  - name: Report a security vulnerability
+    url: https://github.com/cxrlos/ratatoist/security/advisories/new
+    about: Please report security issues privately, not as a public issue.

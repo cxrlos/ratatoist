@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in ratatoist is broken or behaves unexpectedly
+labels: [bug, needs-triage]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Keys pressed and screens visited.
+    validations:
+      required: true
+  - type: dropdown
+    id: demo
+    attributes:
+      label: Does `ratatoist --demo` reproduce it?
+      options: ["Yes", "No", "Not tried"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ratatoist version
+      description: Output of `ratatoist --version`
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [Linux, macOS]
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal and multiplexer
+      placeholder: e.g. kitty 0.40 inside tmux 3.5
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from the ratatoist log file. Remove any Todoist API token before pasting.
+      render: shell

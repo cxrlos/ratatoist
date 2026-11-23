@@ -1,0 +1,258 @@
+{
+  "full_sync": true,
+  "full_sync_date_utc": "2026-11-20T09:00:00Z",
+  "sync_token": "hypothetical-sync-token-0001",
+  "user": {
+    "id": "1000001",
+    "full_name": "Wren Example",
+    "email": "wren@example.com",
+    "inbox_project_id": "6Jf8VQXxpwv56VQ7",
+    "tz_info": { "timezone": "Europe/Lisbon", "gmt_string": "+00:00", "hours": 0, "minutes": 0, "is_dst": 0 },
+    "websocket_url": "wss://ws.example.com/ws?token=hypothetical",
+    "premium_status": "current_personal_plan",
+    "start_day": 1,
+    "next_week": 1
+  },
+  "projects": [
+    {
+      "id": "6Jf8VQXxpwv56VQ7",
+      "name": "Inbox",
+      "color": "grey",
+      "parent_id": null,
+      "child_order": 0,
+      "is_shared": false,
+      "is_favorite": false,
+      "inbox_project": true,
+      "is_archived": false,
+      "is_deleted": false,
+      "is_collapsed": false,
+      "view_style": "list",
+      "created_at": "2025-01-04T10:00:00.000000Z",
+      "updated_at": "2026-11-19T18:00:00.000000Z",
+      "creator_uid": "1000001",
+      "role": "CREATOR",
+      "description": "",
+      "workspace_id": null,
+      "folder_id": null,
+      "can_assign_tasks": false
+    },
+    {
+      "id": "6Jf8VQXxpwv56VQ8",
+      "name": "Garden",
+      "color": "green",
+      "parent_id": null,
+      "child_order": 1,
+      "is_shared": true,
+      "is_favorite": true,
+      "inbox_project": false,
+      "is_archived": false,
+      "is_deleted": false,
+      "is_collapsed": false,
+      "view_style": "board",
+      "created_at": "2025-03-12T08:30:00.000000Z",
+      "updated_at": "2026-11-18T12:00:00.000000Z",
+      "creator_uid": "1000001",
+      "role": "CREATOR",
+      "description": "Beds, compost and the shed",
+      "workspace_id": null,
+      "folder_id": null,
+      "can_assign_tasks": true
+    },
+    {
+      "id": "6Jf8VQXxpwv56VQ9",
+      "name": "Roadmap",
+      "color": "blue",
+      "parent_id": null,
+      "child_order": 0,
+      "is_shared": true,
+      "is_favorite": false,
+      "inbox_project": false,
+      "is_archived": false,
+      "is_deleted": false,
+      "is_collapsed": false,
+      "view_style": "list",
+      "created_at": "2025-06-01T09:00:00.000000Z",
+      "updated_at": "2026-11-17T16:00:00.000000Z",
+      "creator_uid": "1000002",
+      "role": "MEMBER",
+      "description": "",
+      "workspace_id": "9001",
+      "folder_id": "9101",
+      "can_assign_tasks": true
+    }
+  ],
+  "sections": [
+    {
+      "id": "6Jf8VQXxpwv56VR1",
+      "project_id": "6Jf8VQXxpwv56VQ8",
+      "section_order": 1,
+      "name": "Spring",
+      "is_archived": false,
+      "is_deleted": false,
+      "is_collapsed": false,
+      "added_at": "2025-03-12T08:35:00.000000Z",
+      "user_id": "1000001",
+      "archived_at": null,
+      "updated_at": "2025-03-12T08:35:00.000000Z"
+    }
+  ],
+  "items": [
+    {
+      "id": "6Jf8VQXxpwv56VT1",
+      "user_id": "1000001",
+      "project_id": "6Jf8VQXxpwv56VQ7",
+      "content": "Renew library card",
+      "description": "",
+      "priority": 4,
+      "due": {
+        "date": "2026-11-19",
+        "is_recurring": false,
+        "timezone": null,
+        "string": "Nov 19",
+        "lang": "en"
+      },
+      "deadline": null,
+      "duration": null,
+      "parent_id": null,
+      "child_order": 1,
+      "section_id": null,
+      "day_order": -1,
+      "is_collapsed": false,
+      "labels": ["errands"],
+      "added_by_uid": "1000001",
+      "assigned_by_uid": null,
+      "responsible_uid": null,
+      "checked": false,
+      "is_deleted": false,
+      "added_at": "2026-11-10T09:00:00.000000Z",
+      "updated_at": "2026-11-10T09:00:00.000000Z",
+      "completed_at": null,
+      "completed_by_uid": null,
+      "note_count": 0
+    },
+    {
+      "id": "6Jf8VQXxpwv56VT2",
+      "user_id": "1000001",
+      "project_id": "6Jf8VQXxpwv56VQ8",
+      "content": "Water the seedlings",
+      "description": "The tray by the window",
+      "priority": 2,
+      "due": {
+        "date": "2026-11-20T07:30:00",
+        "is_recurring": true,
+        "timezone": null,
+        "string": "every day at 7:30",
+        "datetime": "2026-11-20T07:30:00",
+        "lang": "en"
+      },
+      "deadline": null,
+      "duration": { "amount": 15, "unit": "minute" },
+      "parent_id": null,
+      "child_order": 1,
+      "section_id": "6Jf8VQXxpwv56VR1",
+      "day_order": -1,
+      "is_collapsed": false,
+      "labels": [],
+      "added_by_uid": "1000001",
+      "assigned_by_uid": null,
+      "responsible_uid": null,
+      "checked": false,
+      "is_deleted": false,
+      "added_at": "2026-03-01T09:00:00.000000Z",
+      "updated_at": "2026-11-19T07:31:00.000000Z",
+      "completed_at": null,
+      "completed_by_uid": null,
+      "note_count": 1
+    },
+    {
+      "id": "6Jf8VQXxpwv56VT3",
+      "user_id": "1000001",
+      "project_id": "6Jf8VQXxpwv56VQ8",
+      "content": "Buy compost",
+      "description": "",
+      "priority": 1,
+      "due": null,
+      "deadline": { "date": "2026-12-01", "lang": "en" },
+      "duration": null,
+      "parent_id": "6Jf8VQXxpwv56VT2",
+      "child_order": 1,
+      "section_id": "6Jf8VQXxpwv56VR1",
+      "day_order": -1,
+      "is_collapsed": false,
+      "labels": [],
+      "added_by_uid": "1000002",
+      "assigned_by_uid": "1000002",
+      "responsible_uid": "1000001",
+      "checked": false,
+      "is_deleted": false,
+      "added_at": "2026-03-02T09:00:00.000000Z",
+      "updated_at": "2026-03-02T09:00:00.000000Z",
+      "completed_at": null,
+      "completed_by_uid": null,
+      "note_count": 0
+    }
+  ],
+  "labels": [
+    {
+      "id": "2156154810",
+      "name": "errands",
+      "color": "charcoal",
+      "item_order": 0,
+      "is_favorite": false,
+      "is_deleted": false
+    }
+  ],
+  "notes": [
+    {
+      "id": "6Jf8VQXxpwv56VN1",
+      "posted_uid": "1000002",
+      "item_id": "6Jf8VQXxpwv56VT2",
+      "content": "Skip it if it rained overnight.",
+      "file_attachment": null,
+      "uids_to_notify": [],
+      "is_deleted": false,
+      "posted_at": "2026-11-18T20:00:00.000000Z",
+      "reactions": null
+    }
+  ],
+  "collaborators": [
+    {
+      "id": "1000002",
+      "email": "rowan@example.com",
+      "full_name": "Rowan Example",
+      "timezone": "Europe/Lisbon",
+      "image_id": null
+    }
+  ],
+  "collaborator_states": [
+    {
+      "project_id": "6Jf8VQXxpwv56VQ8",
+      "user_id": "1000002",
+      "state": "active",
+      "is_deleted": false,
+      "workspace_role": null
+    }
+  ],
+  "workspaces": [
+    {
+      "id": "9001",
+      "name": "Example Co",
+      "is_deleted": false,
+      "plan": "STARTER",
+      "role": "MEMBER"
+    }
+  ],
+  "folders": [
+    {
+      "id": "9101",
+      "name": "Planning",
+      "workspace_id": "9001",
+      "child_order": 0,
+      "is_deleted": false
+    }
+  ],
+  "filters": [],
+  "reminders": [],
+  "sync_status": {},
+  "temp_id_mapping": {}
+}

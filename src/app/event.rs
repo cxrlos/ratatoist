@@ -1,0 +1,44 @@
+use crossterm::event::KeyEvent;
+
+use crate::todoist::model::{Comment, Task};
+use crate::todoist::sync::SyncResponse;
+use crate::todoist::{ClientError, LiveMessage};
+
+/// Everything that can change what ratatoist shows.
+#[derive(Debug)]
+pub enum Event {
+    /// The runtime has started: the first sync begins.
+    Start,
+    Key(KeyEvent),
+    Resize {
+        width: u16,
+        height: u16,
+    },
+    /// The clock moved on: the runtime sends the current time.
+    Tick {
+        now: chrono::DateTime<chrono::Local>,
+    },
+    /// The answer to [`super::Effect::Sync`].
+    Synced(Result<Box<SyncResponse>, ClientError>),
+    /// The answer to [`super::Effect::SendCommands`], for the commands with
+    /// these uuids.
+    CommandsSent {
+        uuids: Vec<String>,
+        result: Result<Box<SyncResponse>, ClientError>,
+    },
+    /// The answer to [`super::Effect::FetchComments`].
+    Comments {
+        task_id: String,
+        fetch_seq: u64,
+        result: Result<Vec<Comment>, ClientError>,
+    },
+    /// The answer to [`super::Effect::FetchCompletedTasks`].
+    CompletedTasks {
+        project_id: Option<String>,
+        result: Result<Vec<Task>, ClientError>,
+    },
+    /// A message from the connection [`super::Effect::OpenLive`] opened.
+    Live(LiveMessage),
+    /// SIGINT, SIGTERM or SIGHUP: quit through the normal path.
+    Shutdown,
+}

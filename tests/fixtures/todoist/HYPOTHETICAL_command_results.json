@@ -1,0 +1,17 @@
+{
+  "full_sync": false,
+  "sync_token": "hypothetical-sync-token-0003",
+  "sync_status": {
+    "e5f6a7b8-0000-4000-8000-000000000002": "ok",
+    "6f3a9c4e-1b2d-4e5f-8a9b-0c1d2e3f4a5b": {
+      "error_code": 22,
+      "error": "Item not found",
+      "error_tag": "ITEM_NOT_FOUND",
+      "http_code": 404,
+      "error_extra": { "event_id": "hypothetical-event-0001" }
+    }
+  },
+  "temp_id_mapping": {
+    "a1b2c3d4-0000-4000-8000-000000000001": "6Jf8VQXxpwv56VT9"
+  }
+}

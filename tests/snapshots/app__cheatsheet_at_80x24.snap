@@ -1,0 +1,28 @@
+---
+source: tests/app.rs
+expression: app.backend()
+---
+"╭ Projects ────────────╮╭ Inbox ───────────────────────────────────────────────╮"
+"│   Ada Example        ││ Active  Done  Both                                   │"
+"│    Inbox             ││ ○ ● Buy oat milk  errand  Nov 20                     │"
+"│   ⊙ Today  2         ││ ○ ● Call the dentist  [2]  today                     │"
+"│   ★ Home        ╭────────────── Keybindings ───────────────╮s                │"
+"│    Work         │    ││ ▾ ● Plan the winter trip  Dec 12   │                 │"
+"│     # Launch    │  Navigation Book the train               │                 │"
+"│                 │    j / k           Move down / up        │                 │"
+"│                 │    h / l           Switch pane left /ter │deep-work        │"
+"│                 │  right                                   │                 │"
+"│                 │    g / G           Jump to top / bottom  │                 │"
+"│                 │    Tab / Shift-Tab Next / previous pane  │                 │"
+"│                 │    Enter           Open project /        │                 │"
+"│                 │  toggle fold                             │                 │"
+"│                 │    Esc             Go back               │                 │"
+"│                 │    ││                                    │                 │"
+"│                 │  Tasks                                   │                 │"
+"╰─────────────────│──  x               Complete /            │                 │"
+"╭ Stats ──────────│────╮│                                    │                 │"
+"│ Due  ▲ 1  ◆ 1  ◇╰──────────────────────────────────────────╯                 │"
+"│ P    ● 2  ● 1  ● 1   ││                                                      │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────────╯"
+" NORMAL   Inbox                                                       Offline ○ "
+" j/k navigate  g/G top/bottom  l/Tab tasks  , settings  ? help  q quit          "

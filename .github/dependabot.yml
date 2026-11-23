@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # dist generates release.yml and its tag-time plan job fails on any other
+    # edit, so its pins change only through dist.
+    exclude-paths:
+      - .github/workflows/release.yml
+    # A release waits a week before Dependabot proposes it, so a compromised
+    # release has time to be pulled before it reaches the release jobs.
+    cooldown:
+      default-days: 7
+    # Majors stay out of the group so a breaking bump can't hold up the rest.
+    groups:
+      github-actions:
+        patterns: ['*']
+        update-types: [minor, patch]
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      cargo:
+        patterns: ['*']
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore(deps)

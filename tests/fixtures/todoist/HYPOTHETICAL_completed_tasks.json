@@ -1,0 +1,56 @@
+{
+  "items": [
+    {
+      "id": "8100000001",
+      "task_id": "6Jf8VQXxpwv56VT1",
+      "user_id": "1000001",
+      "project_id": "6Jf8VQXxpwv56VQ7",
+      "section_id": null,
+      "content": "Renew library card",
+      "completed_at": "2026-11-20T10:15:00.000000Z",
+      "note_count": 0,
+      "meta_data": null,
+      "item_object": {
+        "id": "6Jf8VQXxpwv56VT1",
+        "user_id": "1000001",
+        "project_id": "6Jf8VQXxpwv56VQ7",
+        "content": "Renew library card",
+        "description": "",
+        "priority": 4,
+        "due": null,
+        "deadline": null,
+        "duration": null,
+        "parent_id": null,
+        "child_order": 1,
+        "section_id": null,
+        "day_order": -1,
+        "is_collapsed": false,
+        "labels": ["errands"],
+        "added_by_uid": "1000001",
+        "assigned_by_uid": null,
+        "responsible_uid": null,
+        "checked": true,
+        "is_deleted": false,
+        "added_at": "2026-11-10T09:00:00.000000Z",
+        "updated_at": "2026-11-20T10:15:00.000000Z",
+        "completed_at": "2026-11-20T10:15:00.000000Z",
+        "completed_by_uid": "1000001",
+        "note_count": 0
+      }
+    },
+    {
+      "id": "8100000002",
+      "task_id": "6Jf8VQXxpwv56VT4",
+      "user_id": "1000001",
+      "project_id": "6Jf8VQXxpwv56VQ8",
+      "section_id": "6Jf8VQXxpwv56VR1",
+      "content": "Sharpen the shears",
+      "completed_at": "2026-11-15T17:40:00.000000Z",
+      "note_count": 2,
+      "meta_data": null
+    }
+  ],
+  "projects": {},
+  "sections": {},
+  "next_cursor": null
+}

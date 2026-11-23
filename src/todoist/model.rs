@@ -1,0 +1,244 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub parent_id: Option<String>,
+    pub child_order: i32,
+    pub is_shared: bool,
+    pub is_favorite: bool,
+    pub inbox_project: Option<bool>,
+    pub is_archived: Option<bool>,
+    pub is_deleted: Option<bool>,
+    pub is_collapsed: Option<bool>,
+    pub view_style: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub creator_uid: Option<String>,
+    pub role: Option<String>,
+    pub description: Option<String>,
+    pub workspace_id: Option<String>,
+    pub folder_id: Option<String>,
+}
+
+impl Project {
+    pub fn is_inbox(&self) -> bool {
+        self.inbox_project.unwrap_or(false)
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Task {
+    pub id: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub checked: bool,
+    #[serde(default)]
+    pub child_order: i32,
+    #[serde(default)]
+    pub priority: u8,
+    #[serde(default)]
+    pub project_id: String,
+    pub section_id: Option<String>,
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    pub due: Option<Due>,
+    pub deadline: Option<serde_json::Value>,
+    pub duration: Option<serde_json::Value>,
+    pub added_by_uid: Option<String>,
+    pub added_at: Option<String>,
+    pub responsible_uid: Option<String>,
+    pub assigned_by_uid: Option<String>,
+    pub note_count: Option<i32>,
+    pub user_id: Option<String>,
+    pub updated_at: Option<String>,
+    #[serde(default)]
+    pub is_deleted: bool,
+    pub completed_at: Option<String>,
+    pub completed_by_uid: Option<String>,
+    pub day_order: Option<i32>,
+    #[serde(default)]
+    pub is_collapsed: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Due {
+    pub date: String,
+    #[serde(default)]
+    pub is_recurring: bool,
+    pub timezone: Option<String>,
+    pub string: Option<String>,
+    pub datetime: Option<String>,
+    pub lang: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Label {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub item_order: Option<i32>,
+    #[serde(default)]
+    pub is_favorite: bool,
+    pub is_deleted: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Section {
+    pub id: String,
+    pub project_id: String,
+    pub section_order: Option<i32>,
+    pub name: String,
+    pub is_archived: Option<bool>,
+    pub is_deleted: Option<bool>,
+    pub is_collapsed: Option<bool>,
+    pub added_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Comment {
+    pub id: String,
+    #[serde(default)]
+    pub content: String,
+    pub posted_at: Option<String>,
+    #[serde(alias = "posted_uid")]
+    pub posted_by_uid: Option<String>,
+    pub project_id: Option<String>,
+    pub task_id: Option<String>,
+    #[serde(alias = "item_id")]
+    pub item_id: Option<String>,
+    #[serde(alias = "file_attachment")]
+    pub attachment: Option<serde_json::Value>,
+    #[serde(default)]
+    pub is_deleted: bool,
+    pub reactions: Option<serde_json::Value>,
+    pub uids_to_notify: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UserInfo {
+    pub id: String,
+    pub full_name: Option<String>,
+    pub email: Option<String>,
+    pub websocket_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Collaborator {
+    pub id: String,
+    #[serde(alias = "full_name")]
+    pub name: Option<String>,
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompletedRecord {
+    pub task_id: String,
+    pub content: String,
+    pub completed_at: String,
+    pub project_id: String,
+    pub section_id: Option<String>,
+    pub note_count: Option<i32>,
+    pub user_id: Option<String>,
+    pub item_object: Option<Task>,
+}
+
+impl CompletedRecord {
+    /// The full task when Todoist sent one, otherwise a checked task built
+    /// from the record.
+    pub fn into_task(self) -> Task {
+        self.item_object.unwrap_or_else(|| Task {
+            id: self.task_id,
+            content: self.content,
+            checked: true,
+            completed_at: Some(self.completed_at),
+            project_id: self.project_id,
+            section_id: self.section_id,
+            note_count: self.note_count,
+            user_id: self.user_id,
+            ..Default::default()
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Workspace {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Folder {
+    pub id: String,
+    pub name: String,
+    pub workspace_id: String,
+    pub child_order: i32,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+// Priority metadata shared across all display sites.
+pub const PRIORITY_LABELS: &[(u8, &str)] = &[
+    (4, "P1  Urgent"),
+    (3, "P2  High"),
+    (2, "P3  Medium"),
+    (1, "P4  Normal"),
+];
+
+pub fn priority_label(p: u8) -> &'static str {
+    PRIORITY_LABELS
+        .iter()
+        .find(|(v, _)| *v == p)
+        .map(|(_, l)| *l)
+        .unwrap_or("P4  Normal")
+}
+
+// Completed tasks endpoint returns a wrapper.
+#[derive(Debug, Deserialize)]
+pub struct CompletedTasksResponse {
+    pub items: Vec<CompletedRecord>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
+// One page of a cursor-paged REST list, as GET /comments returns it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Paginated<T> {
+    pub results: Vec<T>,
+    pub next_cursor: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_tolerates_missing_scalar_fields() {
+        // A partial/drifted item with only `id` must not abort the whole sync delta.
+        let task: Task = serde_json::from_str(r#"{"id":"123"}"#).unwrap();
+        assert_eq!(task.id, "123");
+        assert_eq!(task.content, "");
+        assert_eq!(task.description, "");
+        assert_eq!(task.priority, 0);
+        assert_eq!(task.child_order, 0);
+        assert_eq!(task.project_id, "");
+    }
+
+    #[test]
+    fn completed_response_next_cursor_is_optional() {
+        let no_cursor: CompletedTasksResponse = serde_json::from_str(r#"{"items":[]}"#).unwrap();
+        assert!(no_cursor.next_cursor.is_none());
+
+        let with_cursor: CompletedTasksResponse =
+            serde_json::from_str(r#"{"items":[],"next_cursor":"abc"}"#).unwrap();
+        assert_eq!(with_cursor.next_cursor.as_deref(), Some("abc"));
+    }
+}
