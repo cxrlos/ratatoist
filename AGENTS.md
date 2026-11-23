@@ -58,7 +58,7 @@ When you add, move or split a module, update its entry here in the same PR.
 - `src/config.rs`: the token from `TODOIST_API_TOKEN` or `config.toml`, kept at mode 0600. Its `Debug` impl redacts the token.
 - `src/sync_state.rs`: the sync token, persisted atomically to `sync_state.json` in the config directory.
 - `src/terminal.rs`: the terminal guard, the one owner of raw mode and the alternate screen. `Guard::enter()` takes the terminal; dropping the guard, or a panic while it lives, restores it, the panic hook doing so before the message prints. `shutdown_signal()` resolves on SIGINT, SIGTERM or SIGHUP, which the runtime turns into `Event::Shutdown`. `tests/pty.rs` checks all of this against the real binary in a pseudo-terminal.
-- `src/logging.rs`: `tracing` to a daily log file.
+- `src/logging.rs`: `tracing` as JSON lines to `ratatoist.<date>.log` in the directory `main` passes (`paths::state_dir()`), rolled daily and keeping seven files, never to the terminal. The level comes from `RATATOIST_LOG` (an `EnvFilter` string, default `ratatoist=info`); `RUST_LOG` is ignored. tungstenite's handshake is never logged. `init` returns the `WorkerGuard`, which `main` holds until it returns.
 - `src/ui/`: rendering. Layout, splash and setup screens, status bar and key hints, dates (`dates.rs`), themes (`theme.rs`: the built-ins under `themes/` and user Base16 files), the views (projects, tasks, detail, settings) and the components (popups, pickers, the task form, the cheatsheet).
 
 ## Commands
