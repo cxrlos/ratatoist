@@ -4,18 +4,44 @@
 use std::collections::HashSet;
 
 use super::state::{
-    DockItem, OverviewStats, ProjectEntry, ProjectNavItem, SortMode, State, TaskFilter,
+    DOCK_ITEMS, DockItem, OverviewStats, ProjectEntry, ProjectNavItem, SortMode, State, TaskFilter,
 };
 use crate::todoist::model::{Project, Task};
-use crate::ui::dates;
+use crate::ui::dates::{self, DueBucket};
 
 impl State {
-    pub fn today_str(&self) -> String {
-        dates::day_str(self.today)
+    /// Where `task`'s due date falls today.
+    pub fn due_bucket(&self, task: &Task) -> DueBucket {
+        dates::due_bucket(task.due.as_ref(), self.today)
     }
 
-    fn week_end_str(&self) -> String {
-        dates::day_str(self.today + chrono::Days::new(7))
+    /// Unchecked, not deleted, and unassigned or assigned to the user: the
+    /// tasks every count and cross-project list is made of.
+    pub fn is_open_and_mine(&self, task: &Task) -> bool {
+        !task.checked
+            && !task.is_deleted
+            && task
+                .responsible_uid
+                .as_deref()
+                .is_none_or(|uid| self.current_user_id.as_deref() == Some(uid))
+    }
+
+    /// Whether `task` is a row of `item`'s dock filter. The stats count the
+    /// same tasks, so a count always equals the rows it opens. Subtasks are
+    /// left out of both, as the Today list leaves them out.
+    fn in_dock_item(&self, task: &Task, item: DockItem) -> bool {
+        if task.parent_id.is_some() || !self.is_open_and_mine(task) {
+            return false;
+        }
+        match item {
+            DockItem::DueOverdue => self.due_bucket(task) == DueBucket::Overdue,
+            DockItem::DueToday => self.due_bucket(task) == DueBucket::Today,
+            DockItem::DueWeek => matches!(
+                self.due_bucket(task),
+                DueBucket::Today | DueBucket::ThisWeek
+            ),
+            DockItem::Priority(p) => task.priority == p,
+        }
     }
 
     pub fn project_list_entries(&self) -> Vec<ProjectEntry> {
@@ -116,44 +142,31 @@ impl State {
     }
 
     pub fn overview_stats(&self) -> OverviewStats {
-        let today = self.today_str();
-        let week_end = self.week_end_str();
-
-        let mut due_today = 0u32;
-        let mut due_week = 0u32;
-        let mut overdue = 0u32;
-        let mut by_priority = [0u32; 5];
-
-        for task in &self.tasks {
-            if task.is_deleted {
-                continue;
-            }
-            if !task.checked {
-                let p = task.priority as usize;
-                if p < by_priority.len() {
-                    by_priority[p] += 1;
-                }
-            }
-            if let Some(due) = &task.due {
-                let due_date = dates::date_part(&due.date);
-                if due_date == today.as_str() && !task.checked {
-                    due_today += 1;
-                }
-                if due_date < today.as_str() && !task.checked {
-                    overdue += 1;
-                }
-                if due_date >= today.as_str() && due_date <= week_end.as_str() {
-                    due_week += 1;
+        let mut stats = OverviewStats {
+            due_today: 0,
+            due_week: 0,
+            overdue: 0,
+            by_priority: [0; 5],
+        };
+        for item in DOCK_ITEMS {
+            let count = self
+                .tasks
+                .iter()
+                .filter(|t| self.in_dock_item(t, item))
+                .count();
+            let count = u32::try_from(count).unwrap_or(u32::MAX);
+            match item {
+                DockItem::DueOverdue => stats.overdue = count,
+                DockItem::DueToday => stats.due_today = count,
+                DockItem::DueWeek => stats.due_week = count,
+                DockItem::Priority(p) => {
+                    if let Some(slot) = stats.by_priority.get_mut(usize::from(p)) {
+                        *slot = count;
+                    }
                 }
             }
         }
-
-        OverviewStats {
-            due_today,
-            due_week,
-            overdue,
-            by_priority,
-        }
+        stats
     }
 
     pub fn has_children(&self, task_id: &str) -> bool {
@@ -168,25 +181,12 @@ impl State {
 
     pub fn visible_tasks(&self) -> Vec<&Task> {
         if self.today_view_active {
-            let today = self.today_str();
             let mut tasks: Vec<&Task> = self
                 .tasks
                 .iter()
                 .filter(|t| {
-                    if t.is_deleted || t.checked || t.parent_id.is_some() {
-                        return false;
-                    }
-                    let is_today_or_overdue = t
-                        .due
-                        .as_ref()
-                        .is_some_and(|d| dates::date_part(&d.date) <= today.as_str());
-                    if !is_today_or_overdue {
-                        return false;
-                    }
-                    match &t.responsible_uid {
-                        None => true,
-                        Some(uid) => self.current_user_id.as_deref() == Some(uid.as_str()),
-                    }
+                    self.in_dock_item(t, DockItem::DueOverdue)
+                        || self.in_dock_item(t, DockItem::DueToday)
                 })
                 .collect();
             tasks.sort_by(|a, b| {
@@ -203,17 +203,10 @@ impl State {
                 a_date.cmp(b_date).then(a.child_order.cmp(&b.child_order))
             });
             if self.overdue_section_collapsed {
-                tasks.retain(|t| {
-                    t.due
-                        .as_ref()
-                        .is_some_and(|d| dates::date_part(&d.date) == today.as_str())
-                });
+                tasks.retain(|t| self.due_bucket(t) == DueBucket::Today);
             }
             return tasks;
         }
-
-        let today = self.today_str();
-        let week_end = self.week_end_str();
 
         let current_project_id = self
             .projects
@@ -228,17 +221,7 @@ impl State {
                     return false;
                 }
                 if let Some(dock) = self.dock_filter {
-                    return match dock {
-                        DockItem::DueOverdue => {
-                            t.due.as_ref().is_some_and(|d| d.date < today) && !t.checked
-                        }
-                        DockItem::DueToday => t.due.as_ref().is_some_and(|d| d.date == today),
-                        DockItem::DueWeek => t
-                            .due
-                            .as_ref()
-                            .is_some_and(|d| d.date >= today && d.date <= week_end),
-                        DockItem::Priority(p) => t.priority == p && !t.checked,
-                    };
+                    return self.in_dock_item(t, dock);
                 }
                 Some(t.project_id.as_str()) == current_project_id
                     && match self.task_filter {

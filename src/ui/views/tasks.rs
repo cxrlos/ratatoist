@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use crate::app::{InputMode, State};
-use crate::ui::dates;
+use crate::ui::dates::{self, DueBucket};
 use crate::ui::theme::Theme;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
@@ -61,7 +61,6 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     let mut current_project_id: Option<String> = None;
     let mut last_section_id: Option<String> = None;
 
-    let today = state.today_str();
     let stats = if state.today_view_active {
         Some(state.overview_stats())
     } else {
@@ -72,10 +71,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     for (task_idx, task) in visible.iter().enumerate() {
         if state.today_view_active
             && !overdue_header_shown
-            && task
-                .due
-                .as_ref()
-                .is_some_and(|d| dates::date_part(&d.date) < today.as_str())
+            && state.due_bucket(task) == DueBucket::Overdue
         {
             let overdue_count = stats.as_ref().map(|s| s.overdue).unwrap_or(0);
             let arrow = if state.overdue_section_collapsed {
