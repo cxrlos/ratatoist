@@ -39,8 +39,16 @@ async fn start(cli: Cli) -> Result<()> {
         // folder (no config.toml, themes, settings or sync token) and writes
         // nothing there, so it always starts from defaults.
         let _log_guard = logging::init(&paths::state_dir()?)?;
-        let state = runtime::initial_state(&Config::default(), None);
-        return run_app(demo::client(runtime::today()), state, None, None).await;
+        let config = Config::default();
+        let mut state = runtime::initial_state(&config, None);
+        let releases = release_check(&cli, &config, &mut state);
+        return run_app(
+            demo::client(runtime::today()),
+            state,
+            None,
+            releases.as_ref(),
+        )
+        .await;
     }
 
     let config_dir = paths::config_dir()?;
@@ -50,10 +58,7 @@ async fn start(cli: Cli) -> Result<()> {
     }
     let _log_guard = logging::init(&paths::state_dir()?)?;
     let mut state = runtime::initial_state(&config, Some(&config_dir));
-    let releases = release_check(&cli, &config);
-    if let Some(releases) = &releases {
-        state.release = ReleaseState::new(true, Channel::of_running(), releases.cache.load());
-    }
+    let releases = release_check(&cli, &config, &mut state);
     let resolved = match auth::resolve() {
         Ok(resolved) => resolved,
         Err(error) if runtime::is_missing_token(&error) => {
@@ -70,20 +75,18 @@ async fn start(cli: Cli) -> Result<()> {
     run_app(client, state, Some(&config_dir), releases.as_ref()).await
 }
 
-/// GitHub's releases and their cache, when this run checks for a newer
-/// release; `None`, logged, when there is no cache dir or HTTP client.
-fn release_check(cli: &Cli, config: &Config) -> Option<ReleaseCheck> {
-    let off = release::off_switch(
+/// The release check for this run, with its cached record and install
+/// channel set on `state`. Every start calls it, `--demo` too, so
+/// `release::background_check` alone decides that the demo never asks
+/// GitHub.
+fn release_check(cli: &Cli, config: &Config, state: &mut State) -> Option<ReleaseCheck> {
+    let check = release::background_check(
+        cli,
         &config.updates,
         std::env::var_os(release::OFF_VAR).as_deref(),
-    );
-    if !release::checks_in_background(cli, off) {
-        tracing::info!(?off, "not checking for a newer release");
-        return None;
-    }
-    ReleaseCheck::github()
-        .inspect_err(|error| tracing::warn!("no release check: {error:#}"))
-        .ok()
+    )?;
+    state.release = ReleaseState::new(true, Channel::of_running(), check.cache.load());
+    Some(check)
 }
 
 /// Runs the TUI from `state` against `client`, saving the sync token in

@@ -147,6 +147,26 @@ pub fn checks_in_background(cli: &Cli, off: Option<Off>) -> bool {
     cli.command.is_none() && !cli.demo && off.is_none()
 }
 
+/// The background check this run makes: GitHub and the cache when
+/// [`checks_in_background`] says so for `cli`, `settings` and `env` (the
+/// value of [`OFF_VAR`]), otherwise `None`. Every start goes through it,
+/// `--demo` included, so this is what keeps the demo off GitHub. Also
+/// `None`, logged, when there is no cache dir or HTTP client.
+pub fn background_check(
+    cli: &Cli,
+    settings: &UpdateSettings,
+    env: Option<&OsStr>,
+) -> Option<ReleaseCheck> {
+    let off = off_switch(settings, env);
+    if !checks_in_background(cli, off) {
+        tracing::info!(?off, "not checking for a newer release");
+        return None;
+    }
+    ReleaseCheck::github()
+        .inspect_err(|error| tracing::warn!("no release check: {error:#}"))
+        .ok()
+}
+
 /// What the last checks found: when the last one ran, the newest release
 /// it saw and the release the user skipped.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -426,6 +446,17 @@ mod tests {
         ] {
             assert!(!checks_in_background(&cli(auth), None));
         }
+    }
+
+    #[test]
+    fn only_the_tui_on_a_real_account_gets_a_background_check() {
+        let on = UpdateSettings { check: true };
+        let off = UpdateSettings { check: false };
+        assert!(background_check(&cli(&["ratatoist"]), &on, None).is_some());
+        assert!(background_check(&cli(&["ratatoist", "--demo"]), &on, None).is_none());
+        assert!(background_check(&cli(&["ratatoist", "auth", "status"]), &on, None).is_none());
+        assert!(background_check(&cli(&["ratatoist"]), &off, None).is_none());
+        assert!(background_check(&cli(&["ratatoist"]), &on, Some(OsStr::new("1"))).is_none());
     }
 
     #[test]
