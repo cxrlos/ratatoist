@@ -516,6 +516,63 @@ fn esc_in_a_prompt_or_the_form_sends_nothing() {
     }
 }
 
+/// An incremental sync that adds a task at the top of the Inbox, so every
+/// row below it moves down one.
+fn a_task_lands_at_the_top_of_the_inbox() -> Event {
+    let json = r#"{
+        "full_sync": false,
+        "sync_token": "after",
+        "items": [{
+            "id": "t-first",
+            "content": "Answer the landlord",
+            "description": "",
+            "checked": false,
+            "child_order": 0,
+            "priority": 1,
+            "project_id": "p-inbox",
+            "added_at": "2026-11-22T08:00:00Z"
+        }]
+    }"#;
+    Event::Synced(Ok(Box::new(serde_json::from_str(json).unwrap())))
+}
+
+/// `text` typed into the open prompt, then Enter.
+fn submitted(text: &str) -> Vec<Event> {
+    let mut events = typed(text);
+    events.push(enter());
+    events
+}
+
+#[test]
+fn an_edit_from_the_list_changes_the_task_it_opened_on_after_a_sync_reorders_the_list() {
+    let openers: [(Event, Vec<Event>); 5] = [
+        (key('e'), submitted(" x")),
+        (key('E'), submitted(" x")),
+        (key('d'), submitted(" x")),
+        (key('p'), vec![key('1')]),
+        (key('c'), submitted("On my way")),
+    ];
+    for (open, submit) in openers {
+        let mut app = vim();
+        send(&mut app, [enter(), key('j')]);
+        assert_eq!(selected(&app), "t-call");
+        send(&mut app, [open]);
+
+        send(&mut app, [a_task_lands_at_the_top_of_the_inbox()]);
+        assert_ne!(selected(&app), "t-call");
+        let effects = send(&mut app, submit);
+
+        let sent = commands(&effects);
+        assert_eq!(sent.len(), 1);
+        let target = sent[0]
+            .args
+            .get("id")
+            .or_else(|| sent[0].args.get("item_id"));
+        assert_eq!(target.and_then(|id| id.as_str()), Some("t-call"));
+        assert!(app.state().comments.is_empty());
+    }
+}
+
 #[test]
 fn the_form_moves_between_fields_and_adds_the_task() {
     let mut app = vim();

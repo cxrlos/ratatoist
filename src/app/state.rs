@@ -45,6 +45,9 @@ pub struct State {
     /// The text of the open prompt, or of the add-task form's active text
     /// field.
     pub input: TextField,
+    /// The task the open prompt or priority picker writes to, taken when it
+    /// opened, so a sync that reorders the list cannot retarget it.
+    pub edit_task: Option<String>,
     pub collapsed: HashSet<String>,
     /// Rows the task detail is scrolled down by. Scroll keys keep it within
     /// the content at [`State::screen_size`].
@@ -114,6 +117,7 @@ impl State {
             keymap: Keymap::default(),
             modals: Vec::new(),
             input: TextField::default(),
+            edit_task: None,
             collapsed: HashSet::new(),
             detail_scroll: 0,
             viewport: None,

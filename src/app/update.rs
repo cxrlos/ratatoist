@@ -350,9 +350,10 @@ impl State {
             }
             Action::Edit(field) => self.edit(field),
             Action::Comment => {
-                if self.selected_task().is_none() {
+                let Some(task) = self.selected_task() else {
                     return false;
-                }
+                };
+                self.edit_task = Some(task.id.clone());
                 self.start_input_for(InputKind::Comment, String::new());
                 true
             }
@@ -672,9 +673,10 @@ impl State {
         let Some(task) = self.selected_task() else {
             return false;
         };
+        let selection = task.priority;
+        self.edit_task = Some(task.id.clone());
         self.detail_field = match field {
             Editable::Priority => {
-                let selection = task.priority;
                 self.modals.push(Modal::PriorityPicker { selection });
                 return true;
             }
@@ -951,10 +953,9 @@ impl State {
     }
 
     fn submit_comment(&mut self, content: String, effects: &mut Vec<Effect>) {
-        let Some(task) = self.selected_task() else {
+        let Some(task_id) = self.edit_task.take() else {
             return;
         };
-        let task_id = task.id.clone();
         let temp_id = self.new_temp_id();
 
         let optimistic = Comment {
@@ -966,8 +967,14 @@ impl State {
             item_id: Some(task_id.clone()),
             ..Comment::default()
         };
-        self.comments.push(optimistic);
-        self.comments_fetch_seq += 1;
+        // The comment list is the open detail's; a comment from the list
+        // shows there only when that detail is on the same task.
+        if self.active_pane == Pane::Detail
+            && self.selected_task().map(|t| t.id.as_str()) == Some(task_id.as_str())
+        {
+            self.comments.push(optimistic);
+            self.comments_fetch_seq += 1;
+        }
 
         let command = SyncCommand {
             r#type: "note_add".to_string(),
@@ -980,12 +987,10 @@ impl State {
     }
 
     fn submit_field_edit(&mut self, value: String, effects: &mut Vec<Effect>) {
-        let (task_id, before) = {
-            let Some(task) = self.selected_task() else {
-                return;
-            };
-            (task.id.clone(), task.clone())
+        let Some(before) = self.edit_target() else {
+            return;
         };
+        let task_id = before.id.clone();
 
         let args = match self.detail_field {
             DetailField::Content => {
@@ -1025,6 +1030,14 @@ impl State {
         self.modals
             .retain(|m| !matches!(m, Modal::Input(_) | Modal::Form(_)));
         self.input = TextField::default();
+        self.edit_task = None;
+    }
+
+    /// The task the closing prompt or priority picker opened on, as it is
+    /// now; `None` once it is gone.
+    fn edit_target(&mut self) -> Option<Task> {
+        let id = self.edit_task.take()?;
+        self.tasks.iter().find(|t| t.id == id).cloned()
     }
 
     fn star_selected_project(&mut self, effects: &mut Vec<Effect>) {
@@ -1075,15 +1088,13 @@ impl State {
     }
 
     fn apply_priority(&mut self, new_priority: u8, effects: &mut Vec<Effect>) {
-        let (task_id, before) = {
-            let Some(task) = self.selected_task() else {
-                return;
-            };
-            if task.priority == new_priority {
-                return;
-            }
-            (task.id.clone(), task.clone())
+        let Some(before) = self.edit_target() else {
+            return;
         };
+        if before.priority == new_priority {
+            return;
+        }
+        let task_id = before.id.clone();
 
         if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
             t.priority = new_priority;
@@ -1106,11 +1117,13 @@ impl State {
         let Some(task) = self.selected_task() else {
             return;
         };
+        let id = task.id.clone();
 
         let prefill = match self.detail_field {
             DetailField::Content => task.content.clone(),
             DetailField::Priority => {
                 let selection = task.priority;
+                self.edit_task = Some(id);
                 self.modals.push(Modal::PriorityPicker { selection });
                 return;
             }
@@ -1121,6 +1134,7 @@ impl State {
                 .unwrap_or_default(),
             DetailField::Description => task.description.clone(),
         };
+        self.edit_task = Some(id);
         self.start_input_for(InputKind::Field, prefill);
     }
 
