@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use chrono::{Days, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{Datelike, Days, Months, NaiveDate, NaiveDateTime, NaiveTime, Weekday};
 use futures_util::Stream;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -213,7 +213,13 @@ impl Store {
                 self.list("items").push(item);
                 command.temp_id.clone().map(|temp| (temp, real_id))
             }
-            "item_close" | "item_complete" => {
+            "item_complete" => {
+                if !self.advance(&id) {
+                    self.close(&id);
+                }
+                None
+            }
+            "item_close" => {
                 self.close(&id);
                 None
             }
@@ -253,6 +259,27 @@ impl Store {
             }
             _ => None,
         }
+    }
+
+    /// Moves the recurring task `id` to its next date after today, as
+    /// item_complete does in Todoist. False when `id` is not recurring.
+    fn advance(&mut self, id: &str) -> bool {
+        let today = self.today;
+        let Some(item) = self.list("items").iter_mut().find(|i| i["id"] == id) else {
+            return false;
+        };
+        let due = &mut item["due"];
+        if due["is_recurring"] != true {
+            return false;
+        }
+        let (Some(date), Some(rule)) = (due["date"].as_str(), due["string"].as_str()) else {
+            return false;
+        };
+        let Some(next) = next_occurrence(date, rule, today) else {
+            return false;
+        };
+        due["date"] = json!(next);
+        true
     }
 
     /// Completes the task `id` and, as Todoist does, every open subtask
@@ -352,6 +379,77 @@ fn merge(list: &mut [Value], id: &str, args: &Value, skip: &[&str]) {
             entry[field] = value.clone();
         }
     }
+}
+
+/// How far apart a recurring task's dates are.
+enum Step {
+    Days(u64),
+    Months(u32),
+    Weekdays(Vec<Weekday>),
+}
+
+impl Step {
+    /// The step in a due string such as `every day`, `every 3 days`,
+    /// `every month at 17:00` or `every mon, wed, fri at 7:30`; one day
+    /// for anything else, since the demo has no full date parser.
+    fn parse(rule: &str) -> Self {
+        let rule = rule.to_lowercase();
+        let rule = rule.strip_prefix("every ").unwrap_or(&rule);
+        let rule = rule.split(" at ").next().unwrap_or_default();
+        let words: Vec<&str> = rule
+            .split([',', ' '])
+            .filter(|word| !word.is_empty())
+            .collect();
+        let weekdays: Vec<Weekday> = words.iter().filter_map(|w| w.parse().ok()).collect();
+        if !weekdays.is_empty() && weekdays.len() == words.len() {
+            return Self::Weekdays(weekdays);
+        }
+        let (count, unit) = match words.as_slice() {
+            [count, unit] => (count.parse().unwrap_or(1), *unit),
+            [unit] => (1, *unit),
+            _ => (1, "day"),
+        };
+        match unit.trim_end_matches('s') {
+            "week" => Self::Days(7 * count),
+            "month" => Self::Months(u32::try_from(count).unwrap_or(1)),
+            "year" => Self::Months(12 * u32::try_from(count).unwrap_or(1)),
+            "day" => Self::Days(count),
+            _ => Self::Days(1),
+        }
+    }
+
+    fn after(&self, date: NaiveDate) -> Option<NaiveDate> {
+        match self {
+            Self::Days(days) => date.checked_add_days(Days::new(*days)),
+            Self::Months(months) => date.checked_add_months(Months::new(*months)),
+            Self::Weekdays(weekdays) => (1..=7)
+                .filter_map(|n| date.checked_add_days(Days::new(n)))
+                .find(|next| weekdays.contains(&next.weekday())),
+        }
+    }
+}
+
+/// The first date of the series `rule` after both `date` (a due date, with
+/// or without a time, which the next one keeps) and `today`.
+fn next_occurrence(date: &str, rule: &str, today: NaiveDate) -> Option<String> {
+    let (day, time) = match date.split_once('T') {
+        Some((day, time)) => (day, Some(time)),
+        None => (date, None),
+    };
+    let step = Step::parse(rule);
+    let mut next = step.after(NaiveDate::parse_from_str(day, "%Y-%m-%d").ok()?)?;
+    // Bounded so a step that cannot move forward cannot spin.
+    for _ in 0..1000 {
+        if next > today {
+            break;
+        }
+        next = step.after(next)?;
+    }
+    let next = next.format("%Y-%m-%d");
+    Some(match time {
+        Some(time) => format!("{next}T{time}"),
+        None => next.to_string(),
+    })
 }
 
 /// Dates as offsets in days from the day the account is built for.

@@ -586,3 +586,38 @@ async fn reopening_a_subtask_reopens_its_completed_parents() {
     assert!(!open.contains(&"t-worktop"));
     assert!(done(&client).await.iter().any(|t| t.id == "t-worktop"));
 }
+
+#[tokio::test]
+async fn completing_a_recurring_task_moves_it_to_its_next_date() {
+    let cases = [
+        ("t-pages", day(1)),
+        ("t-recycling", day(7)),
+        ("t-vacuum", day(4)),
+        ("t-compost", day(23)),
+        ("t-run", format!("{}T07:30:00", day(2))),
+        ("t-long-run", day(12)),
+        ("t-electricity", "2026-12-23T17:00:00".to_owned()),
+    ];
+    for (id, next) in cases {
+        let client = demo::client(today());
+
+        send(&client, "item_complete", json!({ "id": id })).await;
+
+        let items = full_sync(&client).await;
+        let task = items.iter().find(|t| t.id == id).unwrap();
+        let due = task.due.as_ref().unwrap();
+        assert_eq!(due.date, next, "{id}");
+        assert!(due.is_recurring && !task.checked, "{id}");
+        assert!(!done(&client).await.iter().any(|t| t.id == id), "{id}");
+    }
+}
+
+#[tokio::test]
+async fn closing_a_recurring_task_ends_the_series() {
+    let client = demo::client(today());
+
+    send(&client, "item_close", json!({ "id": "t-pages" })).await;
+
+    assert!(!full_sync(&client).await.iter().any(|t| t.id == "t-pages"));
+    assert!(done(&client).await.iter().any(|t| t.id == "t-pages"));
+}
