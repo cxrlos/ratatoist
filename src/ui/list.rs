@@ -21,6 +21,10 @@ use crate::todoist::model::{Priority, Task};
 /// The columns a row's content keeps before its due date shows beside it.
 const CONTENT_BESIDE_DUE: u16 = 30;
 
+/// The fewest columns a due date longer than that is cut to before it
+/// gives way to the content.
+const DUE_MIN_COLUMNS: u16 = 10;
+
 /// The widest a project name gets on Today and Upcoming before it is cut.
 const PROJECT_WIDTH: usize = 16;
 
@@ -261,12 +265,16 @@ pub fn render_row(
     }
 
     // The due takes what the content leaves past its 30 columns, cut with
-    // `…` when it is longer, as a long due string not parsed yet can be.
+    // `…` when it is longer, as a recurring or not yet parsed due string
+    // can be; with less room than the due or its first columns, it gives way.
     let due_room = body.width.saturating_sub(CONTENT_BESIDE_DUE + 1);
-    let due = due_span(state, task).filter(|_| due_room > 0).map(|due| {
-        let width = u16::try_from(text::width(&due.content)).unwrap_or(u16::MAX);
-        (width.min(due_room), due)
-    });
+    let due = due_span(state, task)
+        .map(|due| {
+            let width = u16::try_from(text::width(&due.content)).unwrap_or(u16::MAX);
+            (width, due)
+        })
+        .filter(|(width, _)| due_room >= (*width).min(DUE_MIN_COLUMNS))
+        .map(|(width, due)| (width.min(due_room), due));
     let content = match due {
         Some((width, due)) => {
             let [content, due_area] =
