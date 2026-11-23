@@ -71,14 +71,13 @@ pub(crate) fn new_uuid() -> String {
     let bits: u128 = rand::random();
     let bits = (bits & !(0xf << 76)) | (0x4 << 76);
     let bits = (bits & !(0x3 << 62)) | (0x2 << 62);
-    let hex = format!("{bits:032x}");
     format!(
-        "{}-{}-{}-{}-{}",
-        &hex[0..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..32]
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        bits >> 96,
+        (bits >> 80) & 0xffff,
+        (bits >> 64) & 0xffff,
+        (bits >> 48) & 0xffff,
+        bits & 0xffff_ffff_ffff
     )
 }
 
