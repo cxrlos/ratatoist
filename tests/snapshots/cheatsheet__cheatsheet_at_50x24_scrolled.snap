@@ -1,0 +1,27 @@
+---
+source: tests/cheatsheet.rs
+expression: text(&app)
+---
+ [1] Inbox │ [2] │ [3] │ [4] │ [5]  synced 0s ago 
+╭ Inbox ─────────────────────────────────────────╮
+│ ○ ▮▮▮┌ Keys ────────────────────────────┐      │
+│ ○ ▮▮▯│  Enter        open the task      │      │
+│ ○ ···│  Esc          close or step back │      │
+│ ▿ ▮▯▯│                                  │      │
+│   ○ ·│ Edit the task                    │      │
+│   ● ·│  x    complete / reopen          │      │
+│ ○ ···│  a    add a task                 │p-wo… │
+│      │  p    priority                   │      │
+│      │  d    due date                   │      │
+│      │  e/E  content / description      │      │
+│      │  c    comment                    │      │
+│      │                                  │      │
+│      │ App                              │      │
+│      │  1/2/3/4/5  screens              │      │
+│      │  R          re-sync              │      │
+│      │  ?          keys                 │      │
+│      │  :,C-k      palette              │      │
+│      └ Esc close ───────────────────────┘      │
+╰────────────────────────────────────────────────╯
+ Move │ j/k move                                  
+ Do   │ Esc close

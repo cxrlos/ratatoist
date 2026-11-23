@@ -1,0 +1,27 @@
+---
+source: tests/palette.rs
+expression: text(&app)
+---
+ [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago 
+╭ Inbox ───────────────────────────────────────────────────────────────────────╮
+│ ┌ Palette ─────────────────────────────────────────────────────────────────┐ │
+│ │ :                                                                        │ │
+│ │──────────────────────────────────────────────────────────────────────────│ │
+│ │ Move down                                                        j, Down │ │
+│ │ Move up                                                            k, Up │ │
+│ │ Move to the top                                                       gg │ │
+│ │ Move to the bottom                                                     G │ │
+│ │ Move down half a page                                                C-d │ │
+│ │ Move up half a page                                                  C-u │ │
+│ │ Open the focused task                                              Enter │ │
+│ │ Complete the task, or reopen it                                        x │ │
+│ │ Add a task                                                             a │ │
+│ │ Change the priority                                                    p │ │
+│ │ Set or clear the due date                                              d │ │
+│ │ Edit the content                                                       e │ │
+│ └ Esc close ───────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Move │ Down/Up move                                                            
+ Do   │ Enter choose │ Esc close

@@ -1,0 +1,28 @@
+---
+source: tests/frame.rs
+expression: app.backend()
+---
+" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 4s ago "
+"╭ Task Detail ─────────────────────────────────────────────────────────────────╮"
+"│                                                                              │"
+"│  Fix the wobbly chair leg  ◂                                                 │"
+"│                                                                              │"
+"│  Priority  ▮▯▯ Priority 3 (medium)                                           │"
+"│  Due       Nov 18  (2026-11-18)                                              │"
+"│                                                                              │"
+"│  Description                                                                 │"
+"│  (empty)                                                                     │"
+"│                                                                              │"
+"│  ─── Comments ───                                                            │"
+"│                                                                              │"
+"│  Inés Halloran - ines@example.net                                            │"
+"│  │ Wood glue is in the second drawer.  2026-11-17 20:30                      │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+" Move │ j down     │ k up   │ gg top     │ G bottom │ C-d/C-u page │ h/l pane   "
+" Do   │ Esc close  │ ? keys │ : palette  │ q quit                               "
+" Edit │ x complete │ a add  │ p priority │ d due    │ e/E edit     │ c comment  "

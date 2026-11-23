@@ -1,0 +1,40 @@
+---
+source: tests/frame.rs
+expression: app.backend()
+---
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago "
+"╭ Upcoming ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮"
+"│ Mon 23 Nov (11)                                                                                                      │"
+"│ ○ ▮▮▯ Call the plumber about the leaking tap  phone  ✉1  today                                                       │"
+"│ ○ ··· 買い物リストを作る  quick  today                                                                               │" Hidden by multi-width symbols: [(9, "s"), (11, " "), (13, "e"), (15, " "), (17, "o"), (19, " "), (21, "h"), (23, " "), (25, "u")]
+"│ ○ ··· Take out the recycling  15min  ↻  every week                                                                   │"
+"│ ○ ▮▯▯ Finish «La casa del faro», chapter 7  reading  today                                                           │"
+"│ ○ ··· Read 20 pages  reading  15min  ↻  every day                                                                    │"
+"│ ○ ··· Water the seedlings  quick  ↻  every 2 days                                                                    │"
+"│ ○ ▮▮▮ Fix the crash when the ferry timetable is empty  computer  deep-work  ✉2  today                                │"
+"│ ○ ▮▮▯ 🏃 Run 5 km along the river  health  outdoors  ↻  every mon, wed, fri at 7:30                                  │" Hidden by multi-width symbols: [(9, "e")]
+"│ ▿ ▮▮▮ Draft the new navigation  deep-work  computer  ✉3  today                                                       │"
+"│ ○ ▮▮▮ Pay the electricity bill  computer  ↻  every month at 17:00                                                    │"
+"│ ○ ··· Stretch for ten minutes  health  15min  ↻  every day at 21:00                                                  │"
+"│ Tue 24 Nov (2)                                                                                                       │"
+"│ ○ ··· Vacuum the living room  ↻  every 3 days                                                                        │"
+"│ ○ ▮▯▯ 🌱 Repot the monstera  outdoors  tomorrow                                                                      │" Hidden by multi-width symbols: [(9, "e")]
+"│ Wed 25 Nov (2)                                                                                                       │"
+"│ ○ ··· Change the bedsheets  ↻  every week                                                                            │"
+"│ ○ ▮▯▯ Release notes for 2.4  Nov 25                                                                                  │"
+"│ Thu 26 Nov (3)                                                                                                       │"
+"│ ○ ▮▮▯ Réserver la crêperie pour l'anniversaire de Zoé  phone  Nov 26                                                 │"
+"│ ○ ▮▮▯ Interview five café owners about online ordering  review  Nov 26                                               │"
+"│ ○ ··· Weekly sync with the Harbor team  ↻  every thu at 11:00                                                        │"
+"│ Fri 27 Nov (2)                                                                                                       │"
+"│ ○ ▮▯▯ Translate the onboarding: «Bem-vindo a bordo»  review  Nov 27                                                  │"
+"│ ○ ▮▮▮ 🎂 Order a cake for Saturday  errand  Nov 27                                                                   │" Hidden by multi-width symbols: [(9, " ")]
+"│ Sat 28 Nov (2)                                                                                                       │"
+"│ ○ ··· Renew the bike insurance  computer  Nov 28                                                                     │"
+"│ ○ ··· Long run: 12 km  outdoors  ↻  every sat                                                                        │"
+"│ Sun 29 Nov (1)                                                                                                       │"
+"│ ○ ··· Write notes on «Mapas del viento»  review  Nov 29                                                              │"
+"╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
+" Move │ j down     │ k up      │ gg top  │ G bottom   │ C-d/C-u page │ h/l pane                                         "
+" Do   │ Enter open │ Esc close │ ? keys  │ : palette  │ q quit                                                          "
+" View │ z fold     │ f filter  │ vs sort │ x complete │ a add        │ p priority │ d due │ e/E edit │ c comment        "

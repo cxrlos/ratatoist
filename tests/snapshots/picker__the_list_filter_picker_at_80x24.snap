@@ -1,0 +1,28 @@
+---
+source: tests/picker.rs
+expression: app.backend()
+---
+" [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago "
+"╭ Inbox ───────────────────────────────────────────────────────────────────────╮"
+"│ ○ ▮▮▯ Call the plumber about the leaking tap  phone  ✉1  today               │"
+"│ ○ ▮▯▯ Return the library books  errand  Nov 21                               │"
+"│ ○ ··· Renew the┌ Show in Inbox ────────────────────────────┐                 │"
+"│ ○ ··· 買い物リス > type to filter                          │                 │" Hidden by multi-width symbols: [(9, "e"), (11, " "), (13, "h"), (15, "e"), (17, " ")]
+"│ ○ ▮▮▯ Réserver │ 1 Open ✓                                  │  Nov 26         │"
+"│ ○ ··· Write dow│ 2 Completed                               │ade: the shelf…  │"
+"│ ○ ▮▮▮ 🎂 Order │ 3 All                                     │                 │" Hidden by multi-width symbols: [(9, "e")]
+"│ ○ ▮▯▯ Reply to │ 4 ▲ Overdue                               │                 │"
+"│                │ 5 ◆ Due today                             │                 │"
+"│                │ 6 Due this week                           │                 │"
+"│                │ 7 ▮▮▮ P1                                  │                 │"
+"│                │ 8 ▮▮▯ P2                                  │                 │"
+"│                │ 9 ▮▯▯ P3                                  │                 │"
+"│                │   ··· P4                                  │                 │"
+"│                └ Down/Up select  Enter choose  Esc close ──┘                 │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+" Move │ Down/Up move                                                            "
+" Do   │ Enter choose │ Esc close                                                "
+"                                                                                "

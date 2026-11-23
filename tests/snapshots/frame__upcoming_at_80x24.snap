@@ -1,0 +1,28 @@
+---
+source: tests/frame.rs
+expression: "screen_at('3', 80, 24).backend()"
+---
+" [1] │ [2] │ [3] Upcoming │ [4] │ [5]                             synced 4s ago "
+"╭ Upcoming ────────────────────────────────────────────────────────────────────╮"
+"│ Mon 23 Nov (11)                                                              │"
+"│ ○ ▮▮▯ Call the plumber about the leaking tap  phone  ✉1  today               │"
+"│ ○ ··· 買い物リストを作る  quick  today                                       │" Hidden by multi-width symbols: [(9, "s"), (11, " "), (13, "e"), (15, " "), (17, "o"), (19, " "), (21, "h"), (23, " "), (25, "u")]
+"│ ○ ··· Take out the recycling  15min  ↻  every week                           │"
+"│ ○ ▮▯▯ Finish «La casa del faro», chapter 7  reading  today                   │"
+"│ ○ ··· Read 20 pages  reading  15min  ↻  every day                            │"
+"│ ○ ··· Water the seedlings  quick  ↻  every 2 days                            │"
+"│ ○ ▮▮▮ Fix the crash when the ferry timetable is empty  computer  deep-work…  │"
+"│ ○ ▮▮▯ 🏃 Run 5 km along the river  health  outdoors  ↻  every mon, wed, fri… │" Hidden by multi-width symbols: [(9, "e")]
+"│ ▿ ▮▮▮ Draft the new navigation  deep-work  computer  ✉3  today               │"
+"│ ○ ▮▮▮ Pay the electricity bill  computer  ↻  every month at 17:00            │"
+"│ ○ ··· Stretch for ten minutes  health  15min  ↻  every day at 21:00          │"
+"│ Tue 24 Nov (2)                                                               │"
+"│ ○ ··· Vacuum the living room  ↻  every 3 days                                │"
+"│ ○ ▮▯▯ 🌱 Repot the monstera  outdoors  tomorrow                              │" Hidden by multi-width symbols: [(9, "e")]
+"│ Wed 25 Nov (2)                                                               │"
+"│ ○ ··· Change the bedsheets  ↻  every week                                    │"
+"│ ○ ▮▯▯ Release notes for 2.4  Nov 25                                          │"
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+" Move │ j down  k up  gg top  G bottom  C-d/C-u page  h/l pane                  "
+" Do   │ Enter open  Esc close  ? keys  : palette  q quit                        "
+" View │ z fold  f filter  vs sort  x complete  a add  p priority  d due         "

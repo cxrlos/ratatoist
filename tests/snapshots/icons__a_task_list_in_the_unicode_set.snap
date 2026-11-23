@@ -2,39 +2,39 @@
 source: tests/icons.rs
 expression: "screen(&task_list(IconSet::Unicode))"
 ---
-╭ Projects ────────────────────────╮╭ Inbox ───────────────────────────────────────────────────────────────────────────╮
-│   Mara Quill                     ││ Active  Done  Both                                                               │
-│   ▣ Inbox                        ││ ○ ▮▮▯ Call the plumber about the leaking tap  phone  ✉1  today                   │
-│   ◆ Today  19                    ││ ○ ▮▯▯ Return the library books  errand  Nov 21                                   │
-│   ★ Home                         ││ ○ ··· Renew the bike insurance  computer  Nov 28                                 │
-│     # Kitchen renovation         ││ ○ ··· 買 い 物 リ ス ト を 作 る   quick  today                                           │
-│   # Reading                      ││ ○ ▮▮▯ Réserver la crêperie pour l'anniversaire de Zoé  phone  Nov 26             │
-│   # Fitness                      ││ ○ ··· Write down every idea from Sunday's walk before they fade: the shelf for…  │
-│   # Garden                       ││ ○ ▮▮▮ 🎂  Order a cake for Saturday  errand  Nov 27                               │
-│                                  ││ ○ ▮▯▯ Reply to Teo about the weekend  waiting  yesterday                         │
-│   Lantern Studio                 ││                                                                                  │
-│     ▾ Client work                ││                                                                                  │
-│       # Atlas redesign           ││                                                                                  │
-│       # Harbor app               ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-│                                  ││                                                                                  │
-╰──────────────────────────────────╯│                                                                                  │
-╭ Stats ───────────────────────────╮│                                                                                  │
-│ Due  ▲ 8  ◆ 11  ◇ 23             ││                                                                                  │
-│ P    ▮▮▮ 5  ▮▮▯ 10  ▮▯▯ 10  ···… ││                                                                                  │
-╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯
-  Inbox                                                                                                       Offline ○ 
- j/k navigate  g/G top/bottom  l/Tab tasks  ? help  q quit
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago 
+╭ Today ───────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ▿ ▲ Overdue  (8)                                                                                                    │
+│ ○ ▮▯▯ Fix the wobbly chair leg  ✉1  Nov 18                                                                           │
+│ ○ ▮▮▯ Ask Teo for the push-notification certificate  waiting  Nov 19                                                 │
+│ ○ ▮▮▮ Get three quotes for the plumbing  phone  waiting  ✉2  Nov 20                                                  │
+│ ○ ▮▯▯ Return the library books  errand  Nov 21                                                                       │
+│ ○ ▮▮▯ Plant the tulip bulbs  outdoors  Nov 21                                                                        │
+│ ○ ▮▯▯ Reply to Teo about the weekend  waiting  yesterday                                                             │
+│ ○ ▮▮▯ Book the physio appointment  phone  health  yesterday                                                          │
+│ ○ ▮▮▯ Review the logo options from Inés  review  waiting  yesterday                                                  │
+│ ○ ▮▮▯ Call the plumber about the leaking tap  phone  ✉1  today                                                       │
+│ ○ ··· 買 い 物 リ ス ト を 作 る   quick  today                                                                               │
+│ ○ ··· Take out the recycling  15min  ↻  every week                                                                   │
+│ ○ ▮▮▮ Pay the electricity bill  computer  ↻  every month at 17:00                                                    │
+│ ○ ▮▯▯ Finish «La casa del faro», chapter 7  reading  today                                                           │
+│ ○ ··· Read 20 pages  reading  15min  ↻  every day                                                                    │
+│ ○ ▮▮▯ 🏃  Run 5 km along the river  health  outdoors  ↻  every mon, wed, fri at 7:30                                  │
+│ ○ ··· Stretch for ten minutes  health  15min  ↻  every day at 21:00                                                  │
+│ ○ ··· Water the seedlings  quick  ↻  every 2 days                                                                    │
+│ ▿ ▮▮▮ Draft the new navigation  deep-work  computer  ✉3  today                                                       │
+│ ○ ▮▮▮ Fix the crash when the ferry timetable is empty  computer  deep-work  ✉2  today                                │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Move │ j down     │ k up      │ gg top  │ G bottom   │ C-d/C-u page │ h/l pane                                         
+ Do   │ Enter open │ Esc close │ ? keys  │ : palette  │ q quit                                                          
+ View │ z fold     │ f filter  │ vs sort │ x complete │ a add        │ p priority │ d due │ e/E edit │ c comment

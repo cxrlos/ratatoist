@@ -1,0 +1,28 @@
+---
+source: tests/frame.rs
+expression: app.backend()
+---
+" [1] │ [2] │ [3] │ [4] Projects │ [5]                             synced 4s ago "
+"╭ Home ────────────────────────────────────────────────────────────────────────╮"
+"│ ○ ▮▮▮ Pay the electricity bill  computer  ↻  every month at 17:00            │"
+"│ ○ ··· Sort the drawer of mystery cables  someday                             │"
+"│                                                                              │"
+"│   Chores                                                                     │"
+"│ ○ ··· Take out the recycling  15min  ↻  every week                           │"
+"│ ○ ··· Vacuum the living room  ↻  every 3 days                                │"
+"│ ○ ··· Change the bedsheets  ↻  every week                                    │"
+"│                                                                              │"
+"│   Repairs                                                                    │"
+"│ ○ ▮▯▯ Fix the wobbly chair leg  ✉1  Nov 18                                   │"
+"│ ○ ··· Replace the hallway bulb  quick  errand                                │"
+"│ ○ ▮▮▯ Bleed the radiators before winter  Nov 30                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+" Move │ j down  k up  gg top  G bottom  C-d/C-u page  h/l pane                  "
+" Do   │ Enter open  Esc close  ? keys  : palette  q quit                        "
+" View │ z fold  f filter  vs sort  x complete  a add  p priority  d due         "

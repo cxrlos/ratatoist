@@ -1,0 +1,28 @@
+---
+source: tests/confirm.rs
+expression: app.backend()
+---
+" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
+"╭ Task Detail ─────────────────────────────────────────────────────────────────╮"
+"│                                                                              │"
+"│  Ask Teo for the push-notification certificate                               │"
+"│                                                                              │"
+"│  Priority  ▮▮▯ Priority 2 (high)                                             │"
+"│  Due       Nov 19  (2026-11-19)                                              │"
+"│  Labels    waiting                                                           │"
+"│                ┌ Quit with unsent changes? ─────────────────┐                │"
+"│  Description  ◂│ Todoist has not answered every change yet. │                │"
+"│  (empty)       │                                            │                │"
+"│                │ 1 change is not sent yet.                  │                │"
+"│  ─── Comments ─└ Enter/y quit  Esc/n cancel ────────────────┘                │"
+"│                                                                              │"
+"│  Inés Halloran - ines@example.net                                            │"
+"│  │ Wood glue is in the second drawer.  2026-11-17 20:30                      │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"╰──────────────────────────────────────────────────────────────────────────────╯"
+"                                                                                "
+" Do   │ Enter choose │ Esc close                                                "
+"                                                                                "
