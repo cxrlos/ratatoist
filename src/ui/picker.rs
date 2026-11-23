@@ -3,7 +3,6 @@
 
 use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Padding, Paragraph};
 
@@ -39,7 +38,7 @@ fn glyph(state: &State) -> impl Fn(&Choice) -> Option<Span<'static>> + '_ {
         Choice::Priority(priority) | Choice::Filter(ListFilter::Priority(priority)) => {
             Some(Span::styled(
                 icons.priority(*priority),
-                Style::new().fg(theme.priority(*priority)),
+                theme.priority_style(priority.api()),
             ))
         }
         Choice::Filter(ListFilter::Overdue) => {

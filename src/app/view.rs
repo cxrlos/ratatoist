@@ -27,9 +27,11 @@ impl State {
     }
 
     /// Whether `task` is a row of a list narrowed to `filter`, a due bucket
-    /// or a priority. The stats count the same tasks, so a count always
-    /// equals the rows it opens. Subtasks are left out of both, as the Today
-    /// list leaves them out. Open, completed and all narrow nothing here.
+    /// or a priority. The stats count these tasks across every project,
+    /// while a list applies the filter within its own project, so a count
+    /// can exceed the rows a filtered list shows. Subtasks are left out of
+    /// both, as the Today list leaves them out. Open, completed and all
+    /// narrow nothing here.
     fn narrowed_to(&self, task: &Task, filter: ListFilter) -> bool {
         if task.parent_id.is_some() || !self.is_open_and_mine(task) {
             return false;

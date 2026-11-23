@@ -61,8 +61,8 @@ To read the token from a password manager instead, pipe it in: `pass show todois
 - Task hierarchy with foldable subtask trees (`Space`, `za`/`zR`/`zM`)
 - Task detail pane with scrollable content, comments, and metadata
 - StatsDock: overdue / today / week / P1–P4 counts; click to filter tasks (`f`)
-- Active / Done / Both task filter cycling (`f`)
-- Sort cycling: default / priority / due date / created (`o`)
+- List filter picker (`f`): open, completed, all, overdue, due today, due this week, P1 to P4; `Esc` on the list clears it
+- Sort picker (`vs`): order, priority, due date, created
 - Splash screen with ASCII art and terminal-adaptive progress bar
 
 </details>
