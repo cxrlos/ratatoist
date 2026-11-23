@@ -34,7 +34,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
         Span::styled(mode_label, theme.key_hint()),
     ]));
 
-    let theme_name = &state.themes[state.theme_idx].name;
+    let theme_name = &state.theme().name;
     let theme_item = ListItem::new(Line::from(vec![
         Span::styled("Theme ", theme.muted_text()),
         Span::styled(theme_name, theme.key_hint()),

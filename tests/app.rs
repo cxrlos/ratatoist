@@ -3,7 +3,7 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
-use ratatoist::app::{App, Effect, Event, Modal, Pane, State};
+use ratatoist::app::{App, Effect, Event, Modal, Pane, State, update};
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
 use ratatoist::todoist::{ClientError, LiveMessage};
 use ratatui::backend::TestBackend;
@@ -216,6 +216,18 @@ fn an_unbound_key_under_an_overlay_does_not_redraw() {
         assert_eq!(app.frames_drawn(), frames, "under {overlay:?}");
         assert_eq!(app.state().top_modal().cloned(), overlay);
     }
+}
+
+#[test]
+fn the_settings_pane_draws_with_an_out_of_range_theme() {
+    let mut state = State::new(now());
+    update(&mut state, Event::Synced(Ok(full_sync())));
+    state.active_pane = Pane::Settings;
+    state.theme_idx = state.themes.len();
+
+    let app = App::new(TestBackend::new(120, 36), state).unwrap();
+
+    assert!(shows(&app, &app.state().theme().name));
 }
 
 #[test]
