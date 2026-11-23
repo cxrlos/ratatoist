@@ -20,7 +20,10 @@ impl SyncState {
         }
     }
 
+    /// Writes the token atomically, creating `config_dir` first: with the
+    /// token in the keyring, a fresh install has no config folder yet.
     pub fn save(&self, config_dir: &Path) -> Result<()> {
+        std::fs::create_dir_all(config_dir)?;
         let path = Self::path(config_dir);
         let tmp = config_dir.join("sync_state.json.tmp");
         std::fs::write(&tmp, serde_json::to_string(self)?)?;
@@ -65,5 +68,16 @@ mod tests {
         let dir = temp_dir("corrupt");
         std::fs::write(SyncState::path(&dir), "{ not valid json").unwrap();
         assert_eq!(SyncState::load(&dir).sync_token, "*");
+    }
+
+    #[test]
+    fn save_creates_a_missing_config_folder() {
+        let dir = temp_dir("no-folder").join("config").join("ratatoist");
+        SyncState {
+            sync_token: "abc".to_string(),
+        }
+        .save(&dir)
+        .unwrap();
+        assert_eq!(SyncState::load(&dir).sync_token, "abc");
     }
 }
