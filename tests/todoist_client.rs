@@ -120,13 +120,15 @@ async fn sync_posts_the_commands_as_json_and_reads_each_status() {
         .await
         .unwrap();
 
-    assert!(!response.sync_status["6f3a9c4e-1b2d-4e5f-8a9b-0c1d2e3f4a5b"].is_err());
+    assert_eq!(response.sync_status.len(), 2);
+    assert!(!response.sync_status["e5f6a7b8-0000-4000-8000-000000000002"].is_err());
     assert_eq!(
-        response.sync_status["7a4b0d5f-2c3e-4f60-9bac-1d2e3f405b6c"].error_message(),
-        Some("Invalid temporary id")
+        response.sync_status["6f3a9c4e-1b2d-4e5f-8a9b-0c1d2e3f4a5b"].error_message(),
+        Some("Item not found")
     );
+    // Todoist maps the command's temp_id, not its uuid, to the new id.
     assert_eq!(
-        response.temp_id_mapping["e5f6a7b8-0000-4000-8000-000000000002"],
+        response.temp_id_mapping["a1b2c3d4-0000-4000-8000-000000000001"],
         "6Jf8VQXxpwv56VT9"
     );
 }
