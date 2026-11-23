@@ -2,7 +2,6 @@ pub mod components;
 pub mod dates;
 pub mod keyhints;
 pub mod layout;
-pub mod setup;
 pub mod splash;
 pub mod statusbar;
 pub mod theme;

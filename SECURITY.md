@@ -12,8 +12,9 @@ Only the latest released version gets fixes.
 
 ## How ratatoist handles your token
 
-- It reads the token from the `TODOIST_API_TOKEN` environment variable, or else from `api_token` in `config.toml` in its config directory (`$XDG_CONFIG_HOME/ratatoist/`, usually `~/.config/ratatoist/`).
-- When it finds neither, a setup screen asks for the token, checks it with Todoist and saves it to that `config.toml` with mode 0600. `ratatoist --new-user` runs the same screen and keeps the token for that session only.
-- The setup screen shows the token as you paste it, so clear the screen before you share or record it.
-- On start it warns in the log when other users can read or write `config.toml`. It never writes the token to the log.
+- It reads the token from the `TODOIST_API_TOKEN` environment variable, or else from the OS keyring: the Keychain on macOS, the Secret Service (GNOME Keyring, KWallet) on Linux, under service `ratatoist`. There is no plaintext fallback: when the keyring is unavailable, ratatoist says so and points at `TODOIST_API_TOKEN`.
+- `ratatoist auth login` asks for the token without echoing it, or reads it from standard input with `--stdin`. It checks the token with Todoist before storing it and stores nothing Todoist rejects.
+- `ratatoist auth status` shows where the token comes from and whose account it is, never the token. `ratatoist auth logout` deletes the keyring entry.
+- Versions before 0.6.0 kept the token as `api_token` in `config.toml`. On the first start after upgrading, ratatoist moves it into the keyring and removes that one line from the file, leaving every other byte as it was. Nothing reads `api_token` as a token after that.
+- In memory the token sits in a type that prints as `<redacted>`, so it never reaches the log, an error message or a panic. It never writes the token to the log.
 - It sends the token only to `api.todoist.com`.

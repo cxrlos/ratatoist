@@ -31,7 +31,7 @@
 - **Fast**: incremental delta sync, real-time WebSocket updates, exponential-backoff retries
 - **Vim-native**: `j`/`k`/`h`/`l`, folds, modal editing; standard arrow-key mode also available
 - **Polished**: task comments, priority indicators, human-readable dates, 10 built-in themes
-- **Secure**: token never logged, config file permissions validated
+- **Secure**: the token lives in the OS keyring, never in a file, the log or on screen
 
 ## Quick start
 
@@ -39,20 +39,14 @@
 cargo install ratatoist
 ```
 
-Run the guided setup (validates your token and optionally writes a shell alias):
+Log in once. ratatoist asks for your API token (from [Todoist settings](https://app.todoist.com/app/settings/integrations/developer)) without echoing it, checks it with Todoist and keeps it in your OS keyring:
 
 ```sh
-ratatoist --new-user
-```
-
-Or configure manually (token from [Todoist settings](https://app.todoist.com/app/settings/integrations)):
-
-```sh
-mkdir -p ~/.config/ratatoist
-echo 'api_token = "your-token"' > ~/.config/ratatoist/config.toml
-chmod 600 ~/.config/ratatoist/config.toml
+ratatoist auth login
 ratatoist
 ```
+
+To read the token from a password manager instead, pipe it in: `pass show todoist | ratatoist auth login --stdin`. `TODOIST_API_TOKEN`, when set, wins over the keyring. [docs/auth.md](docs/auth.md) has the details.
 
 ## Features
 
@@ -111,7 +105,7 @@ ratatoist
 - Error popups with context and suggestions
 - Dimmed background overlay on popups
 - Keybinding cheatsheet (`?`)
-- `--new-user` onboarding: token entry + shell alias setup
+- `ratatoist auth login | status | logout` for the token in the OS keyring
 - `--idle-forcer` flag for testing idle timeout (adds 5 s option)
 
 </details>
@@ -127,6 +121,7 @@ ratatoist
 |                                                             |                                                    |
 | ----------------------------------------------------------- | -------------------------------------------------- |
 | [Changelog](CHANGELOG.md)                                   | Version history                                    |
+| [Logging in](docs/auth.md)                                  | The token, the keyring and `ratatoist auth`        |
 
 ## Development
 

@@ -27,7 +27,7 @@ The test suite never calls the Todoist API, so a change to the Todoist client al
    read -rs TODOIST_API_TOKEN && export TODOIST_API_TOKEN
    ```
 
-   Closing the shell forgets it. While it is set it wins over any token in `config.toml`, so your own account stays untouched.
+   Closing the shell forgets it. While it is set it wins over the token in your OS keyring, so your own account stays untouched.
 4. Load a handful of sample tasks in the web app: two or three projects, one with sections, a few labels, a subtask, a recurring task, a task due today and one overdue.
 
 I run ratatoist from my working tree, so `ratatoist` below is `cargo run --`.
@@ -40,11 +40,11 @@ Run these in order and compare with what each step expects:
 2. Make a write round trip. Select a task and press `x`. It shows as completed in ratatoist and in the web app.
 3. Watch live updates. In the web app, reopen that task and rename another one. ratatoist shows both changes within a few seconds, without a key press.
 4. Force a full sync. Press `R`; the same projects and tasks load again.
-5. Try the setup screen without touching your real config. `ratatoist --new-user` asks for a token; paste the test token and press Enter. On the shell alias screen that follows, press Esc to skip it, so nothing is added to your shell rc file. ratatoist loads the sample tasks and writes no `config.toml`.
+5. Check the token source. `ratatoist auth status` names `TODOIST_API_TOKEN` as the source and the test account's name and email, and never prints the token. I leave `ratatoist auth login` and `logout` alone here, since they change the keyring entry my own account uses.
 
 When you are done, reset the token in the same settings page, or delete the account.
 
-Tokens never go in issues, PRs, logs, screenshots or recordings. The setup screen shows the token as you paste it, so check a terminal screenshot before you post it, and if a token leaks anyway, reset it at once.
+Tokens never go in issues, PRs, logs, screenshots or recordings. If a token leaks anyway, reset it at once.
 
 ## Workflow
 

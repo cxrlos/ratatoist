@@ -1,7 +1,12 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
-#[command(name = "ratatoist", version, about = "A terminal client for Todoist")]
+#[command(
+    name = "ratatoist",
+    version,
+    about = "A terminal client for Todoist",
+    args_conflicts_with_subcommands = true
+)]
 pub struct Cli {
     /// Open a fictional Todoist account: no token, keyring or network.
     #[arg(long)]

@@ -91,6 +91,11 @@ pub fn source_dir(xdg: &Path, legacy: Option<&Path>) -> (PathBuf, Option<String>
     }
 }
 
+/// The folder [`load`] reads for `xdg` on this machine, without the warning.
+pub fn dir_to_read(xdg: &Path) -> PathBuf {
+    source_dir(xdg, macos_legacy_dir().as_deref()).0
+}
+
 #[cfg(target_os = "macos")]
 fn macos_legacy_dir() -> Option<PathBuf> {
     etcetera::home_dir()
