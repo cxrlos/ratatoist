@@ -41,9 +41,9 @@ The Settings pane saves the theme and idle timeout you pick there to `ui_setting
 
 | Key | Values | Default | Effect |
 | --- | --- | --- | --- |
-| `preset` | `"vim"` or `"standard"` | `"vim"` | The keys everything starts from. `standard` moves with the arrows, Home/End and PgUp/PgDn, switches panes with Tab and Shift-Tab, adds a task with Ctrl-a and completes one with Ctrl-x; every other action keeps its vim key. |
+| `preset` | `"vim"` or `"standard"` | `"vim"` | The keys I start from. `standard` moves with the arrows, Home/End and PgUp/PgDn, switches panes with Tab and Shift-Tab, adds a task with Ctrl-a and completes one with Ctrl-x; every other action keeps its vim key. |
 
-Each context has its own table that changes the preset's keys there: `[keys.global]`, `[keys.list]`, `[keys.detail]`, `[keys.browse]`, `[keys.projects]` and `[keys.overlay]`. [keymap.md](keymap.md) lists every action by its id, with its keys in both presets and the contexts it applies in. Keys use vim notation: a plain character stands for itself (`j`, `G`, `gg` for a chord), and anything else goes inside `<...>`, as `<C-d>`, `<Esc>`, `<S-Tab>`, `<F1>`, `<Space>` and `<lt>` for `<`.
+Each context has its own table where I change the preset's keys: `[keys.global]`, `[keys.list]`, `[keys.detail]`, `[keys.browse]`, `[keys.projects]` and `[keys.overlay]`. [keymap.md](keymap.md) lists every action by its id, with its keys in both presets and the contexts it applies in. Keys use vim notation: a plain character stands for itself (`j`, `G`, `gg` for a chord), and anything else goes inside `<...>`, as `<C-d>`, `<Esc>`, `<S-Tab>`, `<F1>`, `<Space>` and `<lt>` for `<`.
 
 ```toml
 [keys.global]
@@ -57,11 +57,13 @@ noop = ["gg", "<C-d>"]                  # these keys do nothing, and leave every
 ```
 
 - A string or a list replaces the action's keys in that context.
-- `{ prepend = [...] }` adds keys ahead of the defaults: they win where a key is bound twice, and they are the ones hints show first.
-- `{ append = [...] }` adds keys after the defaults, which win where a key is bound twice.
+- `{ prepend = [...] }` adds my keys ahead of the defaults: mine win where a key is bound twice, and hints show them first.
+- `{ append = [...] }` adds my keys after the defaults, which win where a key is bound twice.
 - `noop` binds keys to nothing, which also hides them from every hint.
 
-An unknown action, an action that does not apply in that context, or a key that is not valid notation is reported, and only that context's table falls back to the preset's keys. An unknown context is reported and ignored. A `preset` that is neither `vim` nor `standard` resets the whole `[keys]` table.
+If I name an unknown action, an action that does not apply in that context, or a key that is not valid notation, ratatoist reports it and only that context's table falls back to the preset's keys. An unknown context is reported and ignored. A `preset` that is neither `vim` nor `standard` resets the whole `[keys]` table.
+
+Some actions have no default key and wait for the palette. `choose-theme` is one: to pick a theme from the keyboard I bind it, as in the example above. The idle timeout has no key at all; I set it with `[sync] idle-timeout`.
 
 ## `[ui]`
 
