@@ -621,3 +621,66 @@ async fn closing_a_recurring_task_ends_the_series() {
     assert!(!full_sync(&client).await.iter().any(|t| t.id == "t-pages"));
     assert!(done(&client).await.iter().any(|t| t.id == "t-pages"));
 }
+
+#[tokio::test]
+async fn a_due_edit_changes_the_due_date() {
+    let cases = [
+        ("today", Some(day(0))),
+        ("Tomorrow", Some(day(1))),
+        ("fri", Some(day(4))),
+        ("monday", Some(day(7))),
+        ("2026-12-24", Some("2026-12-24".to_owned())),
+        ("no date", None),
+        ("", None),
+    ];
+    for (due_string, expected) in cases {
+        let client = demo::client(today());
+
+        send(
+            &client,
+            "item_update",
+            json!({ "id": "t-insurance", "due_string": due_string }),
+        )
+        .await;
+
+        let items = full_sync(&client).await;
+        let task = items.iter().find(|t| t.id == "t-insurance").unwrap();
+        let due = task.due.as_ref().map(|d| (d.date.clone(), d.is_recurring));
+        assert_eq!(due, expected.map(|d| (d, false)), "{due_string:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_due_edit_the_demo_cannot_read_leaves_the_date_alone() {
+    let client = demo::client(today());
+
+    send(
+        &client,
+        "item_update",
+        json!({ "id": "t-insurance", "due_string": "the second tuesday after easter" }),
+    )
+    .await;
+
+    let items = full_sync(&client).await;
+    let task = items.iter().find(|t| t.id == "t-insurance").unwrap();
+    assert_eq!(due_date(task), Some(day(5).as_str()));
+}
+
+#[tokio::test]
+async fn an_added_task_keeps_its_due_date() {
+    let client = demo::client(today());
+
+    send(
+        &client,
+        "item_add",
+        json!({ "content": "Feed the parrot", "project_id": "p-inbox", "due_string": "tomorrow" }),
+    )
+    .await;
+
+    let items = full_sync(&client).await;
+    let added = items
+        .iter()
+        .find(|t| t.content == "Feed the parrot")
+        .unwrap();
+    assert_eq!(due_date(added), Some(day(1).as_str()));
+}

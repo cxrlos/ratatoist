@@ -39,7 +39,7 @@
 cargo install ratatoist
 ```
 
-To look around first, `ratatoist --demo` opens the app on a fictional account. It needs no token and never touches the network, and anything you change there lasts until you quit.
+To look around first, `ratatoist --demo` opens the app on a fictional account. It needs no token and never touches the network, and anything you change there lasts until you quit. A due date typed there can be `today`, `tomorrow`, a weekday or `YYYY-MM-DD`; it reads nothing fancier.
 
 Log in once. ratatoist asks for your API token (from [Todoist settings](https://app.todoist.com/app/settings/integrations/developer)) without echoing it, checks it with Todoist and keeps it in your OS keyring:
 

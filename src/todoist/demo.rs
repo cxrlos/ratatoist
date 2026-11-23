@@ -210,6 +210,9 @@ impl Store {
                         item[field] = args[field].clone();
                     }
                 }
+                if let Some(due) = args["due_string"].as_str().and_then(|s| due(s, self.today)) {
+                    item["due"] = due;
+                }
                 self.list("items").push(item);
                 command.temp_id.clone().map(|temp| (temp, real_id))
             }
@@ -229,6 +232,12 @@ impl Store {
             }
             "item_update" => {
                 merge(self.list("items"), &id, args, &["id", "due_string"]);
+                let today = self.today;
+                if let Some(due) = args["due_string"].as_str().and_then(|s| due(s, today))
+                    && let Some(item) = self.list("items").iter_mut().find(|i| i["id"] == id)
+                {
+                    item["due"] = due;
+                }
                 None
             }
             "project_update" => {
@@ -379,6 +388,29 @@ fn merge(list: &mut [Value], id: &str, args: &Value, skip: &[&str]) {
             entry[field] = value.clone();
         }
     }
+}
+
+/// The due a due string sets, `Null` for none, from the few forms the demo
+/// reads: `today`, `tomorrow`, a weekday name (its next one after today),
+/// `YYYY-MM-DD`, and `no date` or nothing to clear it. `None` for any other
+/// string, which leaves the due as it was.
+fn due(string: &str, today: NaiveDate) -> Option<Value> {
+    let string = string.trim().to_lowercase();
+    let date = match string.as_str() {
+        "" | "no date" => return Some(Value::Null),
+        "today" => today,
+        "tomorrow" => today.checked_add_days(Days::new(1))?,
+        other => match other.parse::<Weekday>() {
+            Ok(weekday) => Step::Weekdays(vec![weekday]).after(today)?,
+            Err(_) => NaiveDate::parse_from_str(other, "%Y-%m-%d").ok()?,
+        },
+    };
+    Some(json!({
+        "date": date.format("%Y-%m-%d").to_string(),
+        "is_recurring": false,
+        "string": string,
+        "lang": "en",
+    }))
 }
 
 /// How far apart a recurring task's dates are.
