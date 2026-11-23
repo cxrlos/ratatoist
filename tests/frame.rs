@@ -424,6 +424,11 @@ fn today_at_80x24() {
 }
 
 #[test]
+fn upcoming_at_120x36() {
+    assert_snapshot!(screen_at('3', 120, 36).backend());
+}
+
+#[test]
 fn upcoming_at_80x24() {
     assert_snapshot!(screen_at('3', 80, 24).backend());
 }
