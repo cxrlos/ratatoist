@@ -31,10 +31,9 @@ const TICK: Duration = Duration::from_secs(1);
 
 const UI_SETTINGS: &str = "ui_settings.json";
 
-/// What the Settings pane of versions before 0.7.0 saved in
-/// `ui_settings.json`. ratatoist reads it once at startup, to carry its
-/// values into a session and say which `config.toml` lines replace it, and
-/// never writes or deletes it.
+/// What versions before 0.7.0 saved in `ui_settings.json`. ratatoist reads
+/// it once at startup, to carry its values into a session and say which
+/// `config.toml` lines replace it, and never writes or deletes it.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct UiSettings {
     pub theme: Option<String>,

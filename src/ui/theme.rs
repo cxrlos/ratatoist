@@ -338,11 +338,6 @@ impl Theme {
         Style::new().bg(self.background)
     }
 
-    /// The status bar, on the background like everything else.
-    pub fn surface_bg(&self) -> Style {
-        self.base_bg()
-    }
-
     pub fn active_border(&self) -> Style {
         Style::new().fg(self.accent)
     }
@@ -354,10 +349,6 @@ impl Theme {
     /// The focused row of the focused pane.
     pub fn selected_item(&self) -> Style {
         self.selection
-    }
-
-    pub fn dock_focused_item(&self) -> Style {
-        self.selection.fg(self.accent).add_modifier(Modifier::BOLD)
     }
 
     pub fn normal_text(&self) -> Style {

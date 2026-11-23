@@ -18,9 +18,8 @@ pub fn keymap_reference() -> String {
          notation `config.toml` uses, and each table heading names the config table that \
          rebinds its actions; see [Configuration](config.md#keys).\n\
          \n\
-         The projects pane takes the Projects keys, then the Projects and Labels keys; the \
-         stats dock takes the Projects and Labels keys. Everywhere keys apply under all of them, \
-         and an overlay takes only the Overlays keys.\n\
+         The projects pane takes the Projects keys, then the Projects and Labels keys. \
+         Everywhere keys apply under all of them, and an overlay takes only the Overlays keys.\n\
          \n\
          While the add-task form or a prompt has a text field, a character typed without \
          Ctrl or Alt goes into the field instead, and so do `<Backspace>`, `<Delete>`, `<Left>`, \

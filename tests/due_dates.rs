@@ -88,7 +88,7 @@ fn count(stats: &OverviewStats, filter: ListFilter) -> u32 {
     }
 }
 
-/// The dock's count for `item` and the ids of the rows its list filter
+/// The count for `item` and the ids of the rows its list filter
 /// shows in the inbox, which holds every task.
 fn count_and_rows(item: ListFilter) -> (u32, Vec<String>) {
     let mut state = synced();

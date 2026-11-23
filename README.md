@@ -60,10 +60,9 @@ To read the token from a password manager instead, pipe it in: `pass show todois
 - Folder expand/collapse (`Space` in Projects pane)
 - Task hierarchy with foldable subtask trees (`Space`, `za`/`zR`/`zM`)
 - Task detail pane with scrollable content, comments, and metadata
-- StatsDock: overdue / today / week / P1–P4 counts; click to filter tasks (`f`)
 - List filter picker (`f`): open, completed, all, overdue, due today, due this week, P1 to P4; `Esc` on the list clears it
 - Sort picker (`vs`): order, priority, due date, created
-- Splash screen with ASCII art and terminal-adaptive progress bar
+- Tab row of screens (Inbox, Today, Upcoming, Projects, Labels) with the sync state at its right
 
 </details>
 
@@ -75,7 +74,7 @@ To read the token from a password manager instead, pipe it in: `pass show todois
 - Inline field editing in detail pane (`i` / `Enter`)
 - Priority picker popup with visual selector
 - Star / unstar projects (`s`)
-- View completed tasks per project (Done / Both filter fetches from API)
+- View completed tasks per project (the completed and all list filters fetch them from the API)
 
 </details>
 

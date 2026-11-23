@@ -4,7 +4,7 @@
 
 These are ratatoist's default keys, in the `vim` preset and in the `standard` preset that `[keys] preset = "standard"` picks. Keys are written in the vim notation `config.toml` uses, and each table heading names the config table that rebinds its actions; see [Configuration](config.md#keys).
 
-The projects pane takes the Projects keys, then the Projects and Labels keys; the stats dock takes the Projects and Labels keys. Everywhere keys apply under all of them, and an overlay takes only the Overlays keys.
+The projects pane takes the Projects keys, then the Projects and Labels keys. Everywhere keys apply under all of them, and an overlay takes only the Overlays keys.
 
 While the add-task form or a prompt has a text field, a character typed without Ctrl or Alt goes into the field instead, and so do `<Backspace>`, `<Delete>`, `<Left>`, `<Right>`, `<Home>`, `<End>`, `<C-w>` (delete the word before the cursor) and pasted text. Esc still closes it without sending anything, and Enter submits.
 
