@@ -195,7 +195,8 @@ fn the_detail_beside_the_list_follows_the_focused_task() {
 
     assert_ne!(rows(&app)[2], first);
     let content = app.state().selected_task().unwrap().content.clone();
-    assert!(rows(&app)[2].contains(&content[..10]));
+    let start: String = content.chars().take(10).collect();
+    assert!(rows(&app)[2].contains(&start));
 }
 
 #[test]
@@ -265,6 +266,71 @@ fn today_s_header_counts_match_their_rows() {
         };
         assert!(shows(&app, &format!("{name} ({count})")));
     }
+}
+
+/// A delta adding an open subtask due on `day` under `parent`.
+fn subtask_due(id: &str, parent: &ListRow, day: chrono::NaiveDate) -> Box<SyncResponse> {
+    let ListRow::Task { task, .. } = parent else {
+        panic!("not a task row");
+    };
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "fixture-token-2",
+        "items": [{
+            "id": id,
+            "content": "A subtask with a due date",
+            "checked": false,
+            "child_order": 1,
+            "priority": 1,
+            "project_id": task.project_id,
+            "parent_id": task.id,
+            "due": { "date": day.to_string(), "is_recurring": false, "string": "" },
+            "added_at": "2026-11-19T08:30:00Z"
+        }]
+    });
+    Box::new(serde_json::from_value(delta).unwrap())
+}
+
+#[test]
+fn today_leaves_subtasks_out_of_its_rows_and_its_header_counts() {
+    // Below the wide width, so the focused parent's detail (which lists its
+    // subtasks) is not on screen.
+    let mut app = sized(119, 36);
+    send(&mut app, [key('2')]);
+    let before = groups(app.state());
+    let list = app.state().list_rows();
+    let first_of = |kind: GroupKind| {
+        let header = list
+            .iter()
+            .position(|row| matches!(row, ListRow::Header(group) if group.kind == kind))
+            .unwrap();
+        list[header + 1].clone()
+    };
+    let overdue_parent = first_of(GroupKind::Overdue);
+    let today_parent = first_of(GroupKind::Today);
+    let today = demo::NOW.date();
+    let overdue = subtask_due(
+        "t-overdue-subtask",
+        &overdue_parent,
+        today.pred_opt().unwrap(),
+    );
+    let due_today = subtask_due("t-today-subtask", &today_parent, today);
+
+    app.handle(Event::Synced(Ok(overdue))).unwrap();
+    app.handle(Event::Synced(Ok(due_today))).unwrap();
+
+    let subtasks = app
+        .state()
+        .tasks
+        .iter()
+        .filter(|task| task.id.ends_with("-subtask"))
+        .count();
+    assert_eq!(subtasks, 2);
+    assert_eq!(groups(app.state()), before);
+    for (_, count, listed) in &before {
+        assert_eq!(count, listed);
+    }
+    assert!(!shows(&app, "A subtask with a due date"));
 }
 
 #[test]

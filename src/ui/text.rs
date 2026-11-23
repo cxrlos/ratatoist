@@ -56,6 +56,21 @@ pub fn fit_start(text: &str, room: usize) -> String {
     format!("{ELLIPSIS}{}", end.trim_start())
 }
 
+/// `text` split after its longest start that takes at most `room` cells,
+/// for breaking a run too wide for one line across several. The start is
+/// empty when even the first character is wider than `room`.
+pub fn split(text: &str, room: usize) -> (&str, &str) {
+    let mut used = 0;
+    let end = text
+        .char_indices()
+        .find(|(_, c)| {
+            used += c.width().unwrap_or(0);
+            used > room
+        })
+        .map_or(text.len(), |(index, _)| index);
+    text.split_at(end)
+}
+
 /// `line` as it fits in `room` cells: whole when it fits, otherwise its
 /// spans up to the cut, the last one ending in `…` in that span's style.
 pub fn fit_line(line: Line<'_>, room: usize) -> Line<'_> {
@@ -129,6 +144,14 @@ fn take(text: &str, room: usize) -> String {
 mod tests {
     use super::*;
     use ratatui::style::Stylize;
+
+    #[test]
+    fn split_keeps_the_start_that_fits_in_cells() {
+        assert_eq!(split("cheddar", 4), ("ched", "dar"));
+        assert_eq!(split("cheddar", 9), ("cheddar", ""));
+        assert_eq!(split("チーズ", 3), ("チ", "ーズ"));
+        assert_eq!(split("チーズ", 1), ("", "チーズ"));
+    }
 
     #[test]
     fn text_that_fits_keeps_its_start() {

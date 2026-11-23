@@ -162,6 +162,20 @@ fn enter_submits_a_field_edit_as_one_item_update() {
     assert!(shows(&app, "Call the dentist soon"));
 }
 
+#[test]
+fn the_due_row_shows_a_sent_due_date_with_an_ellipsis_until_todoist_answers() {
+    let mut app = sized(80, 24);
+    open_call_detail(&mut app);
+    send(&mut app, [key('d'), ctrl('u')]);
+    send(&mut app, "next friday".chars().map(key));
+
+    send(&mut app, [press(KeyCode::Enter)]);
+
+    let rows = screen(&app);
+    let due = rows.iter().find(|row| row.contains("Due ")).unwrap();
+    assert!(due.contains("next friday…"));
+}
+
 /// Presses `edit`, one of the edit keys, on "Call the dentist" in the
 /// Inbox list at 80x24, where its detail does not show.
 fn edit_from_the_narrow_list(edit: char) -> App<TestBackend> {
@@ -490,4 +504,44 @@ fn the_cheatsheet_names_the_scroll_keys() {
 
     assert!(shows(&app, "C-d/C-u"), "{:#?}", screen(&app));
     assert!(shows(&app, "C-e/C-y"), "{:#?}", screen(&app));
+}
+
+/// Every character the screen shows, without whitespace or box-drawing
+/// borders.
+fn screen_text(app: &App<TestBackend>) -> String {
+    screen(app)
+        .concat()
+        .chars()
+        .filter(|c| !c.is_whitespace() && !('\u{2500}'..='\u{257f}').contains(c))
+        .collect()
+}
+
+#[test]
+fn a_run_without_spaces_wider_than_the_detail_breaks_across_rows() {
+    let sentence = "これはとても長い説明文で、スペースがまったく含まれていないので、折り返しが正しく動くか確認するためのものです。最後の言葉はおわり。";
+    let url = "https://example.invalid/a/very/long/path/that/does/not/fit/in/the/detail/pane/at/eighty/columns/end";
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "fixture-token-2",
+        "items": [{
+            "id": "t-call",
+            "content": "Call the dentist",
+            "description": format!("{sentence}\n{url}"),
+            "checked": false,
+            "child_order": 2,
+            "priority": 3,
+            "project_id": "p-inbox",
+            "due": { "date": "2026-11-22", "is_recurring": false, "string": "today" },
+            "added_at": "2026-11-19T08:30:00Z"
+        }]
+    });
+    let mut app = sized(80, 24);
+    app.handle(Event::Synced(Ok(response(&delta.to_string()))))
+        .unwrap();
+    open_call_detail(&mut app);
+
+    let text = screen_text(&app);
+
+    assert!(text.contains(sentence));
+    assert!(text.contains(url));
 }

@@ -465,11 +465,29 @@ fn wrap(
             }
             spaces.clear();
             spaces_width = 0;
-            let left = room.saturating_sub(used);
-            let word = text::fit(token, left);
-            used += text::width(&word);
-            line.push(Span::styled(word, *style));
-            has_words = true;
+            let mut word = token;
+            loop {
+                let left = room.saturating_sub(used);
+                let (head, tail) = text::split(word, left);
+                if head.is_empty() && !has_words {
+                    line.push(Span::styled(text::fit(word, left), *style));
+                    has_words = true;
+                    break;
+                }
+                if !head.is_empty() {
+                    used += text::width(head);
+                    line.push(Span::styled(head.to_owned(), *style));
+                    has_words = true;
+                }
+                if tail.is_empty() {
+                    break;
+                }
+                lines.push(Line::from(std::mem::take(&mut line)));
+                (line, used) = prefix(rest);
+                wrapped = true;
+                has_words = false;
+                word = tail;
+            }
         }
     }
     lines.push(Line::from(line));
@@ -519,10 +537,43 @@ mod tests {
     }
 
     #[test]
-    fn a_word_wider_than_the_line_is_cut() {
+    fn a_word_wider_than_the_line_breaks_across_lines() {
         let lines = wrap(&plain("abcdefgh"), 5, &[], &[]);
 
-        assert_eq!(texts(&lines), ["abcd…"]);
+        assert_eq!(texts(&lines), ["abcde", "fgh"]);
+    }
+
+    #[test]
+    fn a_word_wider_than_the_line_starts_on_a_line_of_its_own() {
+        let lines = wrap(&plain("to abcdefgh"), 5, &[], &[]);
+
+        assert_eq!(texts(&lines), ["to", "abcde", "fgh"]);
+    }
+
+    #[test]
+    fn a_broken_word_continues_under_the_rest_prefix() {
+        let lines = wrap(
+            &plain("abcdefgh"),
+            7,
+            &[("Due  ".to_owned(), Style::new())],
+            &[("     ".to_owned(), Style::new())],
+        );
+
+        assert_eq!(texts(&lines), ["Due  ab", "     cd", "     ef", "     gh"]);
+    }
+
+    #[test]
+    fn wide_characters_without_spaces_break_by_their_cells() {
+        let lines = wrap(&plain("これはとても長い"), 7, &[], &[]);
+
+        assert_eq!(texts(&lines), ["これは", "とても", "長い"]);
+    }
+
+    #[test]
+    fn a_column_narrower_than_a_wide_character_still_ends() {
+        let lines = wrap(&plain("チーズ"), 1, &[], &[]);
+
+        assert_eq!(texts(&lines), ["…"]);
     }
 
     #[test]
