@@ -23,8 +23,9 @@ fn now() -> DateTime<Local> {
     Local.from_local_datetime(&naive).earliest().unwrap()
 }
 
-/// A full sync with one workspace holding one folder, named `folder`.
-fn account(folder: &str, sync_token: &str) -> Value {
+/// A hypothetical full sync, not recorded from Todoist, with one workspace
+/// holding one folder, named `folder`.
+fn hypothetical_account(folder: &str, sync_token: &str) -> Value {
     serde_json::json!({
       "full_sync": true,
       "sync_token": sync_token,
@@ -127,7 +128,8 @@ async fn started(client: &Recording) -> App<TestBackend> {
 
 #[tokio::test]
 async fn r_asks_for_every_resource_the_startup_sync_reads() {
-    let client = Recording::new(FakeClient::new().with_full_sync(account("Marketing", "t1")));
+    let client =
+        Recording::new(FakeClient::new().with_full_sync(hypothetical_account("Marketing", "t1")));
     let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
     let startup = sync_request(&app.handle(Event::Start).unwrap());
     let response = client.sync(startup.clone()).await;
@@ -148,7 +150,8 @@ async fn r_asks_for_every_resource_the_startup_sync_reads() {
 
 #[tokio::test]
 async fn the_client_receives_the_full_resource_list_on_r() {
-    let client = Recording::new(FakeClient::new().with_full_sync(account("Marketing", "t1")));
+    let client =
+        Recording::new(FakeClient::new().with_full_sync(hypothetical_account("Marketing", "t1")));
     let mut app = started(&client).await;
 
     let resync = sync_request(&app.handle(shift_r()).unwrap());
@@ -164,10 +167,12 @@ async fn the_client_receives_the_full_resource_list_on_r() {
 
 #[tokio::test]
 async fn r_shows_a_folder_renamed_elsewhere() {
-    let before = Recording::new(FakeClient::new().with_full_sync(account("Marketing", "t1")));
+    let before =
+        Recording::new(FakeClient::new().with_full_sync(hypothetical_account("Marketing", "t1")));
     let mut app = started(&before).await;
     assert!(format!("{}", app.backend()).contains("Marketing"));
-    let after = Recording::new(FakeClient::new().with_full_sync(account("Growth", "t2")));
+    let after =
+        Recording::new(FakeClient::new().with_full_sync(hypothetical_account("Growth", "t2")));
 
     let resync = sync_request(&app.handle(shift_r()).unwrap());
     let response = after.sync(resync).await;
