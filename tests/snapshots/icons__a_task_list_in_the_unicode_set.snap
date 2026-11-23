@@ -1,0 +1,40 @@
+---
+source: tests/icons.rs
+expression: "screen(&task_list(IconSet::Unicode))"
+---
+╭ Projects ────────────────────────╮╭ Inbox ───────────────────────────────────────────────────────────────────────────╮
+│   Mara Quill                     ││ Active  Done  Both                                                               │
+│   ▣ Inbox                        ││ ○ ▮▮▯ Call the plumber about the leaking tap  phone  ✉1  today                   │
+│   ◆ Today  19                    ││ ○ ▮▯▯ Return the library books  errand  Nov 21                                   │
+│   ★ Home                         ││ ○ ··· Renew the bike insurance  computer  Nov 28                                 │
+│     # Kitchen renovation         ││ ○ ··· 買 い 物 リ ス ト を 作 る   quick  today                                           │
+│   # Reading                      ││ ○ ▮▮▯ Réserver la crêperie pour l'anniversaire de Zoé  phone  Nov 26             │
+│   # Fitness                      ││ ○ ··· Write down every idea from Sunday's walk before they fade: the shelf for…  │
+│   # Garden                       ││ ○ ▮▮▮ 🎂  Order a cake for Saturday  errand  Nov 27                               │
+│                                  ││ ○ ▮▯▯ Reply to Teo about the weekend  waiting  yesterday                         │
+│   Lantern Studio                 ││                                                                                  │
+│     ▾ Client work                ││                                                                                  │
+│       # Atlas redesign           ││                                                                                  │
+│       # Harbor app               ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+│                                  ││                                                                                  │
+╰──────────────────────────────────╯│                                                                                  │
+╭ Stats ───────────────────────────╮│                                                                                  │
+│ Due  ▲ 8  ◆ 11  ◇ 23             ││                                                                                  │
+│ P    ▮▮▮ 5  ▮▮▯ 10  ▮▯▯ 10  ···… ││                                                                                  │
+╰──────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯
+  Inbox                                                                                                       Offline ○ 
+ j/k navigate  g/G top/bottom  l/Tab tasks  ? help  q quit

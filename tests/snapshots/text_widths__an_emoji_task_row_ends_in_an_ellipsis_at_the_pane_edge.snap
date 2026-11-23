@@ -1,0 +1,28 @@
+---
+source: tests/text_widths.rs
+expression: app.backend()
+---
+"╭ Projects ────────────╮╭ Inbox ───────────────────────────────────────────────╮"
+"│   Mara Quill         ││ Active  Done  Both                                   │"
+"│   ▣ Inbox            ││ ○ ▮▮▯ Call the plumber about the leaking tap  phone… │"
+"│   ◆ Today  19        ││ ○ ▮▯▯ Return the library books  errand  Nov 21       │"
+"│   ★ Home             ││ ○ ··· Renew the bike insurance  computer  Nov 28     │"
+"│     # Kitchen renov… ││ ○ ··· 買い物リストを作る  quick  today               │" Hidden by multi-width symbols: [(33, " "), (35, " "), (37, " "), (39, " "), (41, " "), (43, " "), (45, " "), (47, " "), (49, " ")]
+"│   # Reading          ││ ○ ▮▮▯ Réserver la crêperie pour l'anniversaire de Z… │"
+"│   # Fitness          ││ ○ ··· Write down every idea from Sunday's walk befo… │"
+"│   # Garden           ││ ○ ▮▮▮ 🎂 Order a cake for Saturday, and balloons 🎈… │" Hidden by multi-width symbols: [(33, " "), (76, " ")]
+"│                      ││ ○ ▮▯▯ Reply to Teo about the weekend  waiting  yest… │"
+"│   Lantern Studio     ││                                                      │"
+"│     ▾ Client work    ││                                                      │"
+"│       # Atlas redes… ││                                                      │"
+"│       # Harbor app   ││                                                      │"
+"│                      ││                                                      │"
+"│                      ││                                                      │"
+"│                      ││                                                      │"
+"╰──────────────────────╯│                                                      │"
+"╭ Stats ───────────────╮│                                                      │"
+"│ Due  ▲ 8  ◆ 11  ◇ 23 ││                                                      │"
+"│ P    ▮▮▮ 5  ▮▮▯ 10…  ││                                                      │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────────╯"
+"  Inbox                                                               Offline ○ "
+" j/k navigate  g/G top/bottom  l/Tab tasks  ? help  q quit                      "
