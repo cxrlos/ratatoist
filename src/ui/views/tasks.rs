@@ -8,10 +8,23 @@ use ratatui::widgets::{List, ListItem, ListState};
 use crate::app::State;
 use crate::keys::Preset;
 use crate::ui::dates::{self, DueBucket};
+use crate::ui::icons::Icons;
 use crate::ui::text;
 use crate::ui::theme::Theme;
 
 pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
+    render_with_icons(frame, state, area, is_active, state.icons());
+}
+
+/// The task list drawn with `icons` in place of the icon set `state` picks,
+/// so glyph candidates can be compared in a real row.
+pub fn render_with_icons(
+    frame: &mut Frame,
+    state: &State,
+    area: Rect,
+    is_active: bool,
+    icons: &Icons,
+) {
     let theme = state.theme();
     let visible = state.visible_tasks();
     let room = usize::from(area.width);
@@ -78,7 +91,6 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
             && state.due_bucket(task) == DueBucket::Overdue
         {
             let overdue_count = stats.as_ref().map(|s| s.overdue).unwrap_or(0);
-            let icons = state.icons();
             let fold = icons.fold(!state.overdue_section_collapsed);
             items.push(row(Line::from(vec![Span::styled(
                 format!(" {fold} {} Overdue  ({overdue_count})", icons.overdue),
@@ -113,7 +125,7 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
         if task_idx == state.selected_task {
             visual_selected = Some(items.len());
         }
-        let line = task_line(task, state, theme, cross_project);
+        let line = task_line(task, state, theme, icons, cross_project);
         items.push(ListItem::new(text::fit_line(line, room)));
     }
 
@@ -128,7 +140,13 @@ pub fn render(frame: &mut Frame, state: &State, area: Rect, is_active: bool) {
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-fn task_line<'a>(task: &'a Task, state: &State, theme: &Theme, show_project: bool) -> Line<'a> {
+fn task_line<'a>(
+    task: &'a Task,
+    state: &State,
+    theme: &Theme,
+    icons: &Icons,
+    show_project: bool,
+) -> Line<'a> {
     let mut spans = Vec::new();
     let depth = if show_project {
         0
@@ -142,7 +160,6 @@ fn task_line<'a>(task: &'a Task, state: &State, theme: &Theme, show_project: boo
         spans.push(Span::styled("  ".repeat(depth), theme.muted_text()));
     }
 
-    let icons = state.icons();
     let lead = if has_children && !task.checked {
         icons.fold(!collapsed)
     } else {

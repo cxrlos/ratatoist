@@ -11,12 +11,14 @@ use std::fs;
 use chrono::{Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
-use ratatoist::app::{App, Event};
+use ratatoist::app::{App, Event, State};
 use ratatoist::config::{self, Config};
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::model::Priority;
 use ratatoist::ui::icons::{IconSet, Icons};
+use ratatoist::ui::views::tasks;
+use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
 /// The demo account at 120x36 with `icons`, its task list focused.
@@ -156,4 +158,73 @@ fn a_task_list_in_the_unicode_set() {
 #[test]
 fn a_task_list_in_the_nerd_set() {
     assert_snapshot!(screen(&task_list(IconSet::Nerd)));
+}
+
+/// The Inbox of the app fixture, its "Plan the winter trip" parent given
+/// three comments so one row carries both a fold and a comment glyph.
+fn trip_with_comments() -> State {
+    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let mut app = App::new(TestBackend::new(120, 36), State::new(now)).unwrap();
+    let sync =
+        serde_json::from_str(include_str!("fixtures/app/HYPOTHETICAL_full_sync.json")).unwrap();
+    app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
+    let mut state = app.state().clone();
+    let trip = state.tasks.iter_mut().find(|t| t.id == "t-trip").unwrap();
+    trip.note_count = Some(3);
+    state
+}
+
+/// The task row for "Plan the winter trip", drawn with `icons`, its
+/// subtasks shown or folded.
+fn trip_row(icons: &Icons, folded: bool) -> String {
+    let mut state = trip_with_comments();
+    if folded {
+        state.collapsed.insert("t-trip".to_owned());
+    }
+    let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
+    terminal
+        .draw(|frame| {
+            tasks::render_with_icons(frame, &state, frame.area(), true, icons);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let width = usize::from(buffer.area.width);
+    buffer
+        .content()
+        .chunks(width)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .find(|row| row.contains("Plan the winter trip"))
+        .unwrap()
+        .trim_end()
+        .to_owned()
+}
+
+#[test]
+fn the_default_set_draws_the_shipped_fold_and_comment_glyphs_in_a_row() {
+    let icons = IconSet::Unicode.icons();
+
+    assert!(trip_row(icons, false).starts_with("▿ "));
+    assert!(trip_row(icons, true).starts_with("▹ "));
+    assert!(trip_row(icons, false).contains("✉3"));
+}
+
+/// The fold and comment alternatives, each drawn into a real task row, for
+/// picking the glyphs that ship.
+#[test]
+fn fold_and_comment_alternatives_in_a_real_row() {
+    let unicode = IconSet::Unicode.icons();
+    let mut rows = Vec::new();
+    for (open, closed, comments) in [("▿", "▹", "✉"), ("▾", "▸", "✎"), ("-", "+", "c")]
+    {
+        let icons = Icons {
+            fold_open: open,
+            fold_closed: closed,
+            comments,
+            ..unicode.clone()
+        };
+        rows.push(format!("{open} / {closed} / {comments}"));
+        rows.push(format!("  shown:  {}", trip_row(&icons, false)));
+        rows.push(format!("  folded: {}", trip_row(&icons, true)));
+    }
+    assert_snapshot!(rows.join("\n"));
 }
