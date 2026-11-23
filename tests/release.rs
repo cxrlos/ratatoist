@@ -5,6 +5,7 @@
 #![cfg(test)]
 
 use std::fs;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -428,16 +429,36 @@ fn only_homebrew_and_cargo_installs_get_an_upgrade_hint() {
     assert_eq!(Channel::Nix.upgrade(), None);
 }
 
-/// A fresh directory for one test.
-fn scratch_dir() -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "release-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::SeqCst)
-    ));
-    let _ = fs::remove_dir_all(&dir);
-    dir
+/// A release cache in a fresh directory for one test, removed with it.
+struct ScratchCache(ReleaseCache);
+
+impl ScratchCache {
+    fn new() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "release-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        Self(ReleaseCache::new(dir))
+    }
+}
+
+impl Deref for ScratchCache {
+    type Target = ReleaseCache;
+
+    fn deref(&self) -> &ReleaseCache {
+        &self.0
+    }
+}
+
+impl Drop for ScratchCache {
+    fn drop(&mut self) {
+        if let Some(dir) = self.0.path().parent() {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
 }
 
 /// A fake GitHub answering `response` to `expected` requests for the
@@ -514,12 +535,12 @@ async fn being_offline_is_an_error() {
 
 /// Runs the TUI with the check on and `record` in the cache against a
 /// GitHub at `base`, until it settles.
-async fn run_checking(base: &str, record: &Record) -> (App<TestBackend>, ReleaseCache) {
-    let cache = ReleaseCache::new(scratch_dir());
+async fn run_checking(base: &str, record: &Record) -> (App<TestBackend>, ScratchCache) {
+    let cache = ScratchCache::new();
     cache.save(record).unwrap();
     let check = ReleaseCheck {
         source: source(base),
-        cache: cache.clone(),
+        cache: cache.0.clone(),
     };
     let mut state = State::new(now());
     state.release = ReleaseState::new(true, Channel::CargoBin, cache.load());

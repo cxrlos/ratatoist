@@ -483,16 +483,32 @@ mod tests {
         assert!(record.due(at(17, 9, 0, 0)));
     }
 
-    fn scratch_dir(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("ratatoist-release-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
+    /// A fresh directory for one test, removed when the test ends.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("ratatoist-release-{}-{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            Self(dir)
+        }
+
+        fn cache(&self) -> ReleaseCache {
+            ReleaseCache::new(self.0.clone())
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
     fn the_cache_keeps_the_check_time_latest_and_skipped_versions() {
-        let cache = ReleaseCache::new(scratch_dir("round-trip"));
+        let scratch = Scratch::new("round-trip");
+        let cache = scratch.cache();
         let record = Record {
             checked_at: Some(Utc.with_ymd_and_hms(2026, 11, 18, 9, 0, 0).unwrap()),
             latest: Some(version("0.7.1")),
@@ -517,7 +533,8 @@ mod tests {
 
     #[test]
     fn each_process_saves_through_its_own_temporary_file() {
-        let cache = ReleaseCache::new(scratch_dir("temporary"));
+        let scratch = Scratch::new("temporary");
+        let cache = scratch.cache();
         let tmp = cache.tmp_path();
         assert_eq!(tmp.parent(), cache.path().parent());
         assert_eq!(
@@ -528,7 +545,8 @@ mod tests {
 
     #[test]
     fn a_missing_or_broken_cache_is_an_empty_record() {
-        let cache = ReleaseCache::new(scratch_dir("broken"));
+        let scratch = Scratch::new("broken");
+        let cache = scratch.cache();
         assert_eq!(cache.load(), Record::default());
 
         std::fs::create_dir_all(cache.path().parent().unwrap()).unwrap();
