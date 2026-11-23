@@ -24,7 +24,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   | sh
 ```
 
-cargo-binstall finds the archives through `[package.metadata.binstall]` in `Cargo.toml` (`{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }` with `pkg-fmt = "txz"`, binary at `{ name }-{ target }/{ bin }`); dist itself has no binstall setting, so that table must keep matching dist's archive names.
+cargo-binstall finds the archives through `[package.metadata.binstall]` in `Cargo.toml` (`{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }` with `pkg-fmt = "txz"`, binary at `{ name }-{ target }/{ bin }`); dist itself has no binstall setting, so that table must keep matching dist's archive names. Nothing in CI compares them: when I change either, I read the archive names `dist plan` prints against that table, and after the release the binstall check under Verifying a release proves it.
 
 ## Immutable releases
 
@@ -159,12 +159,15 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 ~/.cargo/bin/ratatoist --version
 brew install cxrlos/tap/ratatoist
 "$(brew --prefix)/bin/ratatoist" --version
+cargo binstall --dry-run --no-confirm \
+  --disable-strategies quick-install,compile \
+  ratatoist@X.Y.Z
 gh api repos/cxrlos/homebrew-tap/contents/Formula/ratatoist.rb --jq .content \
   | base64 -d | grep -E 'url|sha256'
 cat ~/scratch/ratatoist-vX.Y.Z/*.tar.xz.sha256
 ```
 
-Both print `ratatoist X.Y.Z`, and every `sha256` in the formula equals the `.sha256` of the archive its `url` names.
+Both print `ratatoist X.Y.Z`. The binstall dry run, allowed only to download from the release, resolves `ratatoist-<target>.tar.xz` from `vX.Y.Z` and stops before installing; if `[package.metadata.binstall]` no longer matches the archive names, it fails instead of falling back to a source build. Every `sha256` in the formula equals the `.sha256` of the archive its `url` names.
 
 ## Rolling back
 
