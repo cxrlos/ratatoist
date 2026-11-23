@@ -213,7 +213,7 @@ fn lines(state: &State, area: Rect, available: impl Fn(&ActionSpec) -> bool) -> 
             Some(how) => format!(" {INDENT}ratatoist v{version} is available: {how} "),
             None => format!(" {INDENT}ratatoist v{version} is available "),
         };
-        lines.push(Line::styled(line, style::muted(theme)));
+        lines.push(Line::styled(text::fit(&line, room), style::muted(theme)));
     }
     lines
 }

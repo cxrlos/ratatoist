@@ -345,6 +345,28 @@ fn the_cheatsheet_line_points_a_cargo_install_at_the_readme() {
     ));
 }
 
+#[test]
+fn a_narrow_cheatsheet_cuts_the_release_line_with_an_ellipsis() {
+    let mut app = app_at(
+        50,
+        120,
+        state(true, Channel::CargoBin, with_latest(newer())),
+    );
+
+    app.handle(key('?')).unwrap();
+
+    let rows = lines(&app);
+    let line = rows
+        .iter()
+        .find(|line| line.contains("ratatoist v99.0.0"))
+        .unwrap();
+    assert!(line.contains('…'));
+    assert!(!line.contains("#quick-start"));
+    // The popup keeps the margin the key grid's columns leave it.
+    let top = rows.iter().find(|line| line.contains(" Keys ")).unwrap();
+    assert_eq!(top.chars().nth(2), Some('┌'));
+}
+
 /// Opens the palette and types `query`.
 fn find(app: &mut App<TestBackend>, query: &str) {
     app.handle(key(':')).unwrap();
