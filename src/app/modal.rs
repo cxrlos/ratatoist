@@ -24,11 +24,6 @@ pub enum Modal {
     Form(TaskForm),
     /// A one-line prompt; what it writes to depends on its kind.
     Input(InputKind),
-    /// Choosing a priority, with `selection` in the API's numbering. The
-    /// picker replaces it.
-    PriorityPicker { selection: u8 },
-    /// The picker replaces it.
-    ThemePicker { selection: usize },
 }
 
 /// What a submitted [`Modal::Input`] writes.

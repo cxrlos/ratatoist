@@ -24,12 +24,11 @@ pub use event::Event;
 pub use failure::{ERROR_LOG_CAP, ErrorKind, ErrorLog, Failure, LoadError};
 pub use modal::{InputKind, Modal, TaskForm};
 pub use palette::Palette;
-pub use picker::{Picker, PickerKind, open_picker};
+pub use picker::{Choice, Entry, Picker, PickerKind, open_picker};
 pub use release::ReleaseState;
 pub use state::{
-    DEFAULT_IDLE_TIMEOUT_SECS, DOCK_ITEMS, DockItem, Indicator, ListFilter, OverviewStats, Pane,
-    ProjectEntry, ProjectNavItem, Screen, Sort, SortMode, State, SyncHealth, TaskFilter,
-    UserRecord,
+    COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, Indicator, ListFilter, OverviewStats, Pane,
+    ProjectEntry, ProjectNavItem, Screen, Sort, State, SyncHealth, UserRecord,
 };
 pub use text_field::TextField;
 pub use update::{Update, perform, update};

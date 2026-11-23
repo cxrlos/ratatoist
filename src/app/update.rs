@@ -6,7 +6,8 @@ use tracing::info;
 
 use super::failure::{ErrorKind, Failure};
 use super::modal::{InputKind, Modal, TaskForm};
-use super::state::{Pane, ProjectNavItem, Screen, TaskFilter};
+use super::picker::{self, Choice, PickerKind, open_picker};
+use super::state::{ListFilter, Pane, ProjectNavItem, Screen};
 use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
 use super::text_field::TextField;
 use super::{Action, Editable, Effect, Event, State};
@@ -135,11 +136,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
     }
 
     let cleared_notice = state.notice.take().is_some() | std::mem::take(&mut state.show_failure);
-    let prev_pane = state.active_pane;
     let mut update = type_text(state, key).unwrap_or_else(|| press(state, key));
-    if prev_pane == Pane::Tasks && state.active_pane != Pane::Tasks {
-        state.dock_filter = None;
-    }
     // Leaving idle changes the sync indicator.
     update.redraw |= was_idle || cleared_notice;
     effects.append(&mut update.effects);
@@ -209,17 +206,45 @@ fn focused_field(state: &mut State) -> Option<&mut TextField> {
 /// without Ctrl or Alt types into it, and Backspace, Delete, Ctrl-w and the
 /// cursor keys edit it, before the keymap, so `j`, `k` and `q` type rather
 /// than move or quit. The one exception is a key bound to a number pick
-/// that can run now, so 1 to 9 pick in a picker with a text field.
+/// that can run now, so 1 to 9 pick in a picker; a digit with no entry to
+/// pick types into its filter.
 fn type_text(state: &mut State, key: Key) -> Option<Update> {
     let edit = TextEdit::of(key)?;
     if key.typed().is_some() && picks_by_number(state, key) {
         return None;
+    }
+    if let Some(Modal::Picker(picker)) = state.modals.last_mut() {
+        return Some(Update {
+            redraw: edit_query(picker.query_mut(), edit),
+            effects: Vec::new(),
+        });
     }
     let field = focused_field(state)?;
     Some(Update {
         redraw: edit.apply(field),
         effects: Vec::new(),
     })
+}
+
+/// Applies `edit` to a picker's filter, which has no cursor: typing adds at
+/// the end and Backspace and Ctrl-w take from it. Whether it changed.
+fn edit_query(query: &mut String, edit: TextEdit) -> bool {
+    match edit {
+        TextEdit::Insert(c) => {
+            query.push(c);
+            true
+        }
+        TextEdit::Backspace => query.pop().is_some(),
+        TextEdit::DeleteWord => {
+            let kept = query.trim_end().rfind(' ').map_or(0, |space| space + 1);
+            let changed = kept < query.len();
+            query.truncate(kept);
+            changed
+        }
+        TextEdit::Delete | TextEdit::Left | TextEdit::Right | TextEdit::Home | TextEdit::End => {
+            false
+        }
+    }
 }
 
 /// Pasted text goes into the focused text field, and nowhere else.
@@ -299,9 +324,7 @@ impl State {
                 true
             }
             Action::ChooseTheme => {
-                self.modals.push(Modal::ThemePicker {
-                    selection: self.theme_idx,
-                });
+                open_picker(self, PickerKind::Theme);
                 true
             }
             Action::ShowMessages => {
@@ -366,12 +389,11 @@ impl State {
                 true
             }
             Action::FilterList => {
-                self.cycle_task_filter(effects);
+                open_picker(self, PickerKind::Filter);
                 true
             }
             Action::SortList => {
-                self.sort_mode = self.sort_mode.next();
-                info!(sort = self.sort_mode.label(), "sort mode changed");
+                open_picker(self, PickerKind::Sort);
                 true
             }
             Action::ToggleFavourite => {
@@ -391,15 +413,15 @@ impl State {
             Screen::Projects | Screen::Labels => Pane::Projects,
             Screen::Inbox | Screen::Today | Screen::Upcoming => Pane::Tasks,
         };
-        self.dock_filter = None;
+        self.list_filter = ListFilter::default();
         self.selected_task = 0;
         self.detail_scroll = 0;
         true
     }
 
     /// Closes the top overlay, or steps back: from the detail to its list,
-    /// from a filtered list to the whole list, from a project's list to the
-    /// Projects tree.
+    /// from a list filter other than open tasks to open tasks, from a
+    /// project's list to the Projects tree.
     fn close(&mut self) -> bool {
         match self.top_modal() {
             Some(Modal::Input(_) | Modal::Form(_)) => {
@@ -418,9 +440,8 @@ impl State {
                 self.detail_scroll = 0;
                 true
             }
-            Pane::Tasks | Pane::Projects if self.dock_filter.is_some() => {
-                self.dock_filter = None;
-                self.clamp_selected_task();
+            Pane::Tasks | Pane::Projects if self.list_filter != ListFilter::default() => {
+                self.keep_focus(|state| state.list_filter = ListFilter::default());
                 true
             }
             Pane::Tasks if self.screen == Screen::Projects => {
@@ -432,7 +453,7 @@ impl State {
     }
 
     /// Moves the highlight of the overlay on top by `step`.
-    fn scroll_overlay(&mut self, step: i32) -> bool {
+    fn scroll_overlay(&mut self, step: isize) -> bool {
         if let Some(&Modal::Messages { scroll: before }) = self.top_modal() {
             let max = ui::messages_max_scroll(self, self.screen_size());
             let after = if step > 0 {
@@ -445,31 +466,9 @@ impl State {
             }
             return after != before;
         }
-        let themes = self.themes.len();
         match self.modals.last_mut() {
-            Some(Modal::PriorityPicker { selection }) => {
-                // The list shows p1 (API 4) at the top.
-                *selection = match (step > 0, *selection) {
-                    (true, 4) => 3,
-                    (true, 3) => 2,
-                    (true, 2) => 1,
-                    (true, _) => 4,
-                    (false, 1) => 2,
-                    (false, 2) => 3,
-                    (false, 3) => 4,
-                    (false, _) => 1,
-                };
-                true
-            }
-            Some(Modal::ThemePicker { selection }) if themes > 0 => {
-                *selection = if step > 0 {
-                    (*selection + 1) % themes
-                } else {
-                    selection.checked_sub(1).unwrap_or(themes - 1)
-                };
-                true
-            }
-            Some(Modal::Form(_)) => self.move_form_field(step),
+            Some(Modal::Picker(picker)) => picker.select_by(step),
+            Some(Modal::Form(_)) => self.move_form_field(if step > 0 { 1 } else { -1 }),
             _ => false,
         }
     }
@@ -477,8 +476,10 @@ impl State {
     /// Chooses what the overlay on top has highlighted, or submits it.
     fn accept(&mut self, effects: &mut Vec<Effect>) -> bool {
         match self.top_modal() {
-            Some(Modal::PriorityPicker { .. }) => self.select_priority(effects),
-            Some(Modal::ThemePicker { .. }) => self.select_theme(),
+            Some(Modal::Picker(picker)) => match picker.selected().cloned() {
+                Some(choice) => self.choose(choice, effects),
+                None => false,
+            },
             Some(Modal::Input(_)) => {
                 self.submit_input(effects);
                 true
@@ -488,40 +489,64 @@ impl State {
         }
     }
 
-    /// Chooses entry `n` of the list on top, counting from 1.
+    /// Chooses entry `n` of the picker on top, counting from 1 among the
+    /// entries its filter leaves.
     fn pick_number(&mut self, n: u8, effects: &mut Vec<Effect>) -> bool {
-        let themes = self.themes.len();
-        match self.modals.last_mut() {
-            Some(Modal::PriorityPicker { selection }) if (1..=4).contains(&n) => {
-                *selection = 5 - n;
-                self.select_priority(effects)
-            }
-            Some(Modal::ThemePicker { selection }) if (1..=themes).contains(&usize::from(n)) => {
-                *selection = usize::from(n) - 1;
-                self.select_theme()
-            }
+        match self.top_modal() {
+            Some(Modal::Picker(picker)) => match picker.nth(usize::from(n)).cloned() {
+                Some(choice) => self.choose(choice, effects),
+                None => false,
+            },
             _ => false,
         }
     }
 
-    fn select_priority(&mut self, effects: &mut Vec<Effect>) -> bool {
-        let Some(Modal::PriorityPicker { selection }) = self.modals.pop() else {
-            return false;
-        };
-        if let Some(Modal::Form(form)) = self.modals.last_mut() {
-            form.priority = selection;
-        } else {
-            self.apply_priority(selection, effects);
+    /// Closes the picker on top and applies `choice`.
+    fn choose(&mut self, choice: Choice, effects: &mut Vec<Effect>) -> bool {
+        self.modals.pop();
+        match choice {
+            Choice::Priority(priority) => {
+                if let Some(Modal::Form(form)) = self.modals.last_mut() {
+                    form.priority = priority.api();
+                } else {
+                    self.apply_priority(priority.api(), effects);
+                }
+            }
+            Choice::Sort(sort) => {
+                info!(sort = sort.label(), "sort changed");
+                self.keep_focus(|state| state.sort = sort);
+            }
+            Choice::Filter(filter) => {
+                info!(filter = filter.label(), "list filter changed");
+                self.keep_focus(|state| state.list_filter = filter);
+                self.fetch_completed_if_shown(effects);
+            }
+            Choice::Project(project_id) => {
+                if let Some(Modal::Form(form)) = self.modals.last_mut() {
+                    form.project_id = project_id;
+                }
+            }
+            Choice::Theme(index) => {
+                if let Some(theme) = self.themes.get(index) {
+                    self.notice = Some(picker::theme_notice(&theme.name));
+                    self.theme_idx = index;
+                }
+            }
         }
         true
     }
 
-    fn select_theme(&mut self) -> bool {
-        let Some(Modal::ThemePicker { selection }) = self.modals.pop() else {
-            return false;
-        };
-        self.theme_idx = selection;
-        true
+    /// Runs `change` on the task list, then focuses the task focused before
+    /// when it is still visible, or the nearest row when it is not.
+    fn keep_focus(&mut self, change: impl FnOnce(&mut Self)) {
+        let focused = self.selected_task().map(|task| task.id.clone());
+        change(self);
+        let position =
+            focused.and_then(|id| self.visible_tasks().iter().position(|task| task.id == id));
+        match position {
+            Some(position) => self.selected_task = position,
+            None => self.clamp_selected_task(),
+        }
     }
 
     /// Moves the cursor of the focused pane, or the detail's field cursor
@@ -654,11 +679,10 @@ impl State {
         let Some(task) = self.selected_task() else {
             return false;
         };
-        let selection = task.priority;
         self.edit_task = Some(task.id.clone());
         self.detail_field = match field {
             Editable::Priority => {
-                self.modals.push(Modal::PriorityPicker { selection });
+                open_picker(self, PickerKind::Priority);
                 return true;
             }
             Editable::Content => DetailField::Content,
@@ -681,9 +705,10 @@ impl State {
         true
     }
 
-    fn cycle_task_filter(&mut self, effects: &mut Vec<Effect>) {
-        self.task_filter = self.task_filter.next();
-        if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both)
+    /// Asks for the listed project's completed tasks when the list filter
+    /// shows them and they are not loaded yet.
+    fn fetch_completed_if_shown(&mut self, effects: &mut Vec<Effect>) {
+        if matches!(self.list_filter, ListFilter::Completed | ListFilter::All)
             && let Some(pid) = self.list_project().map(|p| p.id.clone())
             && !self.completed_cache.contains_key(&pid)
         {
@@ -692,7 +717,6 @@ impl State {
                 since: None,
             }));
         }
-        self.clamp_selected_task();
     }
 
     fn open_detail(&mut self, effects: &mut Vec<Effect>) {
@@ -701,13 +725,6 @@ impl State {
             return;
         };
         let task_id = task.id.clone();
-        let task_project_id = task.project_id.clone();
-
-        if self.dock_filter.is_some()
-            && let Some(pos) = self.projects.iter().position(|p| p.id == task_project_id)
-        {
-            self.selected_project = pos;
-        }
 
         self.active_pane = Pane::Detail;
         self.detail_scroll = 0;
@@ -811,28 +828,14 @@ impl State {
     }
 
     /// Enter in the add-task form: on a text field it adds the task; on the
-    /// priority it opens the priority picker; on the project it moves to
-    /// the next project.
+    /// priority or the project it opens that picker.
     fn accept_form(&mut self, effects: &mut Vec<Effect>) -> bool {
-        let project_ids: Vec<String> = self.projects.iter().map(|p| p.id.clone()).collect();
-        let Some(Modal::Form(form)) = self.modals.last_mut() else {
+        let Some(Modal::Form(form)) = self.top_modal() else {
             return false;
         };
         match form.active_field {
-            1 => {
-                let selection = form.priority;
-                self.modals.push(Modal::PriorityPicker { selection });
-            }
-            3 => {
-                let cur = project_ids
-                    .iter()
-                    .position(|id| *id == form.project_id)
-                    .unwrap_or(0);
-                let next = (cur + 1) % project_ids.len().max(1);
-                if let Some(id) = project_ids.get(next) {
-                    form.project_id = id.clone();
-                }
-            }
+            1 => open_picker(self, PickerKind::Priority),
+            3 => open_picker(self, PickerKind::Project),
             _ => {
                 self.commit_form_field();
                 self.submit_task_form(effects);
@@ -1091,9 +1094,8 @@ impl State {
         let prefill = match self.detail_field {
             DetailField::Content => task.content.clone(),
             DetailField::Priority => {
-                let selection = task.priority;
                 self.edit_task = Some(id);
-                self.modals.push(Modal::PriorityPicker { selection });
+                open_picker(self, PickerKind::Priority);
                 return;
             }
             DetailField::Due => task

@@ -6,7 +6,7 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatoist::app::{
-    App, Effect, Event, InputKind, Modal, Pane, Screen, SortMode, State, TaskFilter,
+    App, Effect, Event, InputKind, ListFilter, Modal, Pane, PickerKind, Screen, Sort, State,
 };
 use ratatoist::config;
 use ratatoist::keys::{ACTIONS, Key, Preset, STANDARD};
@@ -243,21 +243,22 @@ fn the_keys_both_presets_share_run_the_same_actions() {
         let mut app = in_preset(preset);
         send(&mut app, [key('1')]);
 
-        let filtered = send(&mut app, [key('f')]);
-        assert_eq!(app.state().task_filter, TaskFilter::Done);
+        let filtered = send(&mut app, [key('f'), key('2')]);
+        assert_eq!(app.state().list_filter, ListFilter::Completed);
         assert!(matches!(
             filtered.as_slice(),
             [Effect::FetchCompletedTasks(_)]
         ));
-        send(&mut app, [key('f'), key('f')]);
+        send(&mut app, [esc()]);
+        assert_eq!(app.state().list_filter, ListFilter::Open);
 
-        send(&mut app, [key('v'), key('s')]);
-        assert_eq!(app.state().sort_mode, SortMode::Priority);
+        send(&mut app, [key('v'), key('s'), key('2')]);
+        assert_eq!(app.state().sort, Sort::Priority);
 
         send(&mut app, [key('p')]);
         assert!(matches!(
             app.state().top_modal(),
-            Some(Modal::PriorityPicker { selection: 4 })
+            Some(Modal::Picker(picker)) if picker.kind == PickerKind::Priority
         ));
         send(&mut app, [esc()]);
 
@@ -574,7 +575,7 @@ fn the_form_moves_between_fields_and_adds_the_task() {
     send(&mut app, [press(KeyCode::Tab), enter()]);
     assert!(matches!(
         app.state().top_modal(),
-        Some(Modal::PriorityPicker { .. })
+        Some(Modal::Picker(picker)) if picker.kind == PickerKind::Priority
     ));
     send(&mut app, [key('2')]);
     send(&mut app, [press(KeyCode::Tab)]);
@@ -658,7 +659,7 @@ fn choose_theme_has_no_key_until_one_is_bound() {
 
     assert!(matches!(
         app.state().top_modal(),
-        Some(Modal::ThemePicker { .. })
+        Some(Modal::Picker(picker)) if picker.kind == PickerKind::Theme
     ));
 }
 

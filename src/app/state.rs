@@ -76,13 +76,14 @@ pub struct State {
     pub rolled_back: HashMap<String, Failure>,
     /// What is known about newer releases, for the tab row.
     pub release: ReleaseState,
-    pub sort_mode: SortMode,
+    /// How the task list on screen is sorted.
+    pub sort: Sort,
     pub comments: Vec<Comment>,
     pub detail_field: DetailField,
     pub current_user_id: Option<String>,
     pub user_names: HashMap<String, UserRecord>,
-    pub task_filter: TaskFilter,
-    pub dock_filter: Option<DockItem>,
+    /// What the task list on screen narrows to.
+    pub list_filter: ListFilter,
     /// The glyphs every view draws with, from `[ui] icons`.
     pub icon_set: IconSet,
     /// The themes the theme picker offers; `theme_idx` is the one drawn.
@@ -144,13 +145,12 @@ impl State {
             failures: ErrorLog::default(),
             rolled_back: HashMap::new(),
             release: ReleaseState::default(),
-            sort_mode: SortMode::Default,
+            sort: Sort::default(),
             comments: Vec::new(),
             detail_field: DetailField::Content,
             current_user_id: None,
             user_names: HashMap::new(),
-            task_filter: TaskFilter::Active,
-            dock_filter: None,
+            list_filter: ListFilter::default(),
             icon_set: IconSet::default(),
             themes: Theme::built_ins(),
             theme_idx: 0,
@@ -361,6 +361,46 @@ pub enum ListFilter {
     Priority(Priority),
 }
 
+impl ListFilter {
+    /// Every list filter, in the order the filter picker lists them.
+    pub const ALL: [ListFilter; 10] = [
+        ListFilter::Open,
+        ListFilter::Completed,
+        ListFilter::All,
+        ListFilter::Overdue,
+        ListFilter::DueToday,
+        ListFilter::DueThisWeek,
+        ListFilter::Priority(Priority::P1),
+        ListFilter::Priority(Priority::P2),
+        ListFilter::Priority(Priority::P3),
+        ListFilter::Priority(Priority::P4),
+    ];
+
+    /// Its name in the filter picker.
+    pub fn label(self) -> &'static str {
+        match self {
+            ListFilter::Open => "Open",
+            ListFilter::Completed => "Completed",
+            ListFilter::All => "All",
+            ListFilter::Overdue => "Overdue",
+            ListFilter::DueToday => "Due today",
+            ListFilter::DueThisWeek => "Due this week",
+            ListFilter::Priority(priority) => priority.label(),
+        }
+    }
+}
+
+/// The list filters [`State::overview_stats`] counts.
+pub const COUNTED_FILTERS: [ListFilter; 7] = [
+    ListFilter::Overdue,
+    ListFilter::DueToday,
+    ListFilter::DueThisWeek,
+    ListFilter::Priority(Priority::P1),
+    ListFilter::Priority(Priority::P2),
+    ListFilter::Priority(Priority::P3),
+    ListFilter::Priority(Priority::P4),
+];
+
 /// How a task list is sorted, chosen with the sort picker. The default keeps
 /// Todoist's own order.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -370,6 +410,21 @@ pub enum Sort {
     Priority,
     DueDate,
     Created,
+}
+
+impl Sort {
+    /// Every sort, in the order the sort picker lists them.
+    pub const ALL: [Sort; 4] = [Sort::Order, Sort::Priority, Sort::DueDate, Sort::Created];
+
+    /// Its name in the sort picker.
+    pub fn label(self) -> &'static str {
+        match self {
+            Sort::Order => "Order",
+            Sort::Priority => "Priority",
+            Sort::DueDate => "Due date",
+            Sort::Created => "Created",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -384,84 +439,6 @@ pub struct OverviewStats {
     pub due_week: u32,
     pub overdue: u32,
     pub by_priority: [u32; 5],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskFilter {
-    Active,
-    Done,
-    Both,
-}
-
-impl TaskFilter {
-    pub fn next(self) -> Self {
-        match self {
-            TaskFilter::Active => TaskFilter::Done,
-            TaskFilter::Done => TaskFilter::Both,
-            TaskFilter::Both => TaskFilter::Active,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DockItem {
-    DueOverdue,
-    DueToday,
-    DueWeek,
-    Priority(u8),
-}
-
-pub const DOCK_ITEMS: [DockItem; 7] = [
-    DockItem::DueOverdue,
-    DockItem::DueToday,
-    DockItem::DueWeek,
-    DockItem::Priority(4),
-    DockItem::Priority(3),
-    DockItem::Priority(2),
-    DockItem::Priority(1),
-];
-
-impl DockItem {
-    pub fn hint(self) -> &'static str {
-        match self {
-            DockItem::DueOverdue => "overdue",
-            DockItem::DueToday => "due today",
-            DockItem::DueWeek => "due this week",
-            DockItem::Priority(4) => "urgent (P1)",
-            DockItem::Priority(3) => "high (P2)",
-            DockItem::Priority(2) => "medium (P3)",
-            DockItem::Priority(1) => "no priority",
-            DockItem::Priority(_) => "by priority",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SortMode {
-    Default,
-    Priority,
-    DueDate,
-    Created,
-}
-
-impl SortMode {
-    pub fn label(&self) -> &'static str {
-        match self {
-            SortMode::Default => "order",
-            SortMode::Priority => "priority",
-            SortMode::DueDate => "due",
-            SortMode::Created => "created",
-        }
-    }
-
-    pub fn next(&self) -> Self {
-        match self {
-            SortMode::Default => SortMode::Priority,
-            SortMode::Priority => SortMode::DueDate,
-            SortMode::DueDate => SortMode::Created,
-            SortMode::Created => SortMode::Default,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

@@ -8,6 +8,7 @@ pub mod icons;
 pub mod keyhints;
 pub mod layout;
 mod messages;
+pub mod picker;
 pub mod release;
 pub mod style;
 pub mod text;
@@ -55,19 +56,14 @@ pub fn draw(frame: &mut Frame, state: &State) {
 
     for modal in &state.modals {
         match modal {
-            Modal::ThemePicker { selection } => {
-                components::theme_picker::render(frame, state, *selection);
-            }
-            Modal::PriorityPicker { selection } => {
-                components::priority_picker::render(frame, *selection, theme, state.icons());
-            }
+            Modal::Picker(picker) => picker::render(state, picker, frame, body_area),
             Modal::Form(form) => components::task_form::render(frame, state, form),
             Modal::Input(target) => components::input_popup::render(frame, state, *target),
             Modal::Cheatsheet { .. } => {
                 components::cheatsheet::render(frame, state.keymap.preset(), theme);
             }
             Modal::Messages { scroll } => messages::render(state, *scroll, frame, body_area),
-            Modal::WhichKey { .. } | Modal::Palette(_) | Modal::Picker(_) | Modal::Confirm(_) => {}
+            Modal::WhichKey { .. } | Modal::Palette(_) | Modal::Confirm(_) => {}
         }
     }
 }

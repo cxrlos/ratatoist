@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crossterm::event::KeyCode;
 
 use super::{Context, Key};
-use crate::app::{Action, Editable, Modal, Pane, Screen, State};
+use crate::app::{Action, Editable, ListFilter, Modal, Pane, Screen, State};
 
 /// The narrowest terminal, in columns, that shows the task list and the
 /// detail side by side.
@@ -215,9 +215,7 @@ impl OverlayKind {
         Some(match modal {
             Modal::Cheatsheet { .. } => OverlayKind::Cheatsheet,
             Modal::WhichKey { .. } => return None,
-            Modal::Picker(_) | Modal::PriorityPicker { .. } | Modal::ThemePicker { .. } => {
-                OverlayKind::List
-            }
+            Modal::Picker(_) => OverlayKind::List,
             Modal::Palette(_) => OverlayKind::Palette,
             Modal::Input(_) => OverlayKind::Prompt,
             Modal::Form(_) => OverlayKind::Form,
@@ -1023,8 +1021,6 @@ fn can_accept(state: &State) -> bool {
         state.top_modal(),
         Some(
             Modal::Picker(_)
-                | Modal::PriorityPicker { .. }
-                | Modal::ThemePicker { .. }
                 | Modal::Palette(_)
                 | Modal::Input(_)
                 | Modal::Form(_)
@@ -1034,7 +1030,9 @@ fn can_accept(state: &State) -> bool {
 }
 
 fn can_close(state: &State) -> bool {
-    state.top_modal().is_some() || state.active_pane == Pane::Detail || state.dock_filter.is_some()
+    state.top_modal().is_some()
+        || state.active_pane == Pane::Detail
+        || state.list_filter != ListFilter::default()
 }
 
 fn is_confirming(state: &State) -> bool {
@@ -1049,7 +1047,7 @@ fn in_form(state: &State) -> bool {
 /// filter.
 fn picker_has(count: usize, state: &State) -> bool {
     match state.top_modal() {
-        Some(Modal::Picker(_)) => count >= 1,
+        Some(Modal::Picker(picker)) => picker.visible().len() >= count,
         _ => false,
     }
 }

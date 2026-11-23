@@ -5,7 +5,7 @@ use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
-use crate::app::{Screen, State};
+use crate::app::{ListFilter, Screen, State};
 use crate::keys::Preset;
 use crate::ui::dates::{self, DueBucket};
 use crate::ui::icons::Icons;
@@ -43,7 +43,7 @@ pub fn render_with_icons(
         return;
     }
 
-    if visible.is_empty() && !today && state.dock_filter.is_none() {
+    if visible.is_empty() && !today && state.list_filter == ListFilter::default() {
         let hint = match state.keymap.preset() {
             Preset::Vim => "press a to add a task",
             Preset::Standard => "press Ctrl-a to add a task",
@@ -72,7 +72,7 @@ pub fn render_with_icons(
         return;
     }
 
-    let cross_project = today || state.dock_filter.is_some();
+    let cross_project = today;
 
     let mut items: Vec<ListItem> = Vec::new();
     let mut visual_selected: Option<usize> = None;

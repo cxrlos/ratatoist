@@ -3,7 +3,7 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
-use ratatoist::app::{App, Effect, Event, Modal, Pane, State, update};
+use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
 use ratatoist::todoist::{ClientError, LiveMessage};
@@ -223,19 +223,20 @@ fn the_cheatsheet_closes_on_esc_and_swallows_other_keys() {
     assert!(app.state().modals.is_empty());
 }
 
+/// A picker takes printable keys as its filter, so only F5 is unbound there.
 #[test]
 fn an_unbound_key_under_an_overlay_does_not_redraw() {
-    let cheatsheet = || vec![key('?')];
-    let theme_picker = || vec![key(',')];
-    let priority_picker = || vec![key('1'), key('p')];
-    for open in [cheatsheet(), theme_picker(), priority_picker()] {
+    let cheatsheet = (vec![key('?')], vec![key('y'), press(KeyCode::F(5))]);
+    let theme_picker = (vec![key(',')], vec![press(KeyCode::F(5))]);
+    let priority_picker = (vec![key('1'), key('p')], vec![press(KeyCode::F(5))]);
+    for (open, unbound) in [cheatsheet, theme_picker, priority_picker] {
         let mut app = configured(THEME_ON_COMMA);
         send(&mut app, open);
         let overlay = app.state().top_modal().cloned();
         assert!(overlay.is_some());
         let frames = app.frames_drawn();
 
-        send(&mut app, [key('y'), press(KeyCode::F(5))]);
+        send(&mut app, unbound);
 
         assert_eq!(app.frames_drawn(), frames);
         assert_eq!(app.state().top_modal().cloned(), overlay);
@@ -459,7 +460,7 @@ fn setting_a_priority_sends_one_item_update() {
     send(&mut app, [key('1'), key('p')]);
     assert!(matches!(
         app.state().modals.as_slice(),
-        [Modal::PriorityPicker { selection: 4 }]
+        [Modal::Picker(picker)] if picker.kind == PickerKind::Priority
     ));
 
     let command = single_command(&send(&mut app, [key('3')]));
@@ -577,7 +578,7 @@ fn the_standard_preset_completes_with_ctrl_x() {
 #[test]
 fn choosing_a_theme_saves_nothing() {
     let mut app = configured(THEME_ON_COMMA);
-    send(&mut app, [key(','), key('j')]);
+    send(&mut app, [key(','), press(KeyCode::Down)]);
 
     let effects = send(&mut app, [press(KeyCode::Enter)]);
 
@@ -597,10 +598,10 @@ fn there_is_no_settings_pane_and_nothing_saves_settings() {
 }
 
 #[test]
-fn the_done_filter_asks_for_the_project_s_completed_tasks() {
+fn the_completed_filter_asks_for_the_project_s_completed_tasks() {
     let mut app = app();
 
-    let effects = send(&mut app, [key('1'), key('f')]);
+    let effects = send(&mut app, [key('1'), key('f'), key('2')]);
 
     assert!(matches!(
         effects.as_slice(),

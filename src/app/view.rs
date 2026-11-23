@@ -4,10 +4,9 @@
 use std::collections::HashSet;
 
 use super::state::{
-    DOCK_ITEMS, DockItem, OverviewStats, ProjectEntry, ProjectNavItem, Screen, SortMode, State,
-    TaskFilter,
+    COUNTED_FILTERS, ListFilter, OverviewStats, ProjectEntry, ProjectNavItem, Screen, Sort, State,
 };
-use crate::todoist::model::{Project, Task};
+use crate::todoist::model::{Priority, Project, Task};
 use crate::ui::dates::{self, DueBucket};
 
 impl State {
@@ -27,22 +26,33 @@ impl State {
                 .is_none_or(|uid| self.current_user_id.as_deref() == Some(uid))
     }
 
-    /// Whether `task` is a row of `item`'s dock filter. The stats count the
-    /// same tasks, so a count always equals the rows it opens. Subtasks are
-    /// left out of both, as the Today list leaves them out.
-    fn in_dock_item(&self, task: &Task, item: DockItem) -> bool {
+    /// Whether `task` is a row of a list narrowed to `filter`, a due bucket
+    /// or a priority. The stats count the same tasks, so a count always
+    /// equals the rows it opens. Subtasks are left out of both, as the Today
+    /// list leaves them out. Open, completed and all narrow nothing here.
+    fn narrowed_to(&self, task: &Task, filter: ListFilter) -> bool {
         if task.parent_id.is_some() || !self.is_open_and_mine(task) {
             return false;
         }
-        match item {
-            DockItem::DueOverdue => self.due_bucket(task) == DueBucket::Overdue,
-            DockItem::DueToday => self.due_bucket(task) == DueBucket::Today,
-            DockItem::DueWeek => matches!(
+        match filter {
+            ListFilter::Overdue => self.due_bucket(task) == DueBucket::Overdue,
+            ListFilter::DueToday => self.due_bucket(task) == DueBucket::Today,
+            ListFilter::DueThisWeek => matches!(
                 self.due_bucket(task),
                 DueBucket::Today | DueBucket::ThisWeek
             ),
-            DockItem::Priority(p) => task.priority == p,
+            ListFilter::Priority(priority) => Priority::from_api(task.priority) == priority,
+            ListFilter::Open | ListFilter::Completed | ListFilter::All => true,
         }
+    }
+
+    /// Whether the list filter is a due bucket or a priority, which shows
+    /// matching top-level tasks without their subtasks.
+    fn narrows(&self) -> bool {
+        !matches!(
+            self.list_filter,
+            ListFilter::Open | ListFilter::Completed | ListFilter::All
+        )
     }
 
     pub fn project_list_entries(&self) -> Vec<ProjectEntry> {
@@ -164,22 +174,23 @@ impl State {
             overdue: 0,
             by_priority: [0; 5],
         };
-        for item in DOCK_ITEMS {
+        for filter in COUNTED_FILTERS {
             let count = self
                 .tasks
                 .iter()
-                .filter(|t| self.in_dock_item(t, item))
+                .filter(|t| self.narrowed_to(t, filter))
                 .count();
             let count = u32::try_from(count).unwrap_or(u32::MAX);
-            match item {
-                DockItem::DueOverdue => stats.overdue = count,
-                DockItem::DueToday => stats.due_today = count,
-                DockItem::DueWeek => stats.due_week = count,
-                DockItem::Priority(p) => {
-                    if let Some(slot) = stats.by_priority.get_mut(usize::from(p)) {
+            match filter {
+                ListFilter::Overdue => stats.overdue = count,
+                ListFilter::DueToday => stats.due_today = count,
+                ListFilter::DueThisWeek => stats.due_week = count,
+                ListFilter::Priority(p) => {
+                    if let Some(slot) = stats.by_priority.get_mut(usize::from(p.api())) {
                         *slot = count;
                     }
                 }
+                ListFilter::Open | ListFilter::Completed | ListFilter::All => {}
             }
         }
         stats
@@ -211,13 +222,22 @@ impl State {
         let mut tasks: Vec<&Task> = self
             .tasks
             .iter()
-            .filter(|t| self.in_dock_item(t, DockItem::DueWeek))
+            .filter(|t| {
+                self.narrowed_to(t, ListFilter::DueThisWeek) && self.in_cross_project_list(t)
+            })
             .collect();
         tasks.sort_by(|a, b| {
             let day = |t: &Task| t.due.as_ref().map(|d| d.date.clone()).unwrap_or_default();
             day(a).cmp(&day(b)).then(a.child_order.cmp(&b.child_order))
         });
         tasks
+    }
+
+    /// Whether the list filter keeps `task` in a list across projects
+    /// (Today, Upcoming), which holds open tasks only: completed shows none
+    /// of them, a due bucket or priority narrows them.
+    fn in_cross_project_list(&self, task: &Task) -> bool {
+        self.list_filter != ListFilter::Completed && self.narrowed_to(task, self.list_filter)
     }
 
     /// The day `task` is due, when it has a due date that parses.
@@ -231,8 +251,9 @@ impl State {
             .tasks
             .iter()
             .filter(|t| {
-                self.in_dock_item(t, DockItem::DueOverdue)
-                    || self.in_dock_item(t, DockItem::DueToday)
+                (self.narrowed_to(t, ListFilter::Overdue)
+                    || self.narrowed_to(t, ListFilter::DueToday))
+                    && self.in_cross_project_list(t)
             })
             .collect();
         tasks.sort_by(|a, b| {
@@ -264,49 +285,43 @@ impl State {
                 if t.is_deleted || t.parent_id.is_some() {
                     return false;
                 }
-                if let Some(dock) = self.dock_filter {
-                    return self.in_dock_item(t, dock);
-                }
                 Some(t.project_id.as_str()) == current_project_id
-                    && match self.task_filter {
-                        TaskFilter::Active => !t.checked,
-                        TaskFilter::Done => t.checked || self.has_completed_descendant(&t.id),
-                        TaskFilter::Both => true,
+                    && match self.list_filter {
+                        ListFilter::Open => !t.checked,
+                        ListFilter::Completed => t.checked || self.has_completed_descendant(&t.id),
+                        ListFilter::All => true,
+                        filter => self.narrowed_to(t, filter),
                     }
             })
             .collect();
 
-        match self.sort_mode {
-            SortMode::Default => {
-                if self.dock_filter.is_none() {
-                    let so = |sid: Option<&str>| {
-                        sid.and_then(|id| self.sections.iter().find(|s| s.id == id))
-                            .and_then(|s| s.section_order)
-                            .unwrap_or(i32::MIN)
-                    };
-                    top_level.sort_by(|a, b| {
-                        so(a.section_id.as_deref())
-                            .cmp(&so(b.section_id.as_deref()))
-                            .then(a.child_order.cmp(&b.child_order))
-                    });
-                } else {
-                    top_level.sort_by_key(|t| t.child_order);
-                }
+        match self.sort {
+            Sort::Order => {
+                let so = |sid: Option<&str>| {
+                    sid.and_then(|id| self.sections.iter().find(|s| s.id == id))
+                        .and_then(|s| s.section_order)
+                        .unwrap_or(i32::MIN)
+                };
+                top_level.sort_by(|a, b| {
+                    so(a.section_id.as_deref())
+                        .cmp(&so(b.section_id.as_deref()))
+                        .then(a.child_order.cmp(&b.child_order))
+                });
             }
-            SortMode::Priority => top_level.sort_by_key(|b| std::cmp::Reverse(b.priority)),
-            SortMode::DueDate => top_level.sort_by(|a, b| {
+            Sort::Priority => top_level.sort_by_key(|b| std::cmp::Reverse(b.priority)),
+            Sort::DueDate => top_level.sort_by(|a, b| {
                 let a_due = a.due.as_ref().map(|d| d.date.as_str()).unwrap_or("9999");
                 let b_due = b.due.as_ref().map(|d| d.date.as_str()).unwrap_or("9999");
                 a_due.cmp(b_due)
             }),
-            SortMode::Created => top_level.sort_by(|a, b| {
+            Sort::Created => top_level.sort_by(|a, b| {
                 let a_at = a.added_at.as_deref().unwrap_or("");
                 let b_at = b.added_at.as_deref().unwrap_or("");
                 b_at.cmp(a_at)
             }),
         }
 
-        if self.dock_filter.is_some() {
+        if self.narrows() {
             return top_level;
         }
 
@@ -314,7 +329,7 @@ impl State {
         for task in top_level {
             result.push(task);
             if !self.collapsed.contains(&task.id) {
-                if self.task_filter == TaskFilter::Done {
+                if self.list_filter == ListFilter::Completed {
                     self.collect_done_children(&task.id, &mut result);
                 } else {
                     self.collect_visible_children(&task.id, &mut result);
@@ -322,7 +337,7 @@ impl State {
             }
         }
 
-        if matches!(self.task_filter, TaskFilter::Done | TaskFilter::Both)
+        if matches!(self.list_filter, ListFilter::Completed | ListFilter::All)
             && let Some(pid) = self.list_project().map(|p| p.id.clone())
         {
             self.append_cached_completed(&pid, &mut result);
@@ -373,7 +388,7 @@ impl State {
     }
 
     pub fn is_context_task(&self, task: &Task) -> bool {
-        if !(self.task_filter == TaskFilter::Done && self.dock_filter.is_none() && !task.checked) {
+        if !(self.list_filter == ListFilter::Completed && !task.checked) {
             return false;
         }
         if self.has_completed_descendant(&task.id) {

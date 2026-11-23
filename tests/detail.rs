@@ -3,7 +3,7 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
-use ratatoist::app::{App, Effect, Event, Modal, Pane, State, update};
+use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::keys::{Keymap, Preset};
 use ratatoist::todoist::sync::SyncResponse;
 use ratatoist::ui::views::detail::DetailField;
@@ -183,7 +183,7 @@ fn editing_the_priority_opens_the_priority_picker() {
     let app = edit_field('p');
     assert!(matches!(
         app.state().top_modal(),
-        Some(Modal::PriorityPicker { .. })
+        Some(Modal::Picker(picker)) if picker.kind == PickerKind::Priority
     ));
     assert!(shows(&app, " Priority "), "{:#?}", screen(&app));
 }
