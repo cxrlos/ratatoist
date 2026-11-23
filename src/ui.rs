@@ -1,6 +1,7 @@
 //! Rendering: a pure function of [`State`].
 
 pub mod components;
+pub mod confirm;
 pub mod dates;
 mod error;
 pub mod hints;
@@ -57,13 +58,14 @@ pub fn draw(frame: &mut Frame, state: &State) {
     for modal in &state.modals {
         match modal {
             Modal::Picker(picker) => picker::render(state, picker, frame, body_area),
+            Modal::Confirm(confirm) => confirm::render(state, confirm, frame, body_area),
             Modal::Form(form) => components::task_form::render(frame, state, form),
             Modal::Input(target) => components::input_popup::render(frame, state, *target),
             Modal::Cheatsheet { .. } => {
                 components::cheatsheet::render(frame, state.keymap.preset(), theme);
             }
             Modal::Messages { scroll } => messages::render(state, *scroll, frame, body_area),
-            Modal::WhichKey { .. } | Modal::Palette(_) | Modal::Confirm(_) => {}
+            Modal::WhichKey { .. } | Modal::Palette(_) => {}
         }
     }
 }

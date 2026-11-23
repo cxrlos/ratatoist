@@ -4,6 +4,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Size;
 use tracing::info;
 
+use super::confirm;
 use super::failure::{ErrorKind, Failure};
 use super::modal::{InputKind, Modal, TaskForm};
 use super::picker::{self, Choice, PickerKind, open_picker};
@@ -308,15 +309,15 @@ impl State {
         match action {
             Action::Quit => {
                 info!("quit requested");
-                effects.push(Effect::Quit);
-                false
+                confirm::quit(self, effects);
+                matches!(self.top_modal(), Some(Modal::Confirm(_)))
             }
             Action::ShowScreen(screen) => self.show_screen(screen),
             // Logged out or with a rejected token there is nothing to sync,
             // and a sync answered by the stand-in client would save its token.
             Action::Resync if self.load_error.is_some() => false,
             Action::Resync => {
-                self.force_full_resync(effects);
+                confirm::resync(self, effects);
                 true
             }
             Action::ShowCheatsheet => {
@@ -331,11 +332,9 @@ impl State {
                 self.modals.push(Modal::Messages { scroll: 0 });
                 true
             }
-            Action::ShowPalette
-            | Action::SkipRelease
-            | Action::ShowReleaseNotes
-            | Action::Confirm
-            | Action::Decline => false,
+            Action::ShowPalette | Action::SkipRelease | Action::ShowReleaseNotes => false,
+            Action::Confirm => confirm::confirm(self, effects),
+            Action::Decline => confirm::decline(self),
             Action::Close => self.close(),
             Action::ScrollDown => self.scroll_overlay(1),
             Action::ScrollUp => self.scroll_overlay(-1),
@@ -485,6 +484,7 @@ impl State {
                 true
             }
             Some(Modal::Form(_)) => self.accept_form(effects),
+            Some(Modal::Confirm(_)) => confirm::confirm(self, effects),
             _ => false,
         }
     }

@@ -509,7 +509,7 @@ fn force_resync_drops_pending_writes_and_reads_everything() {
     let mut app = app();
     let command = single_command(&send(&mut app, [key('1'), key('x')]));
 
-    let effects = send(&mut app, [key('R')]);
+    let effects = send(&mut app, [key('R'), key('y')]);
 
     assert!(!app.state().is_pending(&command.uuid));
     assert!(effects.contains(&Effect::PersistSyncToken("*".to_owned())));
