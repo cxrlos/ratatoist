@@ -30,16 +30,15 @@ fn rename(sync: &mut serde_json::Value, id: &str, content: &str) {
     task["content"] = content.into();
 }
 
-/// The row of `buffer` that holds `needle`, as the symbols of its cells.
-fn row_with(buffer: &Buffer, needle: &str) -> (u16, String) {
+/// The index of the row of `buffer` that holds `needle`.
+fn row_with(buffer: &Buffer, needle: &str) -> u16 {
     (0..buffer.area.height)
-        .map(|y| {
-            let row: String = (0..buffer.area.width)
+        .find(|&y| {
+            (0..buffer.area.width)
                 .map(|x| buffer[(x, y)].symbol())
-                .collect();
-            (y, row)
+                .collect::<String>()
+                .contains(needle)
         })
-        .find(|(_, row)| row.contains(needle))
         .unwrap()
 }
 
@@ -49,8 +48,8 @@ const PANE_EDGE: u16 = 77;
 
 fn assert_cut_at_the_pane_edge(app: &App<TestBackend>, needle: &str) {
     let buffer = app.backend().buffer();
-    let (y, row) = row_with(buffer, needle);
-    assert_eq!(buffer[(PANE_EDGE, y)].symbol(), "…", "row {y}: {row}");
+    let y = row_with(buffer, needle);
+    assert_eq!(buffer[(PANE_EDGE, y)].symbol(), "…");
 }
 
 #[test]
