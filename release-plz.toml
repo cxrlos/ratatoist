@@ -27,3 +27,25 @@ commit_parsers = [
     { message = "^(build|chore|ci|style|test)", skip = true },
     { message = ".*", group = "Other" },
 ]
+# A commit whose body has a `## Release notes` section (the squash-merged
+# milestone PR body) contributes that section, written for users, instead of
+# its subject line. An HTML comment left in the section is dropped, and a
+# commit without the section keeps its one-line entry.
+body = """
+
+## [{{ version }}]{%- if release_link -%}({{ release_link }}){% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+{%- set notes = "" -%}
+{%- if commit.body and "## Release notes" in commit.body -%}
+{%- set notes = commit.body | split(pat="## Release notes") | nth(n=1) | split(pat="\n## ") | first | split(pat="-->") | last | trim -%}
+{%- endif -%}
+{%- if notes %}
+{{ notes }}
+{%- else %}
+- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message }}{%- if commit.links %} ({% for link in commit.links %}[{{ link.text }}]({{ link.href }}) {% endfor -%}){% endif %}
+{%- endif -%}
+{% endfor %}
+{% endfor %}
+"""
