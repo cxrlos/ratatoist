@@ -23,14 +23,29 @@ pub enum Effect {
     OpenLive {
         url: String,
     },
-    /// Save the sync token to disk. Nothing comes back.
-    PersistSyncToken(String),
+    /// Wait `after`, then answer with [`super::Event::LiveSyncDue`].
+    ScheduleLiveSync {
+        after: std::time::Duration,
+    },
+    /// Write the store and the sync token to the cache, or delete it when
+    /// there is nothing worth keeping. Nothing comes back.
+    SaveCache,
+    /// Delete the sync token versions before 0.8.0 kept, which the cache
+    /// supersedes. Nothing comes back.
+    ForgetOldSyncState,
+    /// Ask Todoist who is signed in. Answered by
+    /// [`super::Event::UserFetched`].
+    FetchUser,
     /// Ask GitHub for the latest release. Answered by
     /// [`super::Event::ReleaseChecked`].
     CheckRelease,
     /// Write what the release checks found to the release cache. Nothing
     /// comes back.
     SaveRelease(Record),
+    /// Keep the theme with this slug as `[theme] name` in `config.toml`.
+    /// Answered by [`super::Event::ThemeSaved`], or by nothing when there is
+    /// no config folder (`--demo`).
+    SaveTheme(String),
     /// Open this page in the user's browser. Nothing comes back.
     OpenUrl(String),
     Quit,

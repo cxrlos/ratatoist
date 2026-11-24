@@ -2,7 +2,7 @@
 source: tests/which_key.rs
 expression: text(&app)
 ---
- [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago 
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 0s ago 
 ┏Inbox━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐
 ┃› ○ Buy oat milk  @errand                                Nov 20 ▮▮▮ P1┃│Buy oat milk                                  │
 ┃  ○ Call the dentist  ✉2                                  today ▮▮▯ P2┃│                                              │

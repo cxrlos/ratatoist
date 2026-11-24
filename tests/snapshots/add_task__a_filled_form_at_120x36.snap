@@ -2,29 +2,29 @@
 source: tests/add_task.rs
 expression: drawn(&app)
 ---
-" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago "
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 0s ago "
 "┏Inbox━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐"
 "┃› ○ Call the plumber about the leaking tap  @phone  ✉1    today ▮▮▯ P2┃│Call the plumber about the leaking tap        │"
 "┃  ○ Return the library books  @errand                    Nov 21 ▮▯▯ P3┃│                                              │"
 "┃  ○ Renew the bike insurance  @computer                  Nov 28 ··· P4┃│State     ○ Open                              │"
-"┃  ○ 買い物リストを作る  @quick                            today ··· P4┃│Priority  ▮▮▯ P2                              │" Hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
+"┃  ○ 買い物リストを作る  @quick  ⚑ tomorrow                today ··· P4┃│Priority  ▮▮▯ P2                              │" Hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
 "┃  ○ Réserver la crêperie pour l'anniversaire de Zoé  @p… Nov 26 ▮▮▯ P2┃│Due       today (Mon Nov 23)                  │"
-"┃  ○ Write down every idea from Sunday's walk before they fade:… ··· P4┃│Labels    phone                               │"
-"┃  ○ 🎂 Order a cake for Saturday  @errand          Nov 27 12:00 ▮▮▮ P1┃│                                              │" Hidden by multi-width symbols: [(6, " ")]
-"┃  ○ Reply to Teo about the weekend  @waiting          yesterday ▮▯▯ P3┃│The kitchen tap drips all night.              │"
-"┃                                                                      ┃│Ask whether Thursday morning works.           │"
+"┃  ○ Write down every idea from Sunday's walk before they fade:… ··· P4┃│Duration  15 min                              │"
+"┃  ○ 🎂 Order a cake for Saturday  @errand          Nov 27 12:00 ▮▮▮ P1┃│Reminders today 14:00                         │" Hidden by multi-width symbols: [(6, " ")]
+"┃  ○ Reply to Teo about the weekend  @waiting          yesterday ▮▯▯ P3┃│Labels    phone                               │"
 "┃                                                                      ┃│                                              │"
-"┃                                                                      ┃│Comments (1)                                  │"
-"┃                           ┌ Add task to Garden ──────────────────────────────────────────┐14 hours ago               │"
-"┃                           │ Content   > Prune the roses                                  │.                          │"
-"┃                           │ Priority  ▮▮▯ P2                                             │                           │"
-"┃                           │ Due       > next sat                                         │                           │"
+"┃                                                                      ┃│The kitchen tap drips all night.              │"
+"┃                                                                      ┃│Ask whether Thursday morning works.           │"
+"┃                           ┌ Add task to Garden ──────────────────────────────────────────┐                           │"
+"┃                           │ Content   > Prune the roses                                  │                           │"
+"┃                           │ Priority  ▮▮▯ P2                                             │14 hours ago               │"
+"┃                           │ Due       > next sat                                         │.                          │"
 "┃                           │           today, tomorrow, fri, Dec 3, every week or no date │                           │"
 "┃                           │ Project   # Garden                                           │                           │"
 "┃                           └ Tab/S-Tab field  Enter add  Esc close ───────────────────────┘                           │"
+"┃                                                                      ┃│Section   None                                │"
+"┃                                                                      ┃│Parent    None                                │"
 "┃                                                                      ┃│Created   2026-10-24 08:00 (4 weeks ago)      │"
-"┃                                                                      ┃│                                              │"
-"┃                                                                      ┃│                                              │"
 "┃                                                                      ┃│                                              │"
 "┃                                                                      ┃│                                              │"
 "┃                                                                      ┃│                                              │"

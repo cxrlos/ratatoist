@@ -110,9 +110,9 @@ impl HttpClient {
     async fn fetch_comments(&self, task_id: &str) -> Result<Vec<Comment>, ClientError> {
         let start = Instant::now();
         debug!(task_id, "GET comments");
-        let base = format!("{}/comments?task_id={task_id}", self.base_url);
+        let url = format!("{}/comments", self.base_url);
         let all = self
-            .all_pages(&base, |page: Paginated<Comment>| {
+            .all_pages(&url, &[("task_id", task_id)], |page: Paginated<Comment>| {
                 (page.results, page.next_cursor)
             })
             .await?;
@@ -125,39 +125,39 @@ impl HttpClient {
         Ok(all)
     }
 
-    /// Uses `annotate_items=1` to get the full task object (with parent_id,
-    /// priority and the rest) when Todoist has one.
     async fn fetch_completed_tasks(
         &self,
         query: &CompletedQuery,
     ) -> Result<Vec<Task>, ClientError> {
         let start = Instant::now();
-        let mut base = format!("{}/tasks/completed?annotate_items=1", self.base_url);
+        let url = format!("{}/tasks/completed/by_completion_date", self.base_url);
+        let (since, until) = query.window.bounds();
+        let mut params = vec![("since", since.as_str()), ("until", until.as_str())];
         if let Some(pid) = &query.project_id {
-            base = format!("{base}&project_id={pid}");
-        }
-        if let Some(since) = &query.since {
-            base = format!("{base}&since={since}");
+            params.push(("project_id", pid));
         }
         let tasks = self
-            .all_pages(&base, |page: CompletedTasksResponse| {
-                let tasks = page.items.into_iter().map(|r| r.into_task()).collect();
-                (tasks, page.next_cursor)
+            .all_pages(&url, &params, |page: CompletedTasksResponse| {
+                let next = page.next_cursor.clone();
+                (page.into_tasks(), next)
             })
             .await?;
         info!(
             count = tasks.len(),
+            since,
+            until,
             elapsed_ms = start.elapsed().as_millis() as u64,
             "fetched completed tasks"
         );
         Ok(tasks)
     }
 
-    /// GETs `base`, then `base&cursor=...` for each cursor a page returns,
-    /// up to [`MAX_PAGES`] pages.
+    /// GETs `url` with `params`, then again with `cursor` for each cursor a
+    /// page returns, up to [`MAX_PAGES`] pages.
     async fn all_pages<P, T>(
         &self,
-        base: &str,
+        url: &str,
+        params: &[(&str, &str)],
         split: impl Fn(P) -> (Vec<T>, Option<String>),
     ) -> Result<Vec<T>, ClientError>
     where
@@ -166,11 +166,15 @@ impl HttpClient {
         let mut all = Vec::new();
         let mut cursor: Option<String> = None;
         for _ in 0..MAX_PAGES {
-            let url = match &cursor {
-                Some(c) => format!("{base}&cursor={c}"),
-                None => base.to_owned(),
-            };
-            let page: P = self.send(|| self.client.get(&url)).await?;
+            let page: P = self
+                .send(|| {
+                    let request = self.client.get(url).query(params);
+                    match &cursor {
+                        Some(c) => request.query(&[("cursor", c)]),
+                        None => request,
+                    }
+                })
+                .await?;
             let (items, next) = split(page);
             all.extend(items);
             cursor = next;

@@ -13,7 +13,7 @@ pub mod token;
 
 use std::fmt;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use keyring::{Keyring, KeyringError, MemoryKeyring, OsKeyring};
 pub use token::{ApiToken, InvalidApiToken};
@@ -87,6 +87,8 @@ pub enum AuthError {
     Connect(String),
     #[error("checking the token with Todoist")]
     Client(#[source] ClientError),
+    #[error("a keyring or terminal call stopped before it finished")]
+    Blocking(#[source] tokio::task::JoinError),
 }
 
 /// The token to use: `TODOIST_API_TOKEN`, then the OS keyring, after moving
@@ -201,7 +203,8 @@ pub fn prompt_token() -> Result<ApiToken, AuthError> {
 
 /// `ratatoist auth login`: checks `token` with Todoist, then stores it in the
 /// keyring. `env_set` says whether `TODOIST_API_TOKEN` is set, which wins
-/// over what is stored. Returns what to print.
+/// over what is stored. Returns what to print. The keyring is written on the
+/// blocking pool.
 pub async fn login<K, C>(
     keyring: &K,
     token: ApiToken,
@@ -209,7 +212,7 @@ pub async fn login<K, C>(
     connect: impl FnOnce(&ApiToken) -> anyhow::Result<C>,
 ) -> Result<String, AuthError>
 where
-    K: Keyring,
+    K: Keyring + Clone + Send + 'static,
     C: TodoistClient,
 {
     let user = connect(&token)
@@ -220,7 +223,8 @@ where
             ClientError::Unauthorized => AuthError::LoginRejected,
             other => AuthError::Client(other),
         })?;
-    keyring.set(&token)?;
+    let keyring = keyring.clone();
+    blocking(move || keyring.set(&token)).await??;
     let mut output = format!(
         "Logged in as {}.\nThe token is in {}.",
         account(&user),
@@ -272,23 +276,94 @@ pub fn logout(keyring: &impl Keyring, env_set: bool) -> Result<String, AuthError
 }
 
 /// Runs `ratatoist auth login | status | logout` against the real keyring
-/// and Todoist.
+/// and Todoist, reading a piped token from stdin and printing to stdout, with
+/// what the `config.toml` migration did on stderr.
 pub async fn run(command: AuthCommand) -> anyhow::Result<()> {
-    let env_set = std::env::var(TOKEN_VAR).is_ok_and(|raw| !raw.trim().is_empty());
+    run_with(
+        command,
+        &OsKeyring,
+        std::env::var(TOKEN_VAR).ok(),
+        || Ok(crate::config::dir_to_read(&crate::paths::config_dir()?)),
+        HttpClient::new,
+        Console {
+            input: io::BufReader::new(io::stdin()),
+            out: io::stdout(),
+            notes: io::stderr(),
+        },
+    )
+    .await
+}
+
+/// Where `ratatoist auth` reads a piped token and writes what it says.
+pub struct Console<R, O, E> {
+    /// The token for `auth login --stdin`.
+    pub input: R,
+    /// What the command prints.
+    pub out: O,
+    /// One line per thing the `config.toml` migration did.
+    pub notes: E,
+}
+
+/// [`run`] with its inputs given: `env` is the value of `TODOIST_API_TOKEN`,
+/// `config_dir` finds the folder holding `config.toml` (asked only by
+/// `status`), and `connect` builds the client that checks the token. The
+/// keyring, the config folder, the input and the terminal prompt are used on
+/// the blocking pool.
+pub async fn run_with<K, C, R, O, E>(
+    command: AuthCommand,
+    keyring: &K,
+    env: Option<String>,
+    config_dir: impl FnOnce() -> anyhow::Result<PathBuf> + Send + 'static,
+    connect: impl FnOnce(&ApiToken) -> anyhow::Result<C>,
+    mut console: Console<R, O, E>,
+) -> anyhow::Result<()>
+where
+    K: Keyring + Clone + Send + 'static,
+    C: TodoistClient,
+    R: io::BufRead + Send + 'static,
+    O: Write,
+    E: Write,
+{
+    let env_set = env.as_deref().is_some_and(|raw| !raw.trim().is_empty());
     let output = match command {
         AuthCommand::Login { stdin } => {
+            let input = console.input;
             let token = if stdin {
-                read_token(io::stdin().lock())?
+                blocking(move || read_token(input)).await??
             } else {
-                prompt_token()?
+                blocking(prompt_token).await??
             };
-            login(&OsKeyring, token, env_set, HttpClient::new).await?
+            login(keyring, token, env_set, connect).await?
         }
-        AuthCommand::Status => status(&resolve()?, HttpClient::new).await?,
-        AuthCommand::Logout => logout(&OsKeyring, env_set)?,
+        AuthCommand::Status => {
+            let keyring = keyring.clone();
+            let (resolved, notes) = blocking(move || {
+                let mut notes = Vec::new();
+                let resolved =
+                    config_dir().and_then(|dir| Ok(resolve_from(env, &keyring, &dir, &mut notes)?));
+                (resolved, notes)
+            })
+            .await?;
+            console.notes.write_all(&notes)?;
+            status(&resolved?, connect).await?
+        }
+        AuthCommand::Logout => {
+            let keyring = keyring.clone();
+            blocking(move || logout(&keyring, env_set)).await??
+        }
     };
-    println!("{output}");
+    writeln!(console.out, "{output}")?;
     Ok(())
+}
+
+/// Runs `work` on the blocking pool, so a keyring, file or terminal call
+/// never holds up an async task.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, AuthError> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(AuthError::Blocking)
 }
 
 /// The account's name and email, as far as Todoist gave them.

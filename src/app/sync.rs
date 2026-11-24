@@ -1,16 +1,18 @@
 //! Merging sync responses into [`State`], and optimistic writes with their
 //! rollback.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use tracing::error;
+use tracing::{error, info};
 
-use super::Effect;
 use super::failure::{ErrorKind, Failure, LoadError};
-use super::state::{Pane, State, SyncHealth, UserRecord};
-use crate::todoist::ClientError;
-use crate::todoist::model::{Folder, Project, Task};
+use super::state::{Pane, State, SyncHealth};
+use super::store::{Store, Table};
+use super::view::{cycles, parents};
+use super::{Effect, Modal};
+use crate::todoist::model::{Folder, Project, Task, UserInfo};
 use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
+use crate::todoist::{ClientError, CompletedQuery};
 
 /// What local state looked like before an optimistic write, so it can be
 /// rolled back if Todoist rejects the command or it never arrives.
@@ -33,8 +35,19 @@ pub enum OptimisticOp {
     },
 }
 
+impl OptimisticOp {
+    /// The task whose row a pending sync delta must not overwrite.
+    fn task(&self) -> Option<&str> {
+        match self {
+            OptimisticOp::TaskUpdated { task_id, .. } => Some(task_id),
+            OptimisticOp::TaskAdded { temp_id } => Some(temp_id),
+            OptimisticOp::CommentAdded { .. } | OptimisticOp::ProjectUpdated { .. } => None,
+        }
+    }
+}
+
 /// What a full sync reads: at startup and on a forced re-sync.
-const FULL_SYNC_RESOURCES: [&str; 9] = [
+const FULL_SYNC_RESOURCES: [&str; 10] = [
     "items",
     "projects",
     "sections",
@@ -43,16 +56,34 @@ const FULL_SYNC_RESOURCES: [&str; 9] = [
     "collaborators",
     "workspaces",
     "folders",
+    "reminders",
     "user",
 ];
 
 /// What an incremental sync reads.
-const INCREMENTAL_SYNC_RESOURCES: [&str; 5] = ["items", "projects", "sections", "labels", "notes"];
+const INCREMENTAL_SYNC_RESOURCES: [&str; 6] = [
+    "items",
+    "projects",
+    "sections",
+    "labels",
+    "notes",
+    "reminders",
+];
+
+/// How long after a merge the cache is written, so a burst of merges
+/// writes it once.
+pub const CACHE_DEBOUNCE: jiff::SignedDuration = jiff::SignedDuration::from_secs(2);
 
 /// Everything, from sync token `*`.
 pub(crate) fn full_sync_request() -> SyncRequest {
+    startup_sync_request("*")
+}
+
+/// What the first sync reads: everything a full sync does, since
+/// `sync_token`, which is `*` unless the cache painted the screen.
+pub(crate) fn startup_sync_request(sync_token: &str) -> SyncRequest {
     SyncRequest {
-        sync_token: "*".to_string(),
+        sync_token: sync_token.to_owned(),
         resource_types: FULL_SYNC_RESOURCES.map(String::from).to_vec(),
         commands: vec![],
     }
@@ -64,6 +95,17 @@ pub(crate) fn incremental_sync_request(sync_token: &str) -> SyncRequest {
         sync_token: sync_token.to_owned(),
         resource_types: INCREMENTAL_SYNC_RESOURCES.map(String::from).to_vec(),
         commands: vec![],
+    }
+}
+
+/// A flush of `commands`, which also reads what changed since
+/// `sync_token`: the answer carries the changes made elsewhere and
+/// Todoist's own version of each command's result, and its token is taken
+/// as an incremental sync's is.
+pub fn command_request(sync_token: &str, commands: Vec<SyncCommand>) -> SyncRequest {
+    SyncRequest {
+        commands,
+        ..incremental_sync_request(sync_token)
     }
 }
 
@@ -83,11 +125,6 @@ pub(crate) fn new_uuid() -> String {
 }
 
 impl State {
-    pub(crate) fn new_temp_id(&mut self) -> String {
-        self.next_temp_id += 1;
-        format!("tmp_{}", self.next_temp_id)
-    }
-
     /// Records `op` under the command's uuid and asks the runtime to send the
     /// command, alone. One command per flush: the rollback snapshots are
     /// absolute `before` values that do not compose when two edits of the
@@ -106,17 +143,44 @@ impl State {
         self.pending_actions.insert(command.uuid.clone(), action);
         if let Some(op) = op {
             self.temp_id_pending.insert(command.uuid.clone(), op);
+            self.pending_order.push(command.uuid.clone());
         }
         effects.push(Effect::SendCommands(vec![command]));
     }
 
-    /// True if an optimistic op for this task is still awaiting its command result.
-    pub(crate) fn task_has_pending_op(&self, task_id: &str) -> bool {
-        self.temp_id_pending.values().any(|op| match op {
-            OptimisticOp::TaskUpdated { task_id: id, .. } => id == task_id,
-            OptimisticOp::TaskAdded { temp_id } => temp_id == task_id,
-            OptimisticOp::CommentAdded { .. } | OptimisticOp::ProjectUpdated { .. } => false,
-        })
+    /// Takes the write with `uuid` out of the pending ones, with the place
+    /// it held among them, oldest first.
+    fn take_pending(&mut self, uuid: &str) -> Option<(usize, OptimisticOp)> {
+        let op = self.temp_id_pending.remove(uuid)?;
+        let at = self.pending_order.iter().position(|u| u == uuid);
+        if let Some(at) = at {
+            self.pending_order.remove(at);
+        }
+        Some((at.unwrap_or(self.pending_order.len()), op))
+    }
+
+    /// The writes sent after the rolled-back `op`, to the same task or
+    /// project, now start from `op`'s snapshot: `op` never happened.
+    fn rebase_later_writes(&mut self, from: usize, op: &OptimisticOp) {
+        for uuid in self.pending_order.iter().skip(from) {
+            match (self.temp_id_pending.get_mut(uuid), op) {
+                (
+                    Some(OptimisticOp::TaskUpdated { task_id, before }),
+                    OptimisticOp::TaskUpdated {
+                        task_id: rolled_back,
+                        before: snapshot,
+                    },
+                ) if task_id == rolled_back => before.clone_from(snapshot),
+                (
+                    Some(OptimisticOp::ProjectUpdated { project_id, before }),
+                    OptimisticOp::ProjectUpdated {
+                        project_id: rolled_back,
+                        before: snapshot,
+                    },
+                ) if project_id == rolled_back => before.clone_from(snapshot),
+                _ => {}
+            }
+        }
     }
 
     /// Whether a command with `uuid` is still waiting for Todoist.
@@ -129,7 +193,9 @@ impl State {
         result: Result<Box<SyncResponse>, ClientError>,
         effects: &mut Vec<Effect>,
     ) {
-        let first = std::mem::replace(&mut self.loading, false);
+        let loading = std::mem::replace(&mut self.loading, false);
+        let first_answer = !std::mem::replace(&mut self.sync_answered, true) || loading;
+        let never_synced = self.last_sync_at.is_none();
         self.sync_health = match &result {
             Ok(_) => SyncHealth::Fine,
             Err(ClientError::Network(_)) => SyncHealth::Offline,
@@ -137,176 +203,188 @@ impl State {
         };
         match result {
             Ok(resp) => {
-                self.apply_sync_delta(*resp, effects);
-                if first
-                    && !self.live_opened
-                    && let Some(url) = self.websocket_url.clone()
-                {
-                    self.live_opened = true;
-                    effects.push(Effect::OpenLive { url });
+                if let Some(cached) = self.cache_user_id.take() {
+                    match &resp.user {
+                        Some(user) if user.id != cached => {
+                            info!("the cache belongs to another user; full sync starting");
+                            self.discard_cache(effects);
+                            return;
+                        }
+                        Some(_) => {}
+                        // Todoist does not promise the user in an
+                        // incremental answer: ask for it once.
+                        None => {
+                            self.user_to_confirm = Some(cached);
+                            effects.push(Effect::FetchUser);
+                        }
+                    }
                 }
+                // A big account's full sync may carry data generated a while
+                // before; one incremental sync catches up.
+                let dated = resp.full_sync && resp.full_sync_date_utc.is_some();
+                self.apply_sync_delta(*resp, effects);
+                if dated {
+                    effects.push(Effect::Sync(incremental_sync_request(&self.sync_token)));
+                }
+                if never_synced {
+                    effects.push(Effect::ForgetOldSyncState);
+                }
+                self.open_live(effects);
             }
-            Err(e) if first && ErrorKind::of(&e, self.now) == ErrorKind::TokenRejected => {
+            Err(e) if never_synced && ErrorKind::of(&e, &self.now) == ErrorKind::TokenRejected => {
                 error!("todoist rejected the token");
                 self.not_loaded(LoadError::TokenRejected);
             }
-            Err(e) if first => self.report(Failure::from_client("load your tasks", &e, self.now)),
-            Err(e) => self.log_failure(Failure::from_client("sync with Todoist", &e, self.now)),
+            Err(e) if first_answer => {
+                self.report(Failure::from_client("load your tasks", &e, &self.now));
+            }
+            Err(e) => self.log_failure(Failure::from_client("sync with Todoist", &e, &self.now)),
         }
     }
 
-    pub(crate) fn apply_sync_delta(&mut self, resp: SyncResponse, effects: &mut Vec<Effect>) {
-        let focused = self.selected_task().map(|task| task.id.clone());
-        if resp.full_sync {
-            if let Some(projects) = resp.projects {
-                self.projects = projects
-                    .into_iter()
-                    .filter(|p| !p.is_deleted.unwrap_or(false))
-                    .collect();
-                self.sort_projects();
-            }
-            if let Some(items) = resp.items {
-                let before = std::mem::take(&mut self.tasks);
-                self.tasks = items.into_iter().filter(|t| !t.is_deleted).collect();
-                self.keep_marks_of_unchanged_tasks(&before);
-                // A full sync carries every due date as Todoist parsed it.
-                self.pending_due.clear();
-            }
-            if let Some(labels) = resp.labels {
-                self.labels = labels
-                    .into_iter()
-                    .filter(|l| !l.is_deleted.unwrap_or(false))
-                    .collect();
-            }
-            if let Some(sections) = resp.sections {
-                self.sections = sections
-                    .into_iter()
-                    .filter(|s| !s.is_deleted.unwrap_or(false))
-                    .collect();
-            }
-            if let Some(notes) = resp.notes {
-                self.comments_by_task.clear();
-                for note in notes {
-                    if !note.is_deleted {
-                        let tid = note
-                            .item_id
-                            .clone()
-                            .or_else(|| note.task_id.clone())
-                            .unwrap_or_default();
-                        self.comments_by_task.entry(tid).or_default().push(note);
-                    }
-                }
-            }
-            if let Some(collabs) = resp.collaborators {
-                for c in collabs {
-                    self.user_names
-                        .entry(c.id.clone())
-                        .or_insert_with(|| UserRecord::new(c.id, c.name, c.email));
-                }
-            }
-            if let Some(workspaces) = resp.workspaces {
-                self.workspaces = workspaces.into_iter().filter(|w| !w.is_deleted).collect();
-            }
-            if let Some(folders) = resp.folders {
-                self.folders = folders.into_iter().filter(|f| !f.is_deleted).collect();
-            }
-            if let Some(user) = resp.user {
-                self.current_user_id = Some(user.id.clone());
-                self.websocket_url = user.websocket_url;
-                self.user_names
-                    .entry(user.id.clone())
-                    .or_insert_with(|| UserRecord::new(user.id, user.full_name, user.email));
-            }
+    /// Opens the live connection once its URL is known, the first time.
+    fn open_live(&mut self, effects: &mut Vec<Effect>) {
+        if !self.live_opened
+            && let Some(url) = self.websocket_url.clone()
+        {
+            self.live_opened = true;
+            effects.push(Effect::OpenLive { url });
+        }
+    }
+
+    /// The sync a poll, a live change or the end of idle asks for: what
+    /// changed since the token, or everything the startup sync reads while
+    /// no sync has brought the account and its user.
+    pub(crate) fn background_sync_request(&self) -> SyncRequest {
+        if self.sync_token == "*" || self.store.current_user_id.is_none() {
+            startup_sync_request(&self.sync_token)
         } else {
-            if let Some(projects) = resp.projects {
-                for p in projects {
-                    if p.is_deleted.unwrap_or(false) {
-                        self.projects.retain(|e| e.id != p.id);
-                    } else if let Some(e) = self.projects.iter_mut().find(|e| e.id == p.id) {
-                        *e = p;
-                    } else {
-                        self.projects.push(p);
-                    }
+            incremental_sync_request(&self.sync_token)
+        }
+    }
+
+    pub(crate) fn apply_sync_delta(&mut self, mut resp: SyncResponse, effects: &mut Vec<Effect>) {
+        let focused = self.selected_task().map(|task| task.id.clone());
+        let full = resp.full_sync;
+        let token = std::mem::take(&mut resp.sync_token);
+        if let Some(user) = &resp.user {
+            self.websocket_url = user.websocket_url.clone();
+        }
+        let ops = &self.temp_id_pending;
+        let in_flight = |id: &str| !full && ops.values().any(|op| op.task() == Some(id));
+        let mut merged = self.store.merge(resp, in_flight);
+        if let Some(before) = &merged.replaced_tasks {
+            self.parked.clear();
+            self.keep_writes_in_flight(before);
+        }
+        for task in std::mem::take(&mut merged.parked) {
+            self.parked.insert(task.id.clone(), task);
+        }
+        if merged.projects {
+            self.sort_projects();
+        }
+        if let Some(before) = &merged.replaced_tasks {
+            self.keep_marks_of_unchanged_tasks(before);
+            // A full sync carries every due date as Todoist parsed it, but
+            // for a task still in flight.
+            let ops = &self.temp_id_pending;
+            self.pending_due
+                .retain(|id, _| ops.values().any(|op| op.task() == Some(id)));
+        }
+        for id in &merged.tasks {
+            self.rolled_back.remove(id);
+            self.pending_due.remove(id);
+        }
+        if let Some(task_id) = focused.as_ref()
+            && merged.comments.contains(task_id)
+            && let Some(updated) = self.store.comments_by_task.get(task_id)
+        {
+            self.comments = updated.clone();
+        }
+        self.report_cycles();
+
+        self.take_sync_token(token);
+        self.last_sync_at = Some(self.now.clone());
+        self.keep_focus_on(focused, effects);
+    }
+
+    /// A full sync replaced the tasks, `before` being the old ones: each
+    /// task with a write in flight keeps its local version, and what the
+    /// sync brought for it is parked as a delta's would be, so a rejection
+    /// lands the full sync's state rather than the older snapshot. A task
+    /// the sync left out parks as deleted, unless it is one being added,
+    /// which Todoist does not know yet.
+    fn keep_writes_in_flight(&mut self, before: &Table<Task>) {
+        let ops = &self.temp_id_pending;
+        let held: HashSet<&str> = ops.values().filter_map(OptimisticOp::task).collect();
+        for id in held {
+            let Some(local) = before.by_id(id) else {
+                continue;
+            };
+            let adding = ops
+                .values()
+                .any(|op| matches!(op, OptimisticOp::TaskAdded { temp_id } if temp_id == id));
+            match self.store.tasks.by_id(id) {
+                Some(incoming) => {
+                    self.parked.insert(id.to_owned(), incoming.clone());
                 }
-                self.sort_projects();
+                None if !adding => {
+                    let mut gone = local.clone();
+                    gone.is_deleted = true;
+                    self.parked.insert(id.to_owned(), gone);
+                }
+                None => {}
             }
-            if let Some(items) = resp.items {
-                for item in items {
-                    // A racing server delta must not clobber a task the user is still
-                    // editing optimistically: skip it until the command resolves.
-                    if self.task_has_pending_op(&item.id) {
-                        continue;
-                    }
-                    self.rolled_back.remove(&item.id);
-                    self.pending_due.remove(&item.id);
-                    if item.is_deleted {
-                        self.tasks.retain(|t| t.id != item.id);
-                    } else if let Some(e) = self.tasks.iter_mut().find(|t| t.id == item.id) {
-                        *e = item;
-                    } else {
-                        self.tasks.push(item);
-                    }
-                }
-            }
-            if let Some(labels) = resp.labels {
-                for l in labels {
-                    if l.is_deleted.unwrap_or(false) {
-                        self.labels.retain(|e| e.id != l.id);
-                    } else if let Some(e) = self.labels.iter_mut().find(|e| e.id == l.id) {
-                        *e = l;
-                    } else {
-                        self.labels.push(l);
-                    }
-                }
-            }
-            if let Some(sections) = resp.sections {
-                for s in sections {
-                    if s.is_deleted.unwrap_or(false) {
-                        self.sections.retain(|e| e.id != s.id);
-                    } else if let Some(e) = self.sections.iter_mut().find(|e| e.id == s.id) {
-                        *e = s;
-                    } else {
-                        self.sections.push(s);
-                    }
-                }
-            }
-            if let Some(notes) = resp.notes {
-                let open_task_id = focused.clone();
-                let mut affected_task: Option<String> = None;
-                for note in notes {
-                    let tid = note
-                        .item_id
-                        .clone()
-                        .or_else(|| note.task_id.clone())
-                        .unwrap_or_default();
-                    if note.is_deleted {
-                        if let Some(list) = self.comments_by_task.get_mut(&tid) {
-                            list.retain(|c| c.id != note.id);
-                        }
-                    } else if let Some(list) = self.comments_by_task.get_mut(&tid) {
-                        if let Some(c) = list.iter_mut().find(|c| c.id == note.id) {
-                            *c = note;
-                        } else {
-                            list.push(note);
-                        }
-                    } else {
-                        self.comments_by_task.insert(tid.clone(), vec![note]);
-                    }
-                    if open_task_id.as_deref() == Some(&tid) {
-                        affected_task = Some(tid);
-                    }
-                }
-                if let Some(tid) = affected_task
-                    && let Some(updated) = self.comments_by_task.get(&tid)
-                {
-                    self.comments = updated.clone();
-                }
+            self.store.apply_task(local.clone());
+        }
+    }
+
+    /// Logs each loop in the parents of the tasks or of the projects that
+    /// was not there after the last merge. The tasks and projects on it show
+    /// at top level.
+    fn report_cycles(&mut self) {
+        let tasks = &self.store.tasks;
+        let projects = &self.store.projects;
+        let mut found: Vec<(String, String)> = Vec::new();
+        for cycle in cycles(&parents(tasks, |task| task.parent_id.as_deref())) {
+            let members: Vec<&str> = cycle
+                .iter()
+                .filter_map(|&at| tasks.get(at))
+                .map(|task| task.id.as_str())
+                .collect();
+            if let Some(first) = cycle.first().and_then(|&at| tasks.get(at)) {
+                found.push((
+                    members.join(","),
+                    format!("show \"{}\" under its parent task", first.content),
+                ));
             }
         }
-
-        self.take_sync_token(resp.sync_token, effects);
-        self.last_sync_at = Some(self.now);
-        self.keep_focus_on(focused, effects);
+        for cycle in cycles(&parents(projects, |project| project.parent_id.as_deref())) {
+            let members: Vec<&str> = cycle
+                .iter()
+                .filter_map(|&at| projects.get(at))
+                .map(|project| project.id.as_str())
+                .collect();
+            if let Some(first) = cycle.first().and_then(|&at| projects.get(at)) {
+                found.push((
+                    members.join(","),
+                    format!("show project \"{}\" under its parent", first.name),
+                ));
+            }
+        }
+        let now: HashSet<String> = found.iter().map(|(members, _)| members.clone()).collect();
+        for (members, action) in found {
+            if !self.reported_cycles.contains(&members) {
+                let message = format!("the parents of {members} loop back to each other");
+                self.log_failure(Failure::new(
+                    ErrorKind::ParentCycle,
+                    action,
+                    message,
+                    &self.now,
+                ));
+            }
+        }
+        self.reported_cycles = now;
     }
 
     /// Focuses the task `focused` again when it is still visible, else the
@@ -329,18 +407,109 @@ impl State {
             return;
         };
         self.detail_scroll = 0;
-        match self.comments_by_task.get(&task_id) {
+        match self.store.comments_by_task.get(&task_id) {
             Some(cached) => self.comments = cached.clone(),
             None => self.comments.clear(),
         }
         self.fetch_comments(task_id, effects);
     }
 
-    fn take_sync_token(&mut self, token: String, effects: &mut Vec<Effect>) {
+    fn take_sync_token(&mut self, token: String) {
         if !token.is_empty() {
-            self.sync_token = token.clone();
-            effects.push(Effect::PersistSyncToken(token));
+            self.sync_token = token;
         }
+        self.mark_cache_dirty();
+    }
+
+    fn mark_cache_dirty(&mut self) {
+        self.cache_dirty_since
+            .get_or_insert_with(|| self.now.timestamp());
+    }
+
+    /// Shows what the cache holds at once, before the first sync answers;
+    /// that sync then asks only for what changed since `sync_token`, and
+    /// is checked against `user_id`.
+    pub fn paint_from_cache(&mut self, store: Store, sync_token: String, user_id: String) {
+        self.store = store;
+        self.sync_token = sync_token;
+        self.cache_user_id = Some(user_id);
+        self.loading = false;
+    }
+
+    /// Drops what the cache painted, which belongs to another user, and
+    /// reads everything again behind the loading screen.
+    fn discard_cache(&mut self, effects: &mut Vec<Effect>) {
+        self.store = Store::default();
+        self.comments.clear();
+        self.completed_cache.clear();
+        self.oldest_completed.clear();
+        self.rolled_back.clear();
+        self.pending_due.clear();
+        self.parked.clear();
+        self.loading = true;
+        self.selected_task = 0;
+        let request = full_sync_request();
+        self.sync_token = request.sync_token.clone();
+        self.mark_cache_dirty();
+        effects.push(Effect::Sync(request));
+    }
+
+    /// The cache write due by `now`: once [`CACHE_DEBOUNCE`] has passed
+    /// since a merge changed the store, and never while a command is
+    /// unanswered, since the store then holds a write Todoist may still
+    /// reject.
+    pub(crate) fn cache_save_due(&mut self, now: jiff::Timestamp) -> Option<Effect> {
+        let since = self.cache_dirty_since?;
+        if now.duration_since(since) < CACHE_DEBOUNCE {
+            return None;
+        }
+        let save = self.unsaved_cache();
+        if save.is_some() {
+            self.cache_dirty_since = None;
+        }
+        save
+    }
+
+    /// The cache write the store still needs, whatever the debounce says:
+    /// the runtime asks when the app stops.
+    pub fn unsaved_cache(&self) -> Option<Effect> {
+        (self.cache_dirty_since.is_some() && self.temp_id_pending.is_empty())
+            .then_some(Effect::SaveCache)
+    }
+
+    /// The answer to [`Effect::FetchUser`], asked when the first sync that
+    /// succeeded from the cache came back without the user: the same check
+    /// as that answer would have had, then the live connection from its
+    /// URL. A failure is only logged, and the cached data and syncing carry
+    /// on; the next sync that succeeds asks again.
+    pub(crate) fn user_fetched(
+        &mut self,
+        result: Result<UserInfo, ClientError>,
+        effects: &mut Vec<Effect>,
+    ) {
+        let cached = self.user_to_confirm.take();
+        let user = match result {
+            Ok(user) => user,
+            Err(e) => {
+                self.log_failure(Failure::from_client(
+                    "check who is signed in",
+                    &e,
+                    &self.now,
+                ));
+                // The next sync that succeeds asks again.
+                if self.cache_user_id.is_none() {
+                    self.cache_user_id = cached;
+                }
+                return;
+            }
+        };
+        if cached.is_some_and(|cached| cached != user.id) {
+            info!("the cache belongs to another user; full sync starting");
+            self.discard_cache(effects);
+            return;
+        }
+        self.websocket_url = user.websocket_url;
+        self.open_live(effects);
     }
 
     pub(crate) fn clamp_selected_task(&mut self) {
@@ -364,24 +533,35 @@ impl State {
         }
     }
 
-    fn command_results(&mut self, resp: SyncResponse, effects: &mut Vec<Effect>) {
+    /// Settles each command in `resp` (a rejected one rolls back) and maps
+    /// the temp ids before merging the delta the answer carries, so the
+    /// delta lands on the tasks those commands no longer hold.
+    fn command_results(&mut self, mut resp: SyncResponse, effects: &mut Vec<Effect>) {
         let mut refresh_comments_for: Option<String> = None;
         let mut rejected = Vec::new();
-        for (uuid, status) in &resp.sync_status {
+        let statuses = std::mem::take(&mut resp.sync_status);
+        for (uuid, status) in &statuses {
             let action = self.pending_actions.remove(uuid);
             match status {
                 SyncCommandResult::Err(error) => {
                     let action = action.unwrap_or_else(|| "send a change".to_owned());
-                    rejected.push((uuid.clone(), Failure::from_command(action, error, self.now)));
+                    rejected.push((
+                        uuid.clone(),
+                        Failure::from_command(action, error, &self.now),
+                    ));
                 }
                 SyncCommandResult::Ok(_) => {
-                    if let Some(op) = self.temp_id_pending.remove(uuid)
-                        && let OptimisticOp::CommentAdded { task_id, .. } = &op
-                    {
+                    let Some((_, op)) = self.take_pending(uuid) else {
+                        continue;
+                    };
+                    if let OptimisticOp::CommentAdded { task_id, .. } = &op {
                         let current = self.selected_task().map(|t| t.id.clone());
                         if current.as_deref() == Some(task_id.as_str()) {
                             refresh_comments_for = Some(task_id.clone());
                         }
+                    }
+                    if let Some(task_id) = op.task() {
+                        self.release_parked(task_id);
                     }
                 }
             }
@@ -390,10 +570,10 @@ impl State {
             self.roll_back(&uuid, &failure);
             self.report(failure);
         }
-        for (temp_id, real_id) in &resp.temp_id_mapping {
-            self.apply_temp_id_mapping(temp_id, real_id);
+        for (temp_id, real_id) in std::mem::take(&mut resp.temp_id_mapping) {
+            self.apply_temp_id_mapping(&temp_id, &real_id);
         }
-        self.take_sync_token(resp.sync_token, effects);
+        self.apply_sync_delta(resp, effects);
         if let Some(tid) = refresh_comments_for {
             self.fetch_comments(tid, effects);
         }
@@ -408,12 +588,12 @@ impl State {
                 .pending_actions
                 .remove(uuid)
                 .unwrap_or_else(|| "send a change".to_owned());
-            let failure = Failure::from_client(action, error, self.now);
+            let failure = Failure::from_client(action, error, &self.now);
             self.roll_back(uuid, &failure);
             failures.push(failure);
         }
         if failures.is_empty() {
-            failures.push(Failure::from_client("send a change", error, self.now));
+            failures.push(Failure::from_client("send a change", error, &self.now));
         }
         for failure in failures {
             self.report(failure);
@@ -421,18 +601,40 @@ impl State {
     }
 
     /// Restores what the write with `uuid` changed, and marks its task or
-    /// project with `failure`.
+    /// project with `failure`. A state parked for the task while the write
+    /// was in flight is newer than the snapshot, so it wins.
     fn roll_back(&mut self, uuid: &str, failure: &Failure) {
-        let Some(op) = self.temp_id_pending.remove(uuid) else {
+        let Some((at, op)) = self.take_pending(uuid) else {
             return;
         };
+        self.rebase_later_writes(at, &op);
         if let OptimisticOp::ProjectUpdated { project_id, .. } = &op {
             self.rolled_back_projects
                 .insert(project_id.clone(), failure.clone());
         }
+        let parked_for = op.task().map(str::to_owned);
         if let Some(task_id) = self.revert_optimistic(op) {
             self.pending_due.remove(&task_id);
             self.rolled_back.insert(task_id, failure.clone());
+        }
+        if let Some(task_id) = parked_for {
+            self.release_parked(&task_id);
+        }
+    }
+
+    /// Applies the state an incremental sync parked for `task_id`, once no
+    /// write to it is in flight.
+    fn release_parked(&mut self, task_id: &str) {
+        if self
+            .temp_id_pending
+            .values()
+            .any(|op| op.task() == Some(task_id))
+        {
+            return;
+        }
+        if let Some(task) = self.parked.remove(task_id) {
+            self.pending_due.remove(task_id);
+            self.store.apply_task(task);
         }
     }
 
@@ -449,7 +651,7 @@ impl State {
                 Some(OptimisticOp::ProjectUpdated { before, .. }) => Some(before.name.clone()),
                 _ => command.args["id"]
                     .as_str()
-                    .and_then(|id| self.projects.iter().find(|p| p.id == id))
+                    .and_then(|id| self.store.projects.by_id(id))
                     .map(|p| p.name.clone()),
             };
             return name.map_or_else(
@@ -469,7 +671,7 @@ impl State {
         let content = match op {
             Some(OptimisticOp::TaskUpdated { before, .. }) => Some(before.content.clone()),
             _ => command_task(command)
-                .and_then(|id| self.tasks.iter().find(|t| t.id == id))
+                .and_then(|id| self.store.tasks.by_id(id))
                 .map(|t| t.content.clone()),
         };
         match content {
@@ -478,10 +680,44 @@ impl State {
         }
     }
 
+    /// Gives the task or comment under `temp_id` its real id; a task a sync
+    /// already brought under that id replaces the optimistic one. Whatever
+    /// still names the task by its temp id follows: the prompt or picker
+    /// editing it, the writes to it still in flight with their snapshots,
+    /// and its typed due date, failed mark, parked state and comments.
     fn apply_temp_id_mapping(&mut self, temp_id: &str, real_id: &str) {
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == temp_id) {
-            t.id = real_id.to_string();
+        let tasks = &mut self.store.tasks;
+        if tasks.by_id(real_id).is_some() {
+            tasks.retain(|task| task.id != temp_id);
+        } else {
+            tasks.rekey(temp_id, real_id, |task, id| task.id = id.to_owned());
         }
+        let rename = |id: &mut String| {
+            if id == temp_id {
+                real_id.clone_into(id);
+            }
+        };
+        if let Some(id) = &mut self.edit_task {
+            rename(id);
+        }
+        for modal in &mut self.modals {
+            if let Modal::Prompt(prompt) = modal {
+                rename(&mut prompt.task_id);
+            }
+        }
+        for op in self.temp_id_pending.values_mut() {
+            match op {
+                OptimisticOp::TaskUpdated { task_id, before } => {
+                    rename(task_id);
+                    rename(&mut before.id);
+                }
+                OptimisticOp::CommentAdded { task_id, .. } => rename(task_id),
+                OptimisticOp::TaskAdded { .. } | OptimisticOp::ProjectUpdated { .. } => {}
+            }
+        }
+        rekey(&mut self.pending_due, temp_id, real_id);
+        rekey(&mut self.rolled_back, temp_id, real_id);
+        rekey(&mut self.store.comments_by_task, temp_id, real_id);
         for c in &mut self.comments {
             if c.id == temp_id {
                 c.id = real_id.to_string();
@@ -496,11 +732,11 @@ impl State {
     fn revert_optimistic(&mut self, op: OptimisticOp) -> Option<String> {
         match op {
             OptimisticOp::TaskAdded { temp_id } => {
-                self.tasks.retain(|t| t.id != temp_id);
+                self.store.tasks.retain(|t| t.id != temp_id);
                 None
             }
             OptimisticOp::TaskUpdated { task_id, before } => {
-                if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
                     *t = *before;
                 }
                 Some(task_id)
@@ -513,7 +749,7 @@ impl State {
                 Some(task_id)
             }
             OptimisticOp::ProjectUpdated { project_id, before } => {
-                if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
+                if let Some(p) = self.store.projects.by_id_mut(&project_id) {
                     *p = *before;
                 }
                 self.sort_projects();
@@ -524,11 +760,11 @@ impl State {
 
     /// Drops the failed mark of every task a full sync changed or removed,
     /// comparing each task with its copy in `before`.
-    fn keep_marks_of_unchanged_tasks(&mut self, before: &[Task]) {
-        let tasks = &self.tasks;
+    fn keep_marks_of_unchanged_tasks(&mut self, before: &Table<Task>) {
+        let tasks = &self.store.tasks;
         self.rolled_back.retain(|id, _| {
-            let old = before.iter().find(|t| &t.id == id);
-            let new = tasks.iter().find(|t| &t.id == id);
+            let old = before.by_id(id);
+            let new = tasks.by_id(id);
             match (old, new) {
                 (Some(old), Some(new)) => {
                     serde_json::to_value(old).ok() == serde_json::to_value(new).ok()
@@ -544,10 +780,14 @@ impl State {
     /// task list wholesale, so a late command result must not revert against it.
     pub(crate) fn force_full_resync(&mut self, effects: &mut Vec<Effect>) {
         self.temp_id_pending.clear();
+        self.pending_order.clear();
         self.pending_actions.clear();
+        self.parked.clear();
         let request = full_sync_request();
         self.sync_token = request.sync_token.clone();
-        effects.push(Effect::PersistSyncToken(self.sync_token.clone()));
+        // Written with token `*`, the cache is deleted: what it holds may be
+        // what `R` was pressed to get rid of.
+        self.mark_cache_dirty();
         effects.push(Effect::Sync(request));
     }
 
@@ -568,10 +808,12 @@ impl State {
         match result {
             Ok(c) => {
                 let count = i32::try_from(c.len()).unwrap_or(i32::MAX);
-                if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
                     t.note_count = Some(count);
                 }
-                self.comments_by_task.insert(task_id.clone(), c.clone());
+                self.store
+                    .comments_by_task
+                    .insert(task_id.clone(), c.clone());
                 let current_tid = self.selected_task().map(|t| t.id.clone());
                 if current_tid.as_deref() == Some(&task_id) && fetch_seq == self.comments_fetch_seq
                 {
@@ -579,37 +821,53 @@ impl State {
                 }
             }
             Err(e) => {
-                let action = match self.tasks.iter().find(|t| t.id == task_id) {
+                let action = match self.store.tasks.by_id(&task_id) {
                     Some(task) => format!("load the comments on \"{}\"", task.content),
                     None => "load comments".to_owned(),
                 };
-                self.log_failure(Failure::from_client(action, &e, self.now));
+                self.log_failure(Failure::from_client(action, &e, &self.now));
             }
         }
     }
 
+    /// Adds the tasks of one window to the project's completed tasks, and
+    /// says how far back they go when the window is an older one.
     pub(crate) fn completed_loaded(
         &mut self,
-        project_id: Option<String>,
+        query: CompletedQuery,
         result: Result<Vec<crate::todoist::model::Task>, ClientError>,
     ) {
         match result {
-            Ok(r) => {
-                self.completed_cache
-                    .insert(project_id.unwrap_or_default(), r);
+            Ok(loaded) => {
+                let pid = query.project_id.unwrap_or_default();
+                let tasks = self.completed_cache.entry(pid.clone()).or_default();
+                for task in loaded {
+                    if !tasks.iter().any(|t| t.id == task.id) {
+                        tasks.push(task);
+                    }
+                }
+                let oldest = self.oldest_completed.entry(pid).or_insert(query.window);
+                if query.window.since < oldest.since {
+                    *oldest = query.window;
+                    self.notice = Some(format!(
+                        "Completed tasks loaded back to {}",
+                        query.window.since
+                    ));
+                }
             }
             Err(e) => {
-                self.log_failure(Failure::from_client("load completed tasks", &e, self.now));
+                self.log_failure(Failure::from_client("load completed tasks", &e, &self.now));
             }
         }
     }
 
     pub(crate) fn sort_projects(&mut self) {
         let selected_id = self
+            .store
             .projects
             .get(self.selected_project)
             .map(|p| p.id.clone());
-        let source = self.projects.clone();
+        let source = self.store.projects.to_vec();
         let mut ordered: Vec<Project> = Vec::with_capacity(source.len());
 
         let personal: Vec<Project> = source
@@ -619,7 +877,7 @@ impl State {
             .collect();
         collect_project_subtree(None, &personal, &mut ordered);
 
-        for ws in &self.workspaces {
+        for ws in &self.store.workspaces {
             let ws_projects: Vec<Project> = source
                 .iter()
                 .filter(|p| p.workspace_id.as_deref() == Some(ws.id.as_str()))
@@ -637,6 +895,7 @@ impl State {
             collect_project_subtree(None, &no_folder, &mut ordered);
 
             let mut ws_folders: Vec<&Folder> = self
+                .store
                 .folders
                 .iter()
                 .filter(|f| f.workspace_id == ws.id)
@@ -660,12 +919,19 @@ impl State {
             }
         }
 
-        self.projects = ordered;
+        self.store.projects.replace_all(ordered);
         if let Some(id) = selected_id
-            && let Some(pos) = self.projects.iter().position(|p| p.id == id)
+            && let Some(pos) = self.store.projects.iter().position(|p| p.id == id)
         {
             self.selected_project = pos;
         }
+    }
+}
+
+/// Moves the entry under `from` to `to`.
+fn rekey<V>(map: &mut HashMap<String, V>, from: &str, to: &str) {
+    if let Some(value) = map.remove(from) {
+        map.insert(to.to_owned(), value);
     }
 }
 
@@ -694,8 +960,39 @@ fn collect_project_subtree(parent_id: Option<&str>, all: &[Project], out: &mut V
 }
 
 #[cfg(test)]
+mod interleavings;
+
+#[cfg(test)]
 mod tests {
-    use super::new_uuid;
+    use super::{command_request, full_sync_request, incremental_sync_request, new_uuid};
+    use crate::todoist::sync::SyncCommand;
+
+    #[test]
+    fn a_flush_reads_what_changed_since_the_token_with_its_commands() {
+        let command = SyncCommand {
+            r#type: "item_close".to_owned(),
+            temp_id: None,
+            uuid: new_uuid(),
+            args: serde_json::json!({ "id": "t-1" }),
+        };
+
+        let request = command_request("token-7", vec![command.clone()]);
+
+        assert_eq!(request.sync_token, "token-7");
+        assert_eq!(
+            request.resource_types,
+            incremental_sync_request("token-7").resource_types
+        );
+        assert_eq!(request.commands, [command]);
+    }
+
+    #[test]
+    fn every_sync_reads_reminders() {
+        let reads = |types: Vec<String>| types.iter().any(|t| t == "reminders");
+
+        assert!(reads(full_sync_request().resource_types));
+        assert!(reads(incremental_sync_request("token").resource_types));
+    }
 
     #[test]
     fn uuids_are_version_4_and_differ() {

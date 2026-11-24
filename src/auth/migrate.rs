@@ -1,14 +1,14 @@
-//! The one-time move of a plaintext `api_token` out of `config.toml`. This
-//! is the only code that writes `config.toml`, and it removes that one line,
-//! keeping every other byte.
+//! The one-time move of a plaintext `api_token` out of `config.toml`. It
+//! removes that one line, keeping every other byte; besides it, ratatoist
+//! writes only `[theme] name` there (`crate::config_write`).
 
 use std::fs;
 use std::ops::Range;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use super::ApiToken;
 use crate::config::FILE;
+use crate::config_write::replace;
 
 /// An `api_token` in `config.toml` that cannot be moved into the keyring.
 #[derive(Debug)]
@@ -76,33 +76,18 @@ impl Legacy {
         &self.token
     }
 
-    /// Rewrites the file without the `api_token` line, through a temporary
-    /// file in the same folder with the same mode, renamed over it. The
-    /// temporary name carries the process id, so two starts at once never
-    /// share one. Returns
-    /// the path on success, or why it failed.
+    /// Rewrites the file without the `api_token` line, atomically and with
+    /// the same mode (see [`replace`]). Returns the path on success, or why
+    /// it failed.
     pub(super) fn remove(self) -> Result<String, String> {
         let shown = self.path.display().to_string();
         let mut kept = String::with_capacity(self.text.len());
         // `lines` starts and ends on line boundaries; see `line_start`.
         kept.push_str(&self.text[..self.lines.start]);
         kept.push_str(&self.text[self.lines.end..]);
-        let temporary = self
-            .path
-            .with_extension(format!("toml.ratatoist-{}.tmp", std::process::id()));
-        let mode = fs::metadata(&self.path)
-            .map(|metadata| metadata.permissions().mode())
-            .unwrap_or(0o600);
-        let written = fs::write(&temporary, kept)
-            .and_then(|()| fs::set_permissions(&temporary, fs::Permissions::from_mode(mode)))
-            .and_then(|()| fs::rename(&temporary, &self.path));
-        match written {
-            Ok(()) => Ok(shown),
-            Err(error) => {
-                let _ = fs::remove_file(&temporary);
-                Err(format!("could not remove api_token from {shown} ({error})"))
-            }
-        }
+        replace(&self.path, &kept)
+            .map(|()| shown.clone())
+            .map_err(|error| format!("could not remove api_token from {shown} ({error})"))
     }
 }
 

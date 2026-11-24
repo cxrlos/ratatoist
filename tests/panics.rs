@@ -5,8 +5,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use jiff::Zoned;
+use jiff::civil::date;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, State};
 use ratatoist::config;
 use ratatoist::todoist::model::Comment;
@@ -145,11 +147,11 @@ fn theme_files_with_bad_colours_load_without_panicking() {
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
 
 /// 2026-11-22 09:00 local time, a Sunday.
-fn now() -> DateTime<Local> {
-    let naive = NaiveDate::from_ymd_opt(2026, 11, 22)
-        .and_then(|day| day.and_hms_opt(9, 0, 0))
-        .unwrap();
-    Local.from_local_datetime(&naive).earliest().unwrap()
+fn now() -> Zoned {
+    date(2026, 11, 22)
+        .at(9, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
 }
 
 fn key(code: KeyCode) -> Event {

@@ -1,8 +1,9 @@
 //! A [`TodoistClient`] that never touches the network.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
-use futures_util::Stream;
+use futures_util::{Stream, StreamExt};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -36,6 +37,9 @@ struct Shared {
     completed_tasks: Option<Value>,
     failures: Vec<(CommandMatch, SyncCommandError)>,
     commands: Vec<SyncCommand>,
+    reads: usize,
+    syncs_held: bool,
+    live: Vec<(Duration, LiveMessage)>,
 }
 
 impl FakeClient {
@@ -67,9 +71,23 @@ impl FakeClient {
         self
     }
 
-    /// One `GET /tasks/completed` page, served for every query.
+    /// One `GET /tasks/completed/by_completion_date` page, served for every
+    /// query.
     pub fn with_completed_tasks(self, body: Value) -> Self {
         self.shared().completed_tasks = Some(body);
+        self
+    }
+
+    /// Syncs never answer, as when Todoist is slow to.
+    pub fn hold_syncs(self) -> Self {
+        self.shared().syncs_held = true;
+        self
+    }
+
+    /// The live connection sends each message after its wait, counted from
+    /// the one before, then stays silent.
+    pub fn with_live(self, script: Vec<(Duration, LiveMessage)>) -> Self {
+        self.shared().live = script;
         self
     }
 
@@ -82,6 +100,11 @@ impl FakeClient {
     /// Every command received so far, oldest first.
     pub fn commands(&self) -> Vec<SyncCommand> {
         self.shared().commands.clone()
+    }
+
+    /// How many syncs carried no commands: reads, not writes.
+    pub fn reads(&self) -> usize {
+        self.shared().reads
     }
 
     fn shared(&self) -> MutexGuard<'_, Shared> {
@@ -110,6 +133,10 @@ fn decode<T: DeserializeOwned>(body: Value) -> Result<T, ClientError> {
 
 impl TodoistClient for FakeClient {
     async fn sync(&self, request: SyncRequest) -> Result<SyncResponse, ClientError> {
+        let held = self.shared().syncs_held;
+        if held {
+            std::future::pending::<()>().await;
+        }
         let mut shared = self.shared();
         // Recorded before the body is decoded, so a malformed fixture still
         // leaves the record of what was sent.
@@ -118,6 +145,9 @@ impl TodoistClient for FakeClient {
             .iter()
             .map(|command| (command.uuid.clone(), shared.status(command)))
             .collect();
+        if request.commands.is_empty() {
+            shared.reads += 1;
+        }
         shared.commands.extend(request.commands);
         let full = request.sync_token == "*";
         let body = if full {
@@ -150,16 +180,18 @@ impl TodoistClient for FakeClient {
 
     async fn completed_tasks(&self, _query: CompletedQuery) -> Result<Vec<Task>, ClientError> {
         match self.shared().completed_tasks.clone() {
-            Some(body) => Ok(decode::<CompletedTasksResponse>(body)?
-                .items
-                .into_iter()
-                .map(|record| record.into_task())
-                .collect()),
+            Some(body) => Ok(decode::<CompletedTasksResponse>(body)?.into_tasks()),
             None => Ok(Vec::new()),
         }
     }
 
     fn live_events(&self, _url: &str) -> impl Stream<Item = LiveMessage> + Send + 'static {
-        futures_util::stream::empty()
+        let script = self.shared().live.clone();
+        futures_util::stream::iter(script)
+            .then(|(wait, message)| async move {
+                tokio::time::sleep(wait).await;
+                message
+            })
+            .chain(futures_util::stream::pending())
     }
 }

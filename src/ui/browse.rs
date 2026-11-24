@@ -36,6 +36,7 @@ pub fn render_projects(state: &State, frame: &mut Frame, area: Rect) {
         .iter()
         .map(|row| match row {
             TreeRow::Project { index, .. } => state
+                .store
                 .projects
                 .get(*index)
                 .map(|project| state.open_task_count(&project.id)),
@@ -67,7 +68,7 @@ pub fn render_projects(state: &State, frame: &mut Frame, area: Rect) {
                 depth,
                 in_folder,
             } => {
-                let Some(project) = state.projects.get(*index) else {
+                let Some(project) = state.store.projects.get(*index) else {
                     continue;
                 };
                 if state.rolled_back_projects.contains_key(&project.id) {
@@ -156,6 +157,7 @@ fn cells() -> Layout {
 fn marker_is_free(state: &State, row: &TreeRow) -> bool {
     match row {
         TreeRow::Project { index, .. } => state
+            .store
             .projects
             .get(*index)
             .is_none_or(|project| !state.rolled_back_projects.contains_key(&project.id)),

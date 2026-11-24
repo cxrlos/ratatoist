@@ -252,7 +252,52 @@
     }
   ],
   "filters": [],
-  "reminders": [],
+  "reminders": [
+    {
+      "id": "6Jf8VQXxpwv56VM1",
+      "notify_uid": "1000001",
+      "item_id": "6Jf8VQXxpwv56VT2",
+      "type": "relative",
+      "due": {
+        "date": "2026-11-20T07:00:00.000000Z",
+        "timezone": null,
+        "is_recurring": true,
+        "string": "every day at 7:30",
+        "lang": "en"
+      },
+      "minute_offset": 30,
+      "is_deleted": false,
+      "is_urgent": false
+    },
+    {
+      "id": "6Jf8VQXxpwv56VM2",
+      "notify_uid": "1000001",
+      "item_id": "6Jf8VQXxpwv56VT2",
+      "type": "absolute",
+      "due": {
+        "date": "2026-11-21T08:00:00.000000Z",
+        "timezone": null,
+        "is_recurring": false,
+        "string": "Nov 21 at 8:00",
+        "lang": "en"
+      },
+      "minute_offset": null,
+      "is_deleted": false,
+      "is_urgent": true
+    },
+    {
+      "id": "6Jf8VQXxpwv56VM3",
+      "notify_uid": "1000001",
+      "item_id": "6Jf8VQXxpwv56VT3",
+      "type": "location",
+      "name": "Garden centre",
+      "loc_lat": "38.7223",
+      "loc_long": "-9.1393",
+      "loc_trigger": "on_enter",
+      "radius": 100,
+      "is_deleted": false
+    }
+  ],
   "sync_status": {},
   "temp_id_mapping": {}
 }

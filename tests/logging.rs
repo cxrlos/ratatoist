@@ -118,8 +118,8 @@ fn logs_roll_daily_and_keep_seven_files() {
     assert_eq!(names.len(), 7, "{names:?}");
     // The appender names files by the UTC date, so the test reads the clock too.
     #[allow(clippy::disallowed_methods)]
-    let today = chrono::Utc::now()
-        .format("ratatoist.%Y-%m-%d.log")
+    let today = jiff::Timestamp::now()
+        .strftime("ratatoist.%Y-%m-%d.log")
         .to_string();
     assert!(names.contains(&today), "{names:?}");
 }

@@ -12,9 +12,6 @@ yanked = "deny"
 unmaintained = "all"
 unsound = "all"
 ignore = [
-    # No maintained 0.4 release exists. Drop once the date code moves to jiff,
-    # as lrat uses.
-    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained; ratatoist moves its date code to jiff" },
     # Url::origin() recurses on nested blob: URLs. `cargo tree -i url` shows
     # reqwest as url's only dependent, and neither reqwest 0.12's src/ nor
     # ratatoist's calls origin(). Recheck both if the tree changes. Drop on or

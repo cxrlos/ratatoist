@@ -6,21 +6,24 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use chrono::{DateTime, Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
-use ratatoist::app::{App, Effect, ErrorKind, Event, Modal, State};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Zoned};
+use ratatoist::app::{App, Effect, ErrorKind, Event, Modal, State, command_request};
 use ratatoist::todoist::fake::CommandMatch;
-use ratatoist::todoist::sync::{SyncCommandError, SyncRequest, SyncResponse};
-use ratatoist::todoist::{ClientError, FakeClient, LiveMessage, TodoistClient, demo};
+use ratatoist::todoist::sync::{SyncCommandError, SyncResponse};
+use ratatoist::todoist::{
+    ClientError, CompletedQuery, CompletedWindow, FakeClient, LiveMessage, TodoistClient, demo,
+};
 use ratatui::backend::TestBackend;
 
-fn now() -> DateTime<Local> {
-    Local.from_local_datetime(&demo::NOW).earliest().unwrap()
+fn now() -> Zoned {
+    demo::NOW.to_zoned(TimeZone::UTC).unwrap()
 }
 
 fn demo_sync() -> Box<SyncResponse> {
-    Box::new(serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap())
+    Box::new(serde_json::from_value(demo::account(&now()).sync).unwrap())
 }
 
 fn sized(columns: u16, rows: u16) -> App<TestBackend> {
@@ -81,11 +84,7 @@ async fn drive(
                 Effect::Sync(request) => Event::Synced(client.sync(request).await.map(Box::new)),
                 Effect::SendCommands(commands) => {
                     let uuids = commands.iter().map(|c| c.uuid.clone()).collect();
-                    let request = SyncRequest {
-                        sync_token: app.state().sync_token.clone(),
-                        resource_types: vec![],
-                        commands,
-                    };
+                    let request = command_request(&app.state().sync_token, commands);
                     let result = client.sync(request).await.map(Box::new);
                     Event::CommandsSent { uuids, result }
                 }
@@ -102,7 +101,7 @@ fn offline() -> ClientError {
 
 /// The demo account through a client that rejects every `item_update`.
 fn rejecting_updates() -> FakeClient {
-    let client = FakeClient::new().with_full_sync(demo::account(demo::NOW.date()).sync);
+    let client = FakeClient::new().with_full_sync(demo::account(&now()).sync);
     client.fail_command(
         CommandMatch::Type("item_update".to_owned()),
         SyncCommandError {
@@ -134,7 +133,10 @@ fn no_failure_pushes_a_modal() {
                 result: Err(offline()),
             },
             Event::CompletedTasks {
-                project_id: None,
+                query: CompletedQuery {
+                    project_id: None,
+                    window: CompletedWindow::latest(now().date()),
+                },
                 result: Err(offline()),
             },
         ],
@@ -168,7 +170,13 @@ async fn a_rejected_item_update_restores_the_task_marks_its_row_and_logs_it() {
 
     drive(&mut app, &client, [key('p'), key('1')]).await;
 
-    let restored = app.state().tasks.iter().find(|t| t.id == task.id).unwrap();
+    let restored = app
+        .state()
+        .store
+        .tasks
+        .iter()
+        .find(|t| t.id == task.id)
+        .unwrap();
     assert_eq!(restored.priority, task.priority);
     let row = row_with(&app, &task.content).unwrap();
     assert!(row.contains('✘'), "the row is marked");
@@ -226,7 +234,7 @@ async fn a_full_sync_keeps_the_mark_until_the_task_changes() {
     drive(&mut app, &client, [key('R')]).await;
     assert!(row_with(&app, &task.content).unwrap().contains('✘'));
 
-    let mut account = demo::account(demo::NOW.date()).sync;
+    let mut account = demo::account(&now()).sync;
     for item in account["items"].as_array_mut().unwrap() {
         if item["id"] == serde_json::json!(task.id) {
             item["content"] = serde_json::json!("Renamed elsewhere");
@@ -263,13 +271,16 @@ fn an_offline_comments_fetch_never_writes_a_notice() {
 fn a_repeated_failure_updates_the_newest_entry_instead_of_adding_one() {
     let mut app = app();
     send(&mut app, [offline_comments()]);
-    let later = now() + chrono::Duration::minutes(5);
+    let later = now() + SignedDuration::from_mins(5);
 
-    send(&mut app, [Event::Tick { now: later }, offline_comments()]);
+    send(
+        &mut app,
+        [Event::Tick { now: later.clone() }, offline_comments()],
+    );
 
     let failures = &app.state().failures;
     assert_eq!(failures.len(), 1);
-    assert_eq!(failures.newest().map(|failure| failure.at), Some(later));
+    assert_eq!(failures.newest().map(|failure| &failure.at), Some(&later));
 }
 
 #[test]
@@ -280,6 +291,7 @@ fn background_failures_log_without_a_notice_and_accent_the_indicator() {
         &mut app,
         [
             Event::Synced(Err(offline())),
+            Event::Live(LiveMessage::Connected),
             Event::Live(LiveMessage::Disconnected),
             Event::Live(LiveMessage::Disconnected),
         ],

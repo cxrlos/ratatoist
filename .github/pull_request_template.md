@@ -2,6 +2,10 @@
 
 <!-- What changes for the user, in one or two sentences. Fixes #N or Part of #N. -->
 
+## Release notes
+
+<!-- Milestone PRs only: what users get, as a short bullet list with no headings. release-plz copies this section into CHANGELOG.md and the GitHub release. Leave it empty on any other PR. -->
+
 ## Changes
 
 ## Testing

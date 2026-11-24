@@ -2,7 +2,7 @@
 source: tests/detail.rs
 expression: app.backend()
 ---
-" [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago "
+" [1] Inbox │ [2] │ [3] │ [4] │ [5]                       polling, synced 0s ago "
 "┌Inbox─────────────────────────────────────────────────────────────────────────┐"
 "│Line 56 of the notes                                                          │"
 "│Line 57 of the notes                                                          │"

@@ -3,19 +3,21 @@
 //! Due dates read, count and filter the same way whether they carry a time
 //! or not, and every count matches the rows its list shows.
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use insta::assert_snapshot;
+use jiff::Zoned;
+use jiff::civil::date;
+use jiff::tz::{self, TimeZone};
 use ratatoist::app::{App, Event, ListFilter, OverviewStats, Screen, State, update};
 use ratatoist::todoist::model::Priority;
 use ratatoist::todoist::sync::SyncResponse;
 use ratatui::backend::TestBackend;
 
 /// 2026-11-22 10:00 local time, a Sunday.
-fn now() -> DateTime<Local> {
-    let naive = NaiveDate::from_ymd_opt(2026, 11, 22)
-        .and_then(|day| day.and_hms_opt(10, 0, 0))
-        .unwrap();
-    Local.from_local_datetime(&naive).earliest().unwrap()
+fn now() -> Zoned {
+    date(2026, 11, 22)
+        .at(10, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
 }
 
 /// A hypothetical full sync, not recorded from Todoist. One inbox holds a
@@ -58,7 +60,11 @@ const HYPOTHETICAL_SYNC: &str = r#"{
 }"#;
 
 fn synced() -> State {
-    let mut state = State::new(now());
+    synced_at(now())
+}
+
+fn synced_at(now: Zoned) -> State {
+    let mut state = State::new(now);
     let response: SyncResponse = serde_json::from_str(HYPOTHETICAL_SYNC).unwrap();
     update(&mut state, Event::Synced(Ok(Box::new(response))));
     state
@@ -183,4 +189,50 @@ fn the_today_counts_match_the_today_list() {
     let rows = app.state().visible_tasks().len();
     assert_eq!(rows, 4);
     assert!(shows(&app, "Overdue (3)"));
+}
+
+/// A hypothetical delta, not recorded from Todoist: two tasks with a fixed
+/// timezone, which Todoist sends as instants in UTC, one at 23:30 on
+/// 2026-11-22 and one at 00:30 on 2026-11-23 in UTC-6.
+fn near_midnight() -> Box<SyncResponse> {
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "due-dates-2",
+        "items": [
+            { "id": "t-tonight", "content": "Submit the form tonight", "child_order": 11,
+              "priority": 1, "project_id": "p-inbox",
+              "due": { "date": "2026-11-23T05:30:00Z", "timezone": "America/Mexico_City" } },
+            { "id": "t-after-midnight", "content": "Catch the night bus", "child_order": 12,
+              "priority": 1, "project_id": "p-inbox",
+              "due": { "date": "2026-11-23T06:30:00Z", "timezone": "America/Mexico_City" } }
+        ]
+    });
+    Box::new(serde_json::from_value(delta).unwrap())
+}
+
+#[test]
+fn a_fixed_timezone_task_late_tonight_shows_in_today_and_its_count() {
+    // 10:00 in UTC-6, as in America/Mexico_City.
+    let west = date(2026, 11, 22)
+        .at(10, 0, 0, 0)
+        .to_zoned(TimeZone::fixed(tz::offset(-6)))
+        .unwrap();
+    let mut state = synced_at(west);
+    update(&mut state, Event::Synced(Ok(near_midnight())));
+
+    state.screen = Screen::Today;
+
+    let app = App::new(TestBackend::new(120, 36), state).unwrap();
+
+    let today: Vec<&str> = app
+        .state()
+        .visible_tasks()
+        .iter()
+        .map(|t| t.id.as_str())
+        .collect();
+    assert!(today.contains(&"t-tonight"), "{today:?}");
+    assert!(!today.contains(&"t-after-midnight"), "{today:?}");
+    assert_eq!(app.state().overview_stats().due_today, 2);
+    assert!(shows(&app, "Submit the form tonight"));
+    assert!(!shows(&app, "Catch the night bus"));
 }

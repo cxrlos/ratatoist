@@ -2,7 +2,7 @@
 source: tests/list.rs
 expression: app.backend()
 ---
-" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
+" [1] │ [2] Today │ [3] │ [4] │ [5]                       polling, synced 0s ago "
 "f filter: p1 · 4 of 19 · Esc clears                                             "
 "┌Today─────────────────────────────────────────────────────────────────────────┐"
 "│▲ Overdue (1)                                                                 │"

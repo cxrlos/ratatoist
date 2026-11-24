@@ -3,9 +3,10 @@
 
 #![cfg(test)]
 
-use chrono::{DateTime, Duration, Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Zoned};
 use ratatoist::app::{App, Effect, Event, LoadError, Modal, Pane, Screen, State};
 use ratatoist::auth::Source;
 use ratatoist::runtime::{UiSettings, initial_state_from};
@@ -15,12 +16,12 @@ use ratatoist::ui::style;
 use ratatui::backend::TestBackend;
 use ratatui::style::Style;
 
-fn now() -> DateTime<Local> {
-    Local.from_local_datetime(&demo::NOW).earliest().unwrap()
+fn now() -> Zoned {
+    demo::NOW.to_zoned(TimeZone::UTC).unwrap()
 }
 
 fn demo_sync() -> Box<SyncResponse> {
-    Box::new(serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap())
+    Box::new(serde_json::from_value(demo::account(&now()).sync).unwrap())
 }
 
 /// The app at `columns` x `rows` before anything answered.
@@ -49,7 +50,7 @@ fn press(code: KeyCode) -> Event {
 
 fn tick(seconds: i64) -> Event {
     Event::Tick {
-        now: now() + Duration::seconds(seconds),
+        now: now() + SignedDuration::from_secs(seconds),
     }
 }
 
@@ -204,7 +205,7 @@ fn the_sync_indicator_is_muted_while_fine_and_accented_on_a_problem() {
         (tick(4), false),
         (offline, true),
         (failing, true),
-        (Event::Live(LiveMessage::Disconnected), true),
+        (Event::Live(LiveMessage::Disconnected), false),
         (tick(10 * 60), false),
     ];
 

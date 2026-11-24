@@ -4,9 +4,10 @@
 
 #![cfg(test)]
 
-use chrono::{DateTime, Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::Zoned;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, Pane, Screen, State, TreeItem};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::demo::NOW;
@@ -15,12 +16,12 @@ use ratatoist::todoist::sync::{SyncCommandError, SyncRequest, SyncResponse};
 use ratatoist::todoist::{FakeClient, TodoistClient};
 use ratatui::backend::TestBackend;
 
-fn now() -> DateTime<Local> {
-    Local.from_local_datetime(&NOW).earliest().unwrap()
+fn now() -> Zoned {
+    NOW.to_zoned(TimeZone::UTC).unwrap()
 }
 
 fn demo_sync() -> Box<SyncResponse> {
-    Box::new(serde_json::from_value(demo::account(NOW.date()).sync).unwrap())
+    Box::new(serde_json::from_value(demo::account(&now()).sync).unwrap())
 }
 
 fn sized(columns: u16, rows: u16) -> App<TestBackend> {
@@ -97,7 +98,7 @@ fn focus_row(app: &mut App<TestBackend>, name: &str) {
 /// What a [`FakeClient`] that rejects every `project_update` answers to
 /// the commands `effects` send.
 async fn rejected(effects: &[Effect]) -> Event {
-    let client = FakeClient::new().with_full_sync(demo::account(NOW.date()).sync);
+    let client = FakeClient::new().with_full_sync(demo::account(&now()).sync);
     client.fail_command(
         CommandMatch::Type("project_update".to_owned()),
         SyncCommandError {
@@ -227,7 +228,12 @@ async fn s_rolls_back_and_marks_the_project_when_todoist_rejects_it() {
     let row = row_with(&app, "Reading");
     assert!(row.contains("# Reading"));
     assert!(row.contains('✘'));
-    let reading = app.state().projects.iter().find(|p| p.id == "p-reading");
+    let reading = app
+        .state()
+        .store
+        .projects
+        .iter()
+        .find(|p| p.id == "p-reading");
     assert!(reading.is_some_and(|project| !project.is_favorite));
 }
 
@@ -239,6 +245,7 @@ fn labels_lists_every_label_with_its_open_task_count() {
     for label in ["errand", "computer", "deep-work", "outdoors"] {
         let open = app
             .state()
+            .store
             .tasks
             .iter()
             .filter(|t| !t.checked && !t.is_deleted && t.labels.iter().any(|l| l == label))
@@ -321,6 +328,7 @@ fn a_completed_labelled_task_is_left_out_of_the_count_and_the_list() {
     let mut app = sized(119, 36);
     let project_id = app
         .state()
+        .store
         .tasks
         .iter()
         .find(|task| task.labels.iter().any(|l| l == "errand"))
@@ -333,7 +341,13 @@ fn a_completed_labelled_task_is_left_out_of_the_count_and_the_list() {
         true,
     ))))
     .unwrap();
-    assert!(app.state().tasks.iter().any(|t| t.id == "t-done-errand"));
+    assert!(
+        app.state()
+            .store
+            .tasks
+            .iter()
+            .any(|t| t.id == "t-done-errand")
+    );
 
     let (count, listed) = errand_count_and_list(app);
 
@@ -353,7 +367,13 @@ fn a_labelled_task_in_a_project_not_loaded_is_left_out_of_the_count() {
         false,
     ))))
     .unwrap();
-    assert!(app.state().tasks.iter().any(|t| t.id == "t-stray-errand"));
+    assert!(
+        app.state()
+            .store
+            .tasks
+            .iter()
+            .any(|t| t.id == "t-stray-errand")
+    );
 
     let (count, listed) = errand_count_and_list(app);
 

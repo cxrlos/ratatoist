@@ -2,11 +2,11 @@
 source: tests/picker.rs
 expression: app.backend()
 ---
-" [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago "
+" [1] Inbox │ [2] │ [3] │ [4] │ [5]                       polling, synced 0s ago "
 "┌Inbox─────────────────────────────────────────────────────────────────────────┐"
 "│› ○ Call the plumber about the leaking tap  @phone  ✉1            today ▮▮▯ P2│"
 "│  ○ Return the library books  @errand                            Nov 21 ▮▯▯ P3│"
-"│  ○ Renew the bi┌ Theme for this session ───────────────────┐    Nov 28 ··· P4│"
+"│  ○ Renew the bi┌ Theme ────────────────────────────────────┐    Nov 28 ··· P4│"
 "│  ○ 買い物リスト│t> type to filter                          │     today ··· P4│" Hidden by multi-width symbols: [(6, "e"), (8, " "), (10, "h"), (12, "e"), (14, " "), (16, "u")]
 "│  ○ Réserver la │ 1 Terminal ✓                              │    Nov 26 ▮▮▯ P2│"
 "│  ○ Write down e│ 2 Catppuccin Mocha                        │: the she… ··· P4│"

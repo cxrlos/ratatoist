@@ -389,3 +389,21 @@ fn the_xdg_folder_wins_when_it_exists() {
     assert_eq!(config::source_dir(&xdg, Some(&old)), (xdg.clone(), None));
     assert_eq!(config::source_dir(&xdg, None), (xdg, None));
 }
+
+#[test]
+fn a_theme_picked_while_the_old_macos_folder_is_read_is_kept_there() {
+    let home = TempDir::new("legacytheme");
+    let xdg = home.0.join(".config/ratatoist");
+    let old = home.0.join("Library/Application Support/ratatoist");
+    fs::create_dir_all(&old).unwrap();
+    fs::write(old.join("config.toml"), "[keys]\npreset = \"standard\"\n").unwrap();
+
+    let config = config::load_from(&xdg, Some(&old));
+    assert_eq!(config.dir, old);
+    ratatoist::config_write::save_theme(&config.dir, "nord").unwrap();
+
+    assert!(!xdg.exists(), "the theme went to a new XDG folder");
+    let reloaded = config::load_from(&xdg, Some(&old));
+    assert_eq!(reloaded.theme.as_deref(), Some("Nord"));
+    assert_eq!(reloaded.keys.preset, ratatoist::keys::Preset::Standard);
+}

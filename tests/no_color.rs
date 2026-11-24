@@ -6,8 +6,8 @@
 
 use std::ffi::OsStr;
 
-use chrono::{Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Event};
 use ratatoist::config::Config;
 use ratatoist::runtime::{UiSettings, initial_state_from};
@@ -19,14 +19,16 @@ use ratatui::style::{Color, Modifier};
 
 /// The demo account with `[theme] name = "nord"` and `NO_COLOR` set.
 fn no_color_demo() -> App<TestBackend> {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let config = Config {
         theme: Some("Nord".to_owned()),
         ..Config::default()
     };
     let state = initial_state_from(&config, &UiSettings::default(), "*".to_owned(), now, true);
     let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
-    let sync = serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap();
+    let sync =
+        serde_json::from_value(demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync)
+            .unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     app
 }

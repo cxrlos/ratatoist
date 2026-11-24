@@ -6,22 +6,25 @@ use tracing::info;
 
 use super::confirm;
 use super::failure::{ErrorKind, Failure};
+use super::live;
 use super::modal::Modal;
 use super::palette::{self, Palette};
-use super::picker::{self, Choice, PickerKind, open_picker};
+use super::picker::{Choice, PickerKind, open_picker};
 use super::prompt::{PromptField, open_prompt};
 use super::release;
 use super::state::{ListFilter, Pane, Screen};
-use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
+use super::sync::{OptimisticOp, new_uuid, startup_sync_request};
 use super::task_form::{FormField, TODAY, TaskForm};
 use super::text_field::TextField;
 use super::{Action, Editable, Effect, Event, State};
+use crate::config_write::ThemeNotSaved;
 use crate::keys::{self, Key, Resolution};
 use crate::todoist::model::{Comment, Due, Task};
 use crate::todoist::sync::SyncCommand;
-use crate::todoist::{CompletedQuery, LiveMessage};
+use crate::todoist::{CompletedQuery, CompletedWindow};
 use crate::ui;
 use crate::ui::detail;
+use crate::ui::theme;
 
 /// What one event did: whether the screen changed, and what to ask the
 /// outside world for.
@@ -47,15 +50,42 @@ impl Update {
     }
 }
 
+/// Answers a theme write: nothing to show when it was kept; a notice when
+/// `config.toml` was left alone; a failure, logged, when the write failed.
+/// The session keeps the theme either way.
+fn theme_saved(state: &mut State, slug: &str, result: Result<(), ThemeNotSaved>) -> bool {
+    match result {
+        Ok(()) => false,
+        Err(ThemeNotSaved::Refused { path, why }) => {
+            state.notice = Some(format!(
+                "The theme lasts this session only: {path} {why}, so it was left alone"
+            ));
+            true
+        }
+        Err(ThemeNotSaved::Failed { path, error }) => {
+            state.report(Failure::new(
+                ErrorKind::Other,
+                format!("keep theme \"{slug}\" in {path}"),
+                error,
+                &state.now,
+            ));
+            true
+        }
+    }
+}
+
 pub fn update(state: &mut State, event: Event) -> Update {
     let mut effects = Vec::new();
     match event {
         Event::Start if state.load_error.is_some() => Update::default(),
         Event::Start => {
-            info!("full sync starting");
+            info!(
+                from_cache = state.cache_user_id.is_some(),
+                "first sync starting"
+            );
             Update {
                 redraw: false,
-                effects: vec![Effect::Sync(full_sync_request())],
+                effects: vec![Effect::Sync(startup_sync_request(&state.sync_token))],
             }
         }
         Event::Key(key) => on_key(state, key),
@@ -65,16 +95,22 @@ pub fn update(state: &mut State, event: Event) -> Update {
             let redraw = release::checked(state, latest, &mut effects);
             Update { redraw, effects }
         }
+        Event::ThemeSaved { slug, result } => {
+            let redraw = theme_saved(state, &slug, result);
+            Update { redraw, effects }
+        }
         Event::Resize { width, height } => {
             state.viewport = Some(Size::new(width, height));
             state.detail_scroll = state.detail_scroll.min(state.max_detail_scroll());
             Update::redraw(effects)
         }
         Event::Tick { now } => {
-            effects.extend(release::tick(state, now.with_timezone(&chrono::Utc)));
+            effects.extend(release::tick(state, now.timestamp()));
+            effects.extend(state.cache_save_due(now.timestamp()));
             let before = (state.today, state.indicator());
+            state.today = now.date();
             state.now = now;
-            state.today = now.date_naive();
+            live::tick(state, &mut effects);
             Update {
                 redraw: before != (state.today, state.indicator()),
                 effects,
@@ -96,36 +132,22 @@ pub fn update(state: &mut State, event: Event) -> Update {
             state.comments_loaded(task_id, fetch_seq, result);
             Update::redraw(effects)
         }
-        Event::CompletedTasks { project_id, result } => {
-            state.completed_loaded(project_id, result);
+        Event::UserFetched(result) => {
+            state.user_fetched(result, &mut effects);
             Update::redraw(effects)
         }
-        Event::Live(message) => {
-            let was_dropped = state.live_dropped;
-            match message {
-                LiveMessage::Connected => state.live_dropped = false,
-                LiveMessage::Changed => {
-                    state.live_dropped = false;
-                    if state.is_idle() {
-                        state.pending_ws_sync = true;
-                    } else {
-                        effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
-                    }
-                }
-                LiveMessage::Disconnected => {
-                    if !was_dropped {
-                        state.log_failure(Failure::new(
-                            ErrorKind::Offline,
-                            "keep the live connection open",
-                            "the live-updates connection dropped",
-                            state.now,
-                        ));
-                    }
-                    state.live_dropped = true;
-                }
-            }
+        Event::CompletedTasks { query, result } => {
+            state.completed_loaded(query, result);
+            Update::redraw(effects)
+        }
+        Event::Live(message) => Update {
+            redraw: live::message(state, message, &mut effects),
+            effects,
+        },
+        Event::LiveSyncDue => {
+            live::sync_due(state, &mut effects);
             Update {
-                redraw: was_dropped != state.live_dropped,
+                redraw: false,
                 effects,
             }
         }
@@ -139,10 +161,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
     let key = Key::from(key);
     let mut effects = Vec::new();
     let was_idle = state.is_idle();
-    state.last_activity = state.now;
-    if was_idle && state.pending_ws_sync {
-        state.pending_ws_sync = false;
-        effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
+    state.last_activity = state.now.clone();
+    if was_idle {
+        live::back_from_idle(state, &mut effects);
     }
 
     let cleared_notice = state.notice.take().is_some() | std::mem::take(&mut state.show_failure);
@@ -478,6 +499,7 @@ impl State {
                 true
             }
             Action::ToggleFavourite => self.toggle_favourite(effects),
+            Action::LoadOlderCompleted => self.load_older_completed(effects),
         }
     }
 
@@ -644,7 +666,10 @@ impl State {
             }
             Choice::Theme(index) => {
                 if let Some(theme) = self.themes.get(index) {
-                    self.notice = Some(picker::theme_notice(&theme.name));
+                    self.notice = Some(format!("{} is the theme", theme.name));
+                    if !self.no_color {
+                        effects.push(Effect::SaveTheme(theme::slug(&theme.name)));
+                    }
                     self.theme_idx = index;
                 }
             }
@@ -702,7 +727,7 @@ impl State {
         };
         let task_id = task.id.clone();
         let wants_comments = task.note_count.unwrap_or(0) > 0;
-        match self.comments_by_task.get(&task_id) {
+        match self.store.comments_by_task.get(&task_id) {
             Some(cached) => self.comments = cached.clone(),
             None => {
                 self.comments.clear();
@@ -813,9 +838,33 @@ impl State {
         {
             effects.push(Effect::FetchCompletedTasks(CompletedQuery {
                 project_id: Some(pid),
-                since: None,
+                window: CompletedWindow::latest(self.today),
             }));
         }
+    }
+
+    /// The listed project and the oldest window of its completed tasks
+    /// loaded, while the list filter shows them.
+    pub(crate) fn listed_oldest_completed(&self) -> Option<(String, CompletedWindow)> {
+        if !matches!(self.list_filter, ListFilter::Completed | ListFilter::All) {
+            return None;
+        }
+        let pid = &self.list_project()?.id;
+        let oldest = self.oldest_completed.get(pid)?;
+        Some((pid.clone(), *oldest))
+    }
+
+    /// Asks for the listed project's completed tasks in the window before
+    /// the oldest one loaded.
+    fn load_older_completed(&mut self, effects: &mut Vec<Effect>) -> bool {
+        let Some((pid, oldest)) = self.listed_oldest_completed() else {
+            return false;
+        };
+        effects.push(Effect::FetchCompletedTasks(CompletedQuery {
+            project_id: Some(pid),
+            window: oldest.before(),
+        }));
+        false
     }
 
     fn open_detail(&mut self, effects: &mut Vec<Effect>) {
@@ -829,7 +878,7 @@ impl State {
         self.detail_scroll = 0;
 
         // Serve cached comments immediately, refresh in background.
-        if let Some(cached) = self.comments_by_task.get(&task_id) {
+        if let Some(cached) = self.store.comments_by_task.get(&task_id) {
             self.comments = cached.clone();
         } else {
             self.comments.clear();
@@ -838,21 +887,32 @@ impl State {
     }
 
     fn complete_selected_task(&mut self, effects: &mut Vec<Effect>) {
-        let (task_id, was_checked, is_recurring) = {
+        let (task_id, was_checked, recurring) = {
             let visible = self.visible_tasks();
             let Some(task) = visible.get(self.selected_task) else {
                 return;
             };
-            (
-                task.id.clone(),
-                task.checked,
-                task.due.as_ref().map(|d| d.is_recurring).unwrap_or(false),
-            )
+            let recurring = task
+                .due
+                .as_ref()
+                .filter(|due| due.is_recurring)
+                .map(|due| due.string.clone().unwrap_or_else(|| due.date.clone()));
+            (task.id.clone(), task.checked, recurring)
         };
+        let is_recurring = recurring.is_some();
 
-        let before = self.tasks.iter().find(|t| t.id == task_id).cloned();
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
-            t.checked = !was_checked;
+        let before = self.store.tasks.by_id(&task_id).cloned();
+        match recurring {
+            // The task stays open: its due shows pending until Todoist
+            // answers with the next date.
+            Some(rule) if !was_checked => {
+                self.pending_due.insert(task_id.clone(), rule);
+            }
+            _ => {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
+                    t.checked = !was_checked;
+                }
+            }
         }
 
         let new_len = self.visible_tasks().len();
@@ -887,7 +947,7 @@ impl State {
     fn open_form(&mut self) {
         let project_id = self
             .list_project()
-            .or_else(|| self.projects.iter().find(|p| p.is_inbox()))
+            .or_else(|| self.store.projects.iter().find(|p| p.is_inbox()))
             .map(|p| p.id.clone())
             .unwrap_or_default();
         let due_string = match self.screen {
@@ -989,16 +1049,16 @@ impl State {
         }
         let form = form.clone();
         let due_string = form.due_string.trim().to_owned();
-        let temp_id = self.new_temp_id();
+        let temp_id = new_uuid();
 
         // The one due string known without Todoist: Today's default, so the
         // row shows on Today at once.
         let due = due_string.eq_ignore_ascii_case(TODAY).then(|| Due {
-            date: self.today.format("%Y-%m-%d").to_string(),
+            date: self.today.to_string(),
             string: Some(due_string.clone()),
             ..Due::default()
         });
-        self.tasks.push(Task {
+        self.store.tasks.upsert(Task {
             id: temp_id.clone(),
             content: content.clone(),
             project_id: form.project_id.clone(),
@@ -1032,13 +1092,13 @@ impl State {
         let Some(task_id) = self.edit_task.take() else {
             return;
         };
-        let temp_id = self.new_temp_id();
+        let temp_id = new_uuid();
 
         let optimistic = Comment {
             id: temp_id.clone(),
             content: content.clone(),
-            posted_at: Some(self.now.with_timezone(&chrono::Utc).to_rfc3339()),
-            posted_by_uid: self.current_user_id.clone(),
+            posted_at: Some(self.now.timestamp().to_string()),
+            posted_by_uid: self.store.current_user_id.clone(),
             task_id: Some(task_id.clone()),
             item_id: Some(task_id.clone()),
             ..Comment::default()
@@ -1051,6 +1111,7 @@ impl State {
             };
             if self.comments.iter().any(other_task) {
                 self.comments = self
+                    .store
                     .comments_by_task
                     .get(&task_id)
                     .cloned()
@@ -1078,7 +1139,7 @@ impl State {
 
         let args = match field {
             PromptField::Content => {
-                if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
                     t.content = value.clone();
                 }
                 serde_json::json!({ "id": task_id, "content": value })
@@ -1090,7 +1151,7 @@ impl State {
                 serde_json::json!({ "id": task_id, "due_string": value })
             }
             PromptField::Description => {
-                if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
                     t.description = value.clone();
                 }
                 serde_json::json!({ "id": task_id, "description": value })
@@ -1122,7 +1183,7 @@ impl State {
     /// now; `None` once it is gone.
     fn edit_target(&mut self) -> Option<Task> {
         let id = self.edit_task.take()?;
-        self.tasks.iter().find(|t| t.id == id).cloned()
+        self.store.tasks.by_id(&id).cloned()
     }
 
     fn apply_priority(&mut self, new_priority: u8, effects: &mut Vec<Effect>) {
@@ -1134,7 +1195,7 @@ impl State {
         }
         let task_id = before.id.clone();
 
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+        if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
             t.priority = new_priority;
         }
 
@@ -1203,11 +1264,12 @@ impl State {
 
     fn close_all_folds(&mut self) {
         let parent_ids: HashSet<String> = self
+            .store
             .tasks
             .iter()
             .filter_map(|t| t.parent_id.clone())
             .collect();
-        for task in &self.tasks {
+        for task in &self.store.tasks {
             if parent_ids.contains(&task.id) {
                 self.collapsed.insert(task.id.clone());
             }

@@ -1,17 +1,23 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use chrono::{DateTime, Local, NaiveDate};
+use jiff::civil::Date;
+use jiff::{SignedDuration, Timestamp, Zoned};
 use ratatui::layout::Size;
 
 use super::browse::TreeItem;
 use super::failure::{ErrorLog, Failure, LoadError};
+use super::live::LiveLink;
 use super::modal::Modal;
 use super::release::ReleaseState;
+use super::store::{Stamped, Store};
 use super::sync::OptimisticOp;
 use super::text_field::TextField;
+use super::view::Lists;
 use crate::auth::Source;
 use crate::keys::Keymap;
-use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
+use crate::todoist::CompletedWindow;
+use crate::todoist::model::{Comment, Priority, Task};
 use crate::ui::icons::{IconSet, Icons};
 use crate::ui::theme::{self, Theme};
 
@@ -28,8 +34,8 @@ pub const DEFAULT_WIDE_LAYOUT_COLUMNS: u16 = 120;
 #[derive(Debug, Clone)]
 pub struct State {
     /// Set by the runtime from the clock; fixed in tests.
-    pub today: NaiveDate,
-    pub now: DateTime<Local>,
+    pub today: Date,
+    pub now: Zoned,
 
     /// True until the first sync answers; the body says it is loading
     /// meanwhile.
@@ -40,12 +46,8 @@ pub struct State {
     /// Where the token in use came from, to say how to replace it when
     /// Todoist rejects it.
     pub token_source: Option<Source>,
-    pub projects: Vec<Project>,
-    pub workspaces: Vec<Workspace>,
-    pub folders: Vec<Folder>,
-    pub tasks: Vec<Task>,
-    pub labels: Vec<Label>,
-    pub sections: Vec<Section>,
+    /// Every synced entity, by id.
+    pub store: Store,
     pub selected_project: usize,
     pub selected_task: usize,
     /// The pane that takes keys: a task list, the focused task's detail, or
@@ -65,7 +67,8 @@ pub struct State {
     /// The task the open prompt or priority picker writes to, taken when it
     /// opened, so a sync that reorders the list cannot retarget it.
     pub edit_task: Option<String>,
-    pub collapsed: HashSet<String>,
+    /// The tasks whose subtasks are folded away.
+    pub collapsed: Stamped<HashSet<String>>,
     /// Rows the task detail is scrolled down by. Scroll keys keep it within
     /// the content at [`State::screen_size`].
     pub detail_scroll: u16,
@@ -92,9 +95,8 @@ pub struct State {
     pub release: ReleaseState,
     /// How the task list on screen is sorted.
     pub sort: Sort,
+    /// The comments the detail shows, of the task it shows.
     pub comments: Vec<Comment>,
-    pub current_user_id: Option<String>,
-    pub user_names: HashMap<String, UserRecord>,
     /// What the task list on screen narrows to.
     pub list_filter: ListFilter,
     /// The glyphs every view draws with, from `[ui] icons`.
@@ -102,15 +104,20 @@ pub struct State {
     /// The themes the theme picker offers; `theme_idx` is the one drawn.
     pub themes: Vec<Theme>,
     pub theme_idx: usize,
+    /// `NO_COLOR` is set: the one theme is [`Theme::no_color`], and a theme
+    /// picked is not written to `config.toml`.
+    pub no_color: bool,
     /// How reading from Todoist went the last time, for the sync indicator.
     pub sync_health: SyncHealth,
-    /// The live connection dropped and has not come back yet.
-    pub live_dropped: bool,
+    /// Whether the live connection is up, for the indicator and polling.
+    pub live: LiveLink,
     pub sync_token: String,
-    pub completed_cache: HashMap<String, Vec<Task>>,
-    pub comments_by_task: HashMap<String, Vec<Comment>>,
+    /// The completed tasks loaded for each project, by project id.
+    pub completed_cache: Stamped<HashMap<String, Vec<Task>>>,
+    /// The oldest window loaded into `completed_cache`, by project.
+    pub oldest_completed: HashMap<String, CompletedWindow>,
     pub idle_timeout_secs: u64,
-    pub last_sync_at: Option<DateTime<Local>>,
+    pub last_sync_at: Option<Zoned>,
     pub collapsed_folders: HashSet<String>,
     /// The row the Projects tree focuses, when it is on one.
     pub tree_focus: Option<TreeItem>,
@@ -122,33 +129,53 @@ pub struct State {
     /// change again.
     pub rolled_back_projects: HashMap<String, Failure>,
     pub overdue_section_collapsed: bool,
-    pub last_activity: DateTime<Local>,
-    pub(crate) pending_ws_sync: bool,
+    pub last_activity: Zoned,
+    /// A sync after a live change is waiting out its debounce.
+    pub(crate) live_sync_scheduled: bool,
+    /// When the next poll runs, while the live connection is not up.
+    pub(crate) poll_due: Option<Timestamp>,
     pub(crate) comments_fetch_seq: u64,
     pub(crate) websocket_url: Option<String>,
     pub(crate) live_opened: bool,
+    /// The user the cache painted from belongs to, until a sync succeeds
+    /// and confirms it.
+    pub(crate) cache_user_id: Option<String>,
+    /// Whether any sync has answered, even with an error: only the first
+    /// answer's failure is the notice.
+    pub(crate) sync_answered: bool,
+    /// The cached user to check against the user asked for, when the first
+    /// sync from the cache came back without one.
+    pub(crate) user_to_confirm: Option<String>,
+    /// When a merge first changed the store since the cache was last
+    /// written.
+    pub(crate) cache_dirty_since: Option<jiff::Timestamp>,
     /// Revert snapshots of optimistic writes, keyed by command uuid.
     pub(crate) temp_id_pending: HashMap<String, OptimisticOp>,
+    /// The uuids in `temp_id_pending`, oldest write first.
+    pub(crate) pending_order: Vec<String>,
     /// What each command still waiting for Todoist does, as `complete "Buy
     /// oat milk"`, keyed by its uuid, to name it if it fails.
     pub(crate) pending_actions: HashMap<String, String>,
-    pub(crate) next_temp_id: u64,
+    /// The newest state an incremental sync brought for a task with a write
+    /// in flight, by task id, applied once its last write settles.
+    pub(crate) parked: HashMap<String, Task>,
+    /// The lists derived from the store and the list state, rebuilt on the
+    /// first read after either changes.
+    pub(crate) lists: RefCell<Option<Lists>>,
+    /// The tasks and projects last found in a parent cycle, so each cycle
+    /// is logged once.
+    pub(crate) reported_cycles: HashSet<String>,
 }
 
 impl State {
-    pub fn new(now: DateTime<Local>) -> Self {
+    pub fn new(now: Zoned) -> Self {
         Self {
-            today: now.date_naive(),
-            now,
+            today: now.date(),
+            now: now.clone(),
             loading: true,
             load_error: None,
             token_source: None,
-            projects: Vec::new(),
-            workspaces: Vec::new(),
-            folders: Vec::new(),
-            tasks: Vec::new(),
-            labels: Vec::new(),
-            sections: Vec::new(),
+            store: Store::default(),
             selected_project: 0,
             selected_task: 0,
             active_pane: Pane::Tasks,
@@ -157,7 +184,7 @@ impl State {
             modals: Vec::new(),
             input: TextField::default(),
             edit_task: None,
-            collapsed: HashSet::new(),
+            collapsed: Stamped::default(),
             detail_scroll: 0,
             viewport: None,
             screen: Screen::Today,
@@ -169,17 +196,16 @@ impl State {
             release: ReleaseState::default(),
             sort: Sort::default(),
             comments: Vec::new(),
-            current_user_id: None,
-            user_names: HashMap::new(),
             list_filter: ListFilter::default(),
             icon_set: IconSet::default(),
             themes: Theme::built_ins(),
             theme_idx: 0,
+            no_color: false,
             sync_health: SyncHealth::Fine,
-            live_dropped: false,
+            live: LiveLink::Never,
             sync_token: "*".to_owned(),
-            completed_cache: HashMap::new(),
-            comments_by_task: HashMap::new(),
+            completed_cache: Stamped::default(),
+            oldest_completed: HashMap::new(),
             idle_timeout_secs: DEFAULT_IDLE_TIMEOUT_SECS,
             last_sync_at: None,
             collapsed_folders: HashSet::new(),
@@ -189,13 +215,21 @@ impl State {
             rolled_back_projects: HashMap::new(),
             overdue_section_collapsed: false,
             last_activity: now,
-            pending_ws_sync: false,
+            live_sync_scheduled: false,
+            poll_due: None,
             comments_fetch_seq: 0,
             websocket_url: None,
             live_opened: false,
+            cache_user_id: None,
+            sync_answered: false,
+            user_to_confirm: None,
+            cache_dirty_since: None,
             temp_id_pending: HashMap::new(),
+            pending_order: Vec::new(),
             pending_actions: HashMap::new(),
-            next_temp_id: 0,
+            parked: HashMap::new(),
+            lists: RefCell::new(None),
+            reported_cycles: HashSet::new(),
         }
     }
 
@@ -267,7 +301,10 @@ impl State {
         self.rolled_back.get(task_id)
     }
 
-    /// What the sync indicator shows: `synced 4s ago`, or what is wrong.
+    /// What the sync indicator shows: how changes arrive (`live` from the
+    /// live connection, `polling` while it is down, `idle` while both
+    /// pause) and when the last sync was, as `live, synced 4s ago`; or what
+    /// is wrong, as `offline` when the last sync could not reach Todoist.
     /// `None` before anything has synced or failed, and while an error
     /// screen fills the body, which already says what is wrong.
     pub fn indicator(&self) -> Option<Indicator> {
@@ -277,7 +314,6 @@ impl State {
         let problem = match self.sync_health {
             SyncHealth::Offline => Some("offline"),
             SyncHealth::Failing => Some("sync failing"),
-            SyncHealth::Fine if self.live_dropped => Some("reconnecting"),
             SyncHealth::Fine => None,
         };
         if let Some(text) = problem {
@@ -286,18 +322,28 @@ impl State {
                 alert: true,
             });
         }
-        let ago = age(self.now - self.last_sync_at?);
-        let text = if self.is_idle() {
-            format!("idle, synced {ago} ago")
+        let ago = age(self.now.duration_since(self.last_sync_at.as_ref()?));
+        let mode = if self.is_idle() {
+            "idle"
+        } else if self.live == LiveLink::Up {
+            "live"
         } else {
-            format!("synced {ago} ago")
+            "polling"
         };
+        let text = format!("{mode}, synced {ago} ago");
         Some(Indicator { text, alert: false })
+    }
+
+    /// Whether the account is on screen, from a sync or the cache, so
+    /// syncing in the background makes sense.
+    pub fn account_loaded(&self) -> bool {
+        !self.loading && self.load_error.is_none()
     }
 
     pub fn is_idle(&self) -> bool {
         let timeout = i64::try_from(self.idle_timeout_secs).unwrap_or(i64::MAX);
-        self.idle_timeout_secs > 0 && (self.now - self.last_activity).num_seconds() >= timeout
+        self.idle_timeout_secs > 0
+            && self.now.duration_since(&self.last_activity).as_secs() >= timeout
     }
 
     /// Whether `name` names one of the loaded themes, by its name or the
@@ -319,8 +365,8 @@ impl State {
 }
 
 /// `elapsed` in its largest whole unit, as `4s`, `3m`, `2h` or `5d`.
-fn age(elapsed: chrono::TimeDelta) -> String {
-    let seconds = elapsed.num_seconds().max(0);
+fn age(elapsed: SignedDuration) -> String {
+    let seconds = elapsed.as_secs().max(0);
     match seconds {
         0..60 => format!("{seconds}s"),
         60..3600 => format!("{}m", seconds / 60),
@@ -344,7 +390,7 @@ pub enum SyncHealth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Indicator {
     pub text: String,
-    /// Sync is failing or the live connection is down.
+    /// Sync is offline or failing.
     pub alert: bool,
 }
 
@@ -482,7 +528,7 @@ pub struct OverviewStats {
     pub by_priority: [u32; 5],
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct UserRecord {
     pub id: String,
     /// What a comment names its author by: the full name, or else the

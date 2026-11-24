@@ -4,9 +4,9 @@
 //! date: named for the field and the task, prefilled where it edits, and
 //! kept open with the reason when Enter cannot send.
 
-use chrono::{Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, Modal, Prompt, PromptField, State};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
@@ -14,9 +14,11 @@ use ratatui::backend::TestBackend;
 
 /// The demo account at `columns` x `rows`, on the Inbox's task list.
 fn demo_at(columns: u16, rows: u16) -> App<TestBackend> {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let mut app = App::new(TestBackend::new(columns, rows), State::new(now)).unwrap();
-    let sync: SyncResponse = serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap();
+    let sync: SyncResponse =
+        serde_json::from_value(demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync)
+            .unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     send(&mut app, [key('1')]);
     app
@@ -227,7 +229,7 @@ fn a_due_date_shows_as_typed_until_todoist_answers_with_the_task() {
     .unwrap();
     assert_eq!(app.state().pending_due(&id), Some("next monday"));
 
-    let mut task = demo::account(demo::NOW.date()).sync["items"]
+    let mut task = demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync["items"]
         .as_array()
         .unwrap()
         .iter()

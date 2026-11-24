@@ -156,9 +156,13 @@ fn now(state: &State, prompt: &Prompt) -> Option<String> {
     if prompt.field != PromptField::DueDate {
         return None;
     }
-    let task = state.tasks.iter().find(|task| task.id == prompt.task_id)?;
+    let task = state
+        .store
+        .tasks
+        .iter()
+        .find(|task| task.id == prompt.task_id)?;
     Some(task.due.as_ref().map_or_else(
         || "no date".to_owned(),
-        |due| dates::format_due(due, state.today, state.theme()).text,
+        |due| dates::format_due(due, state.today, state.now.time_zone(), state.theme()).text,
     ))
 }

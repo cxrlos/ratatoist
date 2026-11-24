@@ -4,11 +4,14 @@
 //! label's tasks, so every task action works on them, and Esc comes back
 //! here with the focus where it was.
 
+use std::collections::{HashMap, HashSet};
+
 use super::effect::Effect;
 use super::state::{Pane, Screen, State};
 use super::sync::OptimisticOp;
+use super::view::is_open;
 use super::{Action, ListFilter};
-use crate::todoist::model::{Project, Task};
+use crate::todoist::model::Project;
 use crate::todoist::sync::SyncCommand;
 
 /// A row of the Projects tree the focus can rest on, by id so it stays
@@ -47,6 +50,7 @@ impl TreeRow {
             TreeRow::Space(_) => None,
             TreeRow::Folder { id, .. } => Some(TreeItem::Folder(id.clone())),
             TreeRow::Project { index, .. } => state
+                .store
                 .projects
                 .get(*index)
                 .map(|project| TreeItem::Project(project.id.clone())),
@@ -72,7 +76,7 @@ impl State {
         let mut rows = Vec::new();
         let mut space: Option<Option<&str>> = None;
         let mut folder: Option<&str> = None;
-        for (index, project) in self.projects.iter().enumerate() {
+        for (index, project) in self.store.projects.iter().enumerate() {
             if project.is_inbox() {
                 continue;
             }
@@ -81,7 +85,8 @@ impl State {
                 space = Some(workspace);
                 folder = None;
                 let name = workspace.map(|id| {
-                    self.workspaces
+                    self.store
+                        .workspaces
                         .iter()
                         .find(|w| w.id == id)
                         .map_or_else(|| id.to_owned(), |w| w.name.clone())
@@ -93,6 +98,7 @@ impl State {
                 folder = folder_id;
                 if let Some(id) = folder_id {
                     let name = self
+                        .store
                         .folders
                         .iter()
                         .find(|f| f.id == id)
@@ -120,8 +126,9 @@ impl State {
     /// order, then those shared with the user that only tasks carry, by
     /// name. Each counts the open tasks carrying it in a loaded project,
     /// the ones Enter on it lists.
-    pub fn label_rows(&self) -> Vec<LabelRow> {
+    pub(crate) fn build_label_rows(&self) -> Vec<LabelRow> {
         let mut own: Vec<_> = self
+            .store
             .labels
             .iter()
             .filter(|label| label.is_deleted != Some(true))
@@ -135,71 +142,36 @@ impl State {
                 count: 0,
             })
             .collect();
+        let own_names: HashSet<&str> = rows.iter().map(|row| row.name.as_str()).collect();
         let mut shared: Vec<&str> = self
+            .store
             .tasks
             .iter()
             .flat_map(|task| task.labels.iter().map(String::as_str))
-            .filter(|name| rows.iter().all(|row| row.name != *name))
+            .filter(|name| !own_names.contains(name))
             .collect();
         shared.sort_unstable();
         shared.dedup();
+        let shared: Vec<String> = shared.into_iter().map(str::to_owned).collect();
         rows.extend(shared.into_iter().map(|name| LabelRow {
-            name: name.to_owned(),
+            name,
             favourite: false,
             count: 0,
         }));
-        for row in &mut rows {
-            row.count = self
-                .tasks
-                .iter()
-                .filter(|task| {
-                    is_open(task)
-                        && task.labels.contains(&row.name)
-                        && self.projects.iter().any(|p| p.id == task.project_id)
-                })
-                .count();
-        }
-        rows
-    }
-
-    /// How many open tasks project `id` holds, subtasks included: the
-    /// tasks its list shows with nothing folded.
-    pub fn open_task_count(&self, project_id: &str) -> usize {
-        self.tasks
-            .iter()
-            .filter(|task| is_open(task) && task.project_id == project_id)
-            .count()
-    }
-
-    /// The open tasks of the opened label that `filter` keeps, subtasks
-    /// included unless it narrows to a due date or priority, grouped by
-    /// project in the tree's order.
-    pub(crate) fn label_tasks(&self, filter: ListFilter) -> Vec<(&Project, Vec<&Task>)> {
-        let Some(label) = self.opened_label.as_deref() else {
-            return Vec::new();
-        };
-        let mut groups = Vec::new();
-        for project in &self.projects {
-            let mut tasks: Vec<&Task> = self
-                .tasks
-                .iter()
-                .filter(|task| {
-                    is_open(task)
-                        && task.project_id == project.id
-                        && task.labels.iter().any(|name| name == label)
-                        && match filter {
-                            ListFilter::Open | ListFilter::All => true,
-                            ListFilter::Completed => false,
-                            _ => self.in_cross_project_list(task, filter),
-                        }
-                })
-                .collect();
-            tasks.sort_by_key(|task| (task.section_id.is_some(), task.child_order));
-            if !tasks.is_empty() {
-                groups.push((project, tasks));
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for task in self.store.tasks.iter() {
+            if !is_open(task) || self.store.projects.by_id(&task.project_id).is_none() {
+                continue;
+            }
+            let names: HashSet<&str> = task.labels.iter().map(String::as_str).collect();
+            for name in names {
+                *counts.entry(name).or_default() += 1;
             }
         }
-        groups
+        for row in &mut rows {
+            row.count = counts.get(row.name.as_str()).copied().unwrap_or(0);
+        }
+        rows
     }
 
     /// The row the tree's focus is on: the one it rests on, or the first
@@ -215,7 +187,7 @@ impl State {
     /// The project the tree's focus is on.
     pub fn tree_project(&self) -> Option<&Project> {
         match self.tree_focused() {
-            Some(TreeItem::Project(id)) => self.projects.iter().find(|p| p.id == id),
+            Some(TreeItem::Project(id)) => self.store.projects.iter().find(|p| p.id == id),
             _ => None,
         }
     }
@@ -287,7 +259,7 @@ impl State {
                 let Some(id) = self.tree_project().map(|p| p.id.clone()) else {
                     return false;
                 };
-                let Some(index) = self.projects.iter().position(|p| p.id == id) else {
+                let Some(index) = self.store.projects.iter().position(|p| p.id == id) else {
                     return false;
                 };
                 self.selected_project = index;
@@ -313,7 +285,7 @@ impl State {
     /// on the project or label it listed.
     pub(crate) fn back_to_browse(&mut self) {
         if self.screen == Screen::Projects
-            && let Some(project) = self.projects.get(self.selected_project)
+            && let Some(project) = self.store.projects.get(self.selected_project)
         {
             self.tree_focus = Some(TreeItem::Project(project.id.clone()));
         }
@@ -350,7 +322,7 @@ impl State {
         let before = project.clone();
         let id = before.id.clone();
         let favourite = !before.is_favorite;
-        if let Some(project) = self.projects.iter_mut().find(|p| p.id == id) {
+        if let Some(project) = self.store.projects.by_id_mut(&id) {
             project.is_favorite = favourite;
         }
         self.rolled_back_projects.remove(&id);
@@ -368,9 +340,4 @@ impl State {
         self.send_command(command, Some(op), effects);
         true
     }
-}
-
-/// Whether `task` is open: neither completed nor deleted.
-fn is_open(task: &Task) -> bool {
-    !task.checked && !task.is_deleted
 }

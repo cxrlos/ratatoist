@@ -2,7 +2,7 @@
 source: tests/app.rs
 expression: "sized(80, 24).backend()"
 ---
-" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
+" [1] │ [2] Today │ [3] │ [4] │ [5]                       polling, synced 0s ago "
 "┌Today─────────────────────────────────────────────────────────────────────────┐"
 "│▲ Overdue (1)                                                                 │"
 "│› ○ Buy oat milk  @errand                                  Nov 20 ▮▮▮ P1 Inbox│"

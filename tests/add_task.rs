@@ -4,9 +4,9 @@
 //! date preset; Enter adds from a text row and chooses on the others; Esc
 //! sends nothing; the new row shows at once and goes when Todoist refuses.
 
-use chrono::{Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, FormField, Modal, State, TaskForm};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
@@ -16,9 +16,11 @@ use ratatui::backend::TestBackend;
 
 /// The demo account at `columns` x `rows`, on the Inbox's task list.
 fn demo_at(columns: u16, rows: u16) -> App<TestBackend> {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let mut app = App::new(TestBackend::new(columns, rows), State::new(now)).unwrap();
-    let sync: SyncResponse = serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap();
+    let sync: SyncResponse =
+        serde_json::from_value(demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync)
+            .unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     send(&mut app, [key('1')]);
     app
@@ -229,7 +231,7 @@ fn shift_tab_moves_back_and_wraps() {
 fn esc_cancels_from_every_row_and_sends_nothing() {
     for tabs in 0..4 {
         let mut app = demo();
-        let before = app.state().tasks.len();
+        let before = app.state().store.tasks.len();
         let mut effects = send(&mut app, [key('a')]);
         effects.extend(send(&mut app, typed("Pay rent")));
         effects.extend(send(&mut app, (0..tabs).map(|_| tab())));
@@ -238,7 +240,7 @@ fn esc_cancels_from_every_row_and_sends_nothing() {
 
         assert!(commands(&effects).is_empty());
         assert!(app.state().modals.is_empty());
-        assert_eq!(app.state().tasks.len(), before);
+        assert_eq!(app.state().store.tasks.len(), before);
     }
 }
 
@@ -306,6 +308,7 @@ fn the_new_row_takes_the_real_id_when_todoist_answers() {
 
     let ids: Vec<&str> = app
         .state()
+        .store
         .tasks
         .iter()
         .filter(|task| task.content == "Pay rent")

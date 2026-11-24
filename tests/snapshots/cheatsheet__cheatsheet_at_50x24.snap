@@ -2,7 +2,7 @@
 source: tests/cheatsheet.rs
 expression: "text(&on_the_list(\"\", 50, 24))"
 ---
- [1] Inbox │ [2] │ [3] │ [4] │ [5]  synced 0s ago 
+ [1] Inbox │ [2] │ [3] │ [4] │ [5]                
 ┌Inbox───────────────────────────────────────────┐
 │› ○ Bu┌ Keys ────────────────────────────┐▮▮▮ P1│
 │  ○ Ca│ Move                             │▮▮▯ P2│

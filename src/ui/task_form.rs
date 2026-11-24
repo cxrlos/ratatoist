@@ -134,7 +134,11 @@ fn value_line(state: &State, form: &TaskForm, field: FormField, room: usize) -> 
             )
         }
         FormField::Project => {
-            let project = state.projects.iter().find(|p| p.id == form.project_id);
+            let project = state
+                .store
+                .projects
+                .iter()
+                .find(|p| p.id == form.project_id);
             let glyph = match project {
                 Some(project) if project.is_inbox() => {
                     Span::styled(format!("{} ", state.icons().inbox), theme.inbox_icon())
@@ -160,6 +164,7 @@ fn value_line(state: &State, form: &TaskForm, field: FormField, room: usize) -> 
 /// loaded.
 fn project_name(state: &State, form: &TaskForm) -> String {
     state
+        .store
         .projects
         .iter()
         .find(|p| p.id == form.project_id)

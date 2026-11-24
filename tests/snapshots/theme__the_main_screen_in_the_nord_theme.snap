@@ -5,7 +5,7 @@ expression: app.backend().buffer()
 Buffer {
     area: Rect { x: 0, y: 0, width: 80, height: 24 },
     content: [
-        " [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago ",
+        " [1] │ [2] Today │ [3] │ [4] │ [5]                       polling, synced 0s ago ",
         "┌Today─────────────────────────────────────────────────────────────────────────┐",
         "│▲ Overdue (8)                                                                 │",
         "│› ○ Fix the wobbly chair leg  ✉1                Nov 18 ▮▯▯ P3 Home            │",
@@ -18,7 +18,7 @@ Buffer {
         "│  ○ Review the logo options from Inés  @rev… yesterday ▮▮▯ P2 Atlas redesign  │",
         "│◆ Today (11)                                                                  │",
         "│  ○ Call the plumber about the leaking tap  @ph… today ▮▮▯ P2 Inbox           │",
-        "│  ○ 買い物リストを作る  @quick                   today ··· P4 Inbox           │", // hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
+        "│  ○ 買い物リストを作る  @quick  ⚑ tomorrow       today ··· P4 Inbox           │", // hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
         "│  ○ Take out the recycling  @15min  ↻            today ··· P4 Home            │",
         "│  ○ Pay the electricity bill  @computer  ↻ today 17:00 ▮▮▮ P1 Home            │",
         "│  ○ Finish «La casa del faro», chapter 7  @read… today ▮▯▯ P3 Reading         │",
@@ -152,7 +152,8 @@ Buffer {
         x: 3, y: 13, fg: Rgb(123, 131, 147), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,
         x: 5, y: 13, fg: Rgb(229, 233, 240), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,
         x: 23, y: 13, fg: Rgb(123, 131, 147), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,
-        x: 31, y: 13, fg: Rgb(229, 233, 240), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,
+        x: 31, y: 13, fg: Rgb(208, 135, 112), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,
+        x: 43, y: 13, fg: Rgb(229, 233, 240), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,
         x: 50, y: 13, fg: Rgb(136, 192, 208), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,
         x: 55, y: 13, fg: Rgb(229, 233, 240), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,
         x: 56, y: 13, fg: Rgb(123, 131, 147), bg: Rgb(46, 52, 64), underline: Reset, modifier: NONE,

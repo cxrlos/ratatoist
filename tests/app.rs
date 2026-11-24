@@ -1,22 +1,27 @@
 #![cfg(test)]
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use std::time::Duration;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
-use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
+use jiff::civil::date;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Zoned};
+use ratatoist::app::{App, Effect, ErrorKind, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::runtime::{UiSettings, initial_state_from};
+use ratatoist::todoist::model::Task;
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
-use ratatoist::todoist::{ClientError, LiveMessage};
+use ratatoist::todoist::{ClientError, CompletedWindow, LiveMessage};
 use ratatui::backend::TestBackend;
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
 
 /// 2026-11-22 09:00 local time, a Sunday.
-fn now() -> DateTime<Local> {
-    let naive = NaiveDate::from_ymd_opt(2026, 11, 22)
-        .and_then(|day| day.and_hms_opt(9, 0, 0))
-        .unwrap();
-    Local.from_local_datetime(&naive).earliest().unwrap()
+fn now() -> Zoned {
+    date(2026, 11, 22)
+        .at(9, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
 }
 
 fn full_sync() -> Box<SyncResponse> {
@@ -87,7 +92,7 @@ fn shows(app: &App<TestBackend>, text: &str) -> bool {
 }
 
 fn task<'a>(app: &'a App<TestBackend>, id: &str) -> &'a ratatoist::todoist::model::Task {
-    app.state().tasks.iter().find(|t| t.id == id).unwrap()
+    app.state().store.tasks.iter().find(|t| t.id == id).unwrap()
 }
 
 /// The one command in a flush; fails if a flush carries more or none.
@@ -126,15 +131,16 @@ fn shows_the_loading_line_until_the_first_sync_answers() {
 }
 
 #[test]
-fn the_first_sync_opens_the_live_connection_and_saves_the_token() {
+fn the_first_sync_opens_the_live_connection_and_forgets_the_old_sync_token() {
     let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
 
     let effects = app.handle(Event::Synced(Ok(full_sync()))).unwrap();
 
+    assert_eq!(app.state().sync_token, "fixture-token-1");
     assert_eq!(
         effects,
         [
-            Effect::PersistSyncToken("fixture-token-1".to_owned()),
+            Effect::ForgetOldSyncState,
             Effect::OpenLive {
                 url: "wss://live.example.invalid/ws".to_owned()
             },
@@ -163,7 +169,7 @@ fn main_layout_with_the_inbox_selected_at_120x36() {
     let app = sized(120, 36);
 
     assert_eq!(
-        app.state().projects[app.state().selected_project].name,
+        app.state().store.projects[app.state().selected_project].name,
         "Inbox"
     );
     assert_snapshot!(app.backend());
@@ -270,7 +276,7 @@ fn a_tick_that_changes_nothing_does_not_redraw() {
     send(
         &mut app,
         [Event::Tick {
-            now: now() + chrono::Duration::seconds(61),
+            now: now() + SignedDuration::from_secs(61),
         }],
     );
     let frames = app.frames_drawn();
@@ -278,7 +284,7 @@ fn a_tick_that_changes_nothing_does_not_redraw() {
     send(
         &mut app,
         [Event::Tick {
-            now: now() + chrono::Duration::seconds(62),
+            now: now() + SignedDuration::from_secs(62),
         }],
     );
 
@@ -324,6 +330,99 @@ fn completing_a_recurring_task_sends_item_complete() {
     let command = single_command(&effects);
     assert_eq!(command.args["id"], "t-plants");
     assert_eq!(command.r#type, "item_complete");
+}
+
+#[test]
+fn a_completed_recurring_task_stays_open_with_its_due_pending_until_the_answer() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('j'), key('j'), key('x')]));
+
+    assert!(!task(&app, "t-plants").checked);
+    assert_eq!(app.state().pending_due("t-plants"), Some("every 2 days"));
+    assert!(shows(&app, "every 2 days…"), "{:#?}", screen(&app));
+
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":"ok"}},
+            "items":[{{"id":"t-plants","content":"Water the plants","checked":false,
+              "priority":1,"project_id":"p-inbox","child_order":3,
+              "due":{{"date":"2026-11-26","is_recurring":true,"string":"every 2 days"}}}}]}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid.clone()],
+        result: Ok(delta(&answer)),
+    })
+    .unwrap();
+
+    let plants = task(&app, "t-plants");
+    assert_eq!(plants.due.as_ref().unwrap().date, "2026-11-26");
+    assert!(!plants.checked);
+    assert_eq!(app.state().pending_due("t-plants"), None);
+    assert!(!app.state().is_pending(&command.uuid));
+}
+
+#[test]
+fn a_rejected_recurring_completion_drops_the_pending_due() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('j'), key('j'), key('x')]));
+
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Err(ClientError::Network("offline".to_owned())),
+    })
+    .unwrap();
+
+    assert_eq!(app.state().pending_due("t-plants"), None);
+    assert!(!task(&app, "t-plants").checked);
+}
+
+#[test]
+fn a_flush_answer_merges_the_changes_it_carries_and_takes_its_token() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":"ok"}},
+            "items":[
+              {{"id":"t-milk","content":"Buy oat milk","checked":true,"priority":4,
+               "project_id":"p-inbox","child_order":1}},
+              {{"id":"t-read","content":"Read chapter two","checked":false,"priority":1,
+               "project_id":"p-inbox","child_order":5}}
+            ]}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid.clone()],
+        result: Ok(delta(&answer)),
+    })
+    .unwrap();
+
+    assert!(task(&app, "t-milk").checked);
+    assert_eq!(task(&app, "t-read").content, "Read chapter two");
+    assert_eq!(app.state().sync_token, "fixture-token-2");
+}
+
+#[test]
+fn a_flush_answer_lands_todoist_s_version_of_the_task_it_settles() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":"ok"}},
+            "items":[{{"id":"t-milk","content":"Buy oat milk (normalised)","checked":true,
+              "priority":4,"project_id":"p-inbox","child_order":1}}]}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Ok(delta(&answer)),
+    })
+    .unwrap();
+
+    assert_eq!(task(&app, "t-milk").content, "Buy oat milk (normalised)");
 }
 
 #[test]
@@ -411,6 +510,120 @@ fn a_racing_delta_does_not_clobber_a_task_with_a_pending_command() {
     assert_eq!(task(&app, "t-read").content, "Read chapter two");
 }
 
+const RENAMED_MILK: &str = r#"{"full_sync":false,"sync_token":"fixture-token-2",
+    "items":[{"id":"t-milk","content":"Buy oat milk and bread","checked":false,
+      "priority":4,"project_id":"p-inbox","child_order":1}]}"#;
+
+#[test]
+fn a_racing_delta_is_parked_and_lands_once_the_command_succeeds() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+    app.handle(Event::Synced(Ok(delta(RENAMED_MILK)))).unwrap();
+    assert_eq!(app.state().sync_token, "fixture-token-2");
+    assert_eq!(task(&app, "t-milk").content, "Buy oat milk");
+
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-3",
+            "sync_status":{{"{}":"ok"}}}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Ok(delta(&answer)),
+    })
+    .unwrap();
+
+    assert_eq!(task(&app, "t-milk").content, "Buy oat milk and bread");
+}
+
+#[test]
+fn a_parked_delta_wins_over_the_rollback_snapshot() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+    app.handle(Event::Synced(Ok(delta(RENAMED_MILK)))).unwrap();
+
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Err(ClientError::Network("offline".to_owned())),
+    })
+    .unwrap();
+
+    let milk = task(&app, "t-milk");
+    assert_eq!(milk.content, "Buy oat milk and bread");
+    assert!(!milk.checked);
+    let reason = app.state().rollback_reason("t-milk").map(|f| &f.kind);
+    assert_eq!(reason, Some(&ErrorKind::Offline));
+}
+
+#[test]
+fn a_rejected_write_rolls_back_with_the_validation_kind() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+
+    let rejection = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":{{"error_code":22,"error":"Item not found"}}}}}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Ok(delta(&rejection)),
+    })
+    .unwrap();
+
+    let reason = app.state().rollback_reason("t-milk").map(|f| &f.kind);
+    assert_eq!(reason, Some(&ErrorKind::Validation));
+}
+
+#[test]
+fn a_new_task_s_temp_id_is_a_version_4_uuid() {
+    let mut app = app();
+    send(&mut app, [key('1'), key('a')]);
+    send(&mut app, "Pay rent".chars().map(key));
+    let command = single_command(&send(&mut app, [press(KeyCode::Enter)]));
+
+    let temp_id = command.temp_id.unwrap();
+    assert_eq!(temp_id.len(), 36);
+    assert_eq!(&temp_id[14..15], "4");
+    assert!(matches!(&temp_id[19..20], "8" | "9" | "a" | "b"));
+    assert_ne!(temp_id, command.uuid);
+}
+
+#[test]
+fn a_sync_that_brought_the_new_task_first_leaves_one_copy() {
+    let mut app = app();
+    send(&mut app, [key('1'), key('a')]);
+    send(&mut app, "Pay rent".chars().map(key));
+    let command = single_command(&send(&mut app, [press(KeyCode::Enter)]));
+    let temp_id = command.temp_id.clone().unwrap();
+    app.handle(Event::Synced(Ok(delta(
+        r#"{"full_sync":false,"sync_token":"fixture-token-2",
+            "items":[{"id":"t-rent","content":"Pay rent","checked":false,"priority":1,
+              "project_id":"p-inbox","child_order":9}]}"#,
+    ))))
+    .unwrap();
+
+    let confirmation = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-3",
+            "sync_status":{{"{}":"ok"}},"temp_id_mapping":{{"{temp_id}":"t-rent"}}}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Ok(delta(&confirmation)),
+    })
+    .unwrap();
+
+    let copies = app
+        .state()
+        .store
+        .tasks
+        .iter()
+        .filter(|t| t.content == "Pay rent")
+        .count();
+    assert_eq!(copies, 1);
+}
+
 #[test]
 fn a_confirmed_command_maps_the_temp_id_of_a_new_task() {
     let mut app = app();
@@ -451,7 +664,13 @@ fn a_failed_add_removes_the_optimistic_task() {
     })
     .unwrap();
 
-    assert!(app.state().tasks.iter().all(|t| t.content != "Pay rent"));
+    assert!(
+        app.state()
+            .store
+            .tasks
+            .iter()
+            .all(|t| t.content != "Pay rent")
+    );
 }
 
 #[test]
@@ -512,7 +731,7 @@ fn force_resync_drops_pending_writes_and_reads_everything() {
     let effects = send(&mut app, [key('R'), key('y')]);
 
     assert!(!app.state().is_pending(&command.uuid));
-    assert!(effects.contains(&Effect::PersistSyncToken("*".to_owned())));
+    assert_eq!(app.state().sync_token, "*");
     assert!(
         effects
             .iter()
@@ -520,38 +739,183 @@ fn force_resync_drops_pending_writes_and_reads_everything() {
     );
 }
 
-#[test]
-fn a_live_change_syncs_from_the_last_token() {
-    let mut app = app();
+/// How many syncs `effects` ask for.
+fn sync_count(effects: &[Effect]) -> usize {
+    syncs(effects).len()
+}
 
-    let effects = send(&mut app, [Event::Live(LiveMessage::Changed)]);
-
-    let [Effect::Sync(request)] = effects.as_slice() else {
-        panic!("{effects:?}");
-    };
-    assert_eq!(request.sync_token, "fixture-token-1");
-    assert!(shows(&app, "synced 0s ago"));
+fn live(message: LiveMessage) -> Event {
+    Event::Live(message)
 }
 
 #[test]
-fn a_live_change_while_idle_waits_for_the_next_key() {
+fn ten_live_changes_in_a_second_give_one_sync_after_the_debounce() {
     let mut app = app();
-    send(&mut app, [Event::Live(LiveMessage::Connected)]);
+    send(&mut app, [live(LiveMessage::Connected)]);
+
+    let burst = send(&mut app, (0..10).map(|_| live(LiveMessage::Changed)));
+    let due = send(&mut app, [Event::LiveSyncDue]);
+
+    assert_eq!(
+        burst,
+        vec![Effect::ScheduleLiveSync {
+            after: Duration::from_secs(2)
+        }]
+    );
+    let [Effect::Sync(request)] = due.as_slice() else {
+        panic!("{due:?}");
+    };
+    assert_eq!(request.sync_token, "fixture-token-1");
+}
+
+#[test]
+fn a_steady_stream_of_live_changes_still_syncs_once_per_debounce() {
+    let mut app = app();
+    send(&mut app, [live(LiveMessage::Connected)]);
+
+    let mut synced = 0;
+    for _ in 0..3 {
+        let scheduled = send(&mut app, (0..5).map(|_| live(LiveMessage::Changed)));
+        assert_eq!(scheduled.len(), 1, "{scheduled:?}");
+        synced += sync_count(&send(&mut app, [Event::LiveSyncDue]));
+    }
+
+    assert_eq!(synced, 3);
+}
+
+#[test]
+fn a_dropped_live_connection_polls_every_minute() {
+    let mut app = app();
     send(
         &mut app,
-        [Event::Tick {
-            now: now() + chrono::Duration::minutes(6),
-        }],
+        [
+            live(LiveMessage::Connected),
+            live(LiveMessage::Disconnected),
+        ],
     );
+
+    let polls: Vec<_> = [1, 30, 61, 90, 121]
+        .map(|secs| sync_count(&send(&mut app, [tick(secs)])))
+        .into();
+
+    assert_eq!(polls, vec![0, 0, 1, 0, 1]);
+}
+
+#[test]
+fn a_live_connection_that_never_came_up_polls_too() {
+    let mut app = app();
+
+    send(&mut app, [tick(1)]);
+    let polled = send(&mut app, [tick(61)]);
+
+    assert_eq!(sync_count(&polled), 1);
+}
+
+#[test]
+fn a_live_connection_that_is_up_polls_nothing() {
+    let mut app = app();
+    send(&mut app, [live(LiveMessage::Connected)]);
+
+    let effects = send(&mut app, (1..=200).map(tick));
+
+    assert_eq!(sync_count(&effects), 0);
+}
+
+#[test]
+fn reconnecting_catches_up_once_and_stops_polling() {
+    let mut app = app();
+    send(
+        &mut app,
+        [
+            live(LiveMessage::Connected),
+            live(LiveMessage::Disconnected),
+            tick(1),
+        ],
+    );
+
+    let reconnected = send(&mut app, [live(LiveMessage::Connected)]);
+    let later = send(&mut app, [tick(61), tick(121)]);
+
+    assert_eq!(
+        reconnected,
+        vec![Effect::ScheduleLiveSync {
+            after: Duration::from_secs(2)
+        }]
+    );
+    assert_eq!(sync_count(&later), 0);
+}
+
+#[test]
+fn nothing_polls_before_the_account_loads() {
+    let mut app = App::new(TestBackend::new(120, 36), State::new(now())).unwrap();
+
+    let effects = send(&mut app, [tick(1), tick(61), tick(121)]);
+
+    assert_eq!(sync_count(&effects), 0);
+}
+
+#[test]
+fn idle_pauses_polling_and_live_syncs_until_the_next_key() {
+    let mut app = app();
+    send(&mut app, [live(LiveMessage::Connected)]);
+    send(&mut app, [live(LiveMessage::Changed)]);
+    send(&mut app, [live(LiveMessage::Disconnected), tick(6 * 60)]);
     assert!(shows(&app, "idle, synced 6m ago"), "{:#?}", screen(&app));
 
-    let while_idle = send(&mut app, [Event::Live(LiveMessage::Changed)]);
+    let while_idle = send(
+        &mut app,
+        [
+            Event::LiveSyncDue,
+            live(LiveMessage::Changed),
+            tick(7 * 60),
+            tick(9 * 60),
+        ],
+    );
     let on_key = send(&mut app, [key('y')]);
 
-    assert!(while_idle.is_empty(), "{while_idle:?}");
-    assert!(matches!(on_key.as_slice(), [Effect::Sync(_)]), "{on_key:?}");
-    assert!(shows(&app, "synced 6m ago"));
-    assert!(!shows(&app, "idle"));
+    assert_eq!(sync_count(&while_idle), 0, "{while_idle:?}");
+    assert!(
+        !while_idle
+            .iter()
+            .any(|e| matches!(e, Effect::ScheduleLiveSync { .. })),
+        "{while_idle:?}"
+    );
+    assert_eq!(sync_count(&on_key), 1, "{on_key:?}");
+    assert!(shows(&app, "live, synced 9m ago"));
+}
+
+#[test]
+fn the_first_key_after_idle_syncs_even_without_live_changes() {
+    let mut app = app();
+    send(&mut app, [live(LiveMessage::Connected), tick(6 * 60)]);
+
+    let on_key = send(&mut app, [key('y')]);
+    let next_key = send(&mut app, [key('y')]);
+
+    assert_eq!(sync_count(&on_key), 1, "{on_key:?}");
+    assert_eq!(sync_count(&next_key), 0, "{next_key:?}");
+}
+
+#[test]
+fn the_indicator_says_how_changes_arrive() {
+    let mut app = app();
+    assert!(shows(&app, "polling, synced 0s ago"), "{:#?}", screen(&app));
+
+    send(&mut app, [live(LiveMessage::Connected)]);
+    assert!(shows(&app, "live, synced 0s ago"), "{:#?}", screen(&app));
+
+    send(&mut app, [live(LiveMessage::Disconnected)]);
+    assert!(shows(&app, "polling, synced 0s ago"), "{:#?}", screen(&app));
+
+    send(
+        &mut app,
+        [Event::Synced(Err(ClientError::Network(
+            "connection refused".to_owned(),
+        )))],
+    );
+    let indicator = app.state().indicator().unwrap();
+    assert_eq!(indicator.text, "offline");
+    assert!(indicator.alert);
 }
 
 #[test]
@@ -577,13 +941,13 @@ fn the_standard_preset_completes_with_ctrl_x() {
 }
 
 #[test]
-fn choosing_a_theme_saves_nothing() {
+fn choosing_a_theme_saves_only_the_theme() {
     let mut app = configured(THEME_ON_COMMA);
     send(&mut app, [key(','), press(KeyCode::Down)]);
 
     let effects = send(&mut app, [press(KeyCode::Enter)]);
 
-    assert!(effects.is_empty());
+    assert!(matches!(effects.as_slice(), [Effect::SaveTheme(_)]));
     assert_ne!(app.state().theme_idx, 0);
 }
 
@@ -607,5 +971,490 @@ fn the_completed_filter_asks_for_the_project_s_completed_tasks() {
     assert!(matches!(
         effects.as_slice(),
         [Effect::FetchCompletedTasks(query)] if query.project_id.as_deref() == Some("p-inbox")
+            && query.window == CompletedWindow::latest(now().date())
     ));
+}
+
+fn completed(id: &str, content: &str) -> Task {
+    Task {
+        id: id.to_owned(),
+        content: content.to_owned(),
+        project_id: "p-inbox".to_owned(),
+        checked: true,
+        ..Task::default()
+    }
+}
+
+fn run_from_palette(app: &mut App<TestBackend>, query: &str) -> Vec<Effect> {
+    let mut events = vec![key(':')];
+    events.extend(query.chars().map(key));
+    events.push(press(KeyCode::Enter));
+    send(app, events)
+}
+
+#[test]
+fn load_older_completed_walks_back_one_window_at_a_time() {
+    let mut app = app();
+    let latest = CompletedWindow::latest(now().date());
+    let Effect::FetchCompletedTasks(first) = send(&mut app, [key('1'), key('f'), key('2')])
+        .pop()
+        .unwrap()
+    else {
+        panic!("the completed filter asks for the completed tasks");
+    };
+    assert_eq!(run_from_palette(&mut app, "load older"), Vec::new());
+
+    send(
+        &mut app,
+        [Event::CompletedTasks {
+            query: first,
+            result: Ok(vec![completed("t-new", "Done this month")]),
+        }],
+    );
+    let effects = run_from_palette(&mut app, "load older");
+
+    let [Effect::FetchCompletedTasks(older)] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    assert_eq!(older.project_id.as_deref(), Some("p-inbox"));
+    assert_eq!(older.window, latest.before());
+    assert_eq!(older.window.until, latest.since);
+
+    send(
+        &mut app,
+        [Event::CompletedTasks {
+            query: older.clone(),
+            result: Ok(vec![
+                completed("t-old", "Done last summer"),
+                completed("t-new", "Done this month"),
+            ]),
+        }],
+    );
+
+    let cached = &app.state().completed_cache["p-inbox"];
+    let ids: Vec<&str> = cached.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["t-new", "t-old"]);
+    assert!(shows(&app, "Done last summer"));
+    assert!(shows(
+        &app,
+        &format!("Completed tasks loaded back to {}", older.window.since)
+    ));
+    let next = run_from_palette(&mut app, "load older");
+    assert!(matches!(
+        next.as_slice(),
+        [Effect::FetchCompletedTasks(query)] if query.window == older.window.before()
+    ));
+}
+
+fn tick(after_secs: i64) -> Event {
+    Event::Tick {
+        now: now() + SignedDuration::from_secs(after_secs),
+    }
+}
+
+fn cache_saves(effects: &[Effect]) -> usize {
+    effects.iter().filter(|e| **e == Effect::SaveCache).count()
+}
+
+fn empty_delta(token: &str) -> Event {
+    Event::Synced(Ok(delta(&format!(
+        r#"{{"full_sync": false, "sync_token": "{token}"}}"#
+    ))))
+}
+
+/// The sync tokens of the syncs among `effects`.
+fn syncs(effects: &[Effect]) -> Vec<&str> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Sync(request) => Some(request.sync_token.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_burst_of_merges_writes_the_cache_once_after_the_debounce() {
+    let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
+    let mut effects = send(
+        &mut app,
+        [
+            Event::Synced(Ok(full_sync())),
+            empty_delta("t2"),
+            empty_delta("t3"),
+        ],
+    );
+    assert_eq!(cache_saves(&effects), 0, "nothing is written at once");
+    assert_eq!(cache_saves(&send(&mut app, [tick(1)])), 0, "nor within 2 s");
+
+    effects.extend(send(&mut app, [tick(2), tick(3), tick(10)]));
+
+    assert_eq!(cache_saves(&effects), 1);
+}
+
+#[test]
+fn the_cache_waits_for_unanswered_commands() {
+    let mut app = app();
+    send(&mut app, [tick(3)]);
+    send(&mut app, [key('1'), key('x'), empty_delta("t2")]);
+
+    let effects = send(&mut app, [tick(10)]);
+
+    assert_eq!(cache_saves(&effects), 0);
+    assert_eq!(app.state().unsaved_cache(), None);
+}
+
+#[test]
+fn a_dated_full_sync_is_followed_by_one_incremental_sync() {
+    let mut dated: serde_json::Value = serde_json::from_str(FULL_SYNC).unwrap();
+    dated["full_sync_date_utc"] = "2026-11-20T09:00:00Z".into();
+    let dated: Box<SyncResponse> = Box::new(serde_json::from_value(dated).unwrap());
+
+    let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
+    let after_dated = app.handle(Event::Synced(Ok(dated))).unwrap();
+    let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
+    let after_undated = app.handle(Event::Synced(Ok(full_sync()))).unwrap();
+
+    assert_eq!(syncs(&after_dated), ["fixture-token-1"]);
+    assert!(syncs(&after_undated).is_empty());
+}
+
+#[test]
+fn a_start_from_the_cache_shows_its_tasks_and_asks_for_what_changed() {
+    let cached = sized(80, 24).state().store.clone();
+    let mut state = State::new(now());
+    state.paint_from_cache(cached, "cached-token".to_owned(), "u-1".to_owned());
+    let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
+    assert!(!shows(&app, "Loading your tasks"));
+
+    let effects = app.handle(Event::Start).unwrap();
+
+    let [Effect::Sync(request)] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    assert_eq!(request.sync_token, "cached-token");
+    assert!(request.resource_types.contains(&"user".to_owned()));
+}
+
+#[test]
+fn a_first_answer_from_another_user_discards_the_cache() {
+    let cached = sized(80, 24).state().store.clone();
+    let mut state = State::new(now());
+    state.paint_from_cache(cached, "cached-token".to_owned(), "someone-else".to_owned());
+    let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
+
+    let effects = app
+        .handle(Event::Synced(Ok(delta(
+            r#"{"full_sync": false, "sync_token": "t2", "user": {"id": "u-1"}}"#,
+        ))))
+        .unwrap();
+
+    assert!(app.state().store.tasks.is_empty());
+    assert!(shows(&app, "Loading your tasks"));
+    assert_eq!(syncs(&effects), ["*"]);
+}
+
+#[test]
+fn r_asks_for_the_cache_to_be_rewritten() {
+    let mut app = app();
+    send(&mut app, [tick(3)]);
+
+    send(&mut app, [key('R')]);
+    let effects = send(&mut app, [tick(10)]);
+
+    assert_eq!(app.state().sync_token, "*");
+    assert_eq!(cache_saves(&effects), 1);
+}
+
+/// The app painted from a cache of the fixture's store for `user_id`.
+fn from_cache(user_id: &str) -> App<TestBackend> {
+    let cached = sized(80, 24).state().store.clone();
+    let mut state = State::new(now());
+    state.paint_from_cache(cached, "cached-token".to_owned(), user_id.to_owned());
+    App::new(TestBackend::new(120, 36), state).unwrap()
+}
+
+fn user(id: &str) -> ratatoist::todoist::model::UserInfo {
+    ratatoist::todoist::model::UserInfo {
+        id: id.to_owned(),
+        websocket_url: Some("wss://live.example.invalid/ws".to_owned()),
+        ..Default::default()
+    }
+}
+
+fn fetches_of_the_user(effects: &[Effect]) -> usize {
+    effects.iter().filter(|e| **e == Effect::FetchUser).count()
+}
+
+#[test]
+fn a_first_answer_without_the_user_asks_for_it_once_then_opens_live() {
+    let mut app = from_cache("u-1");
+
+    let mut effects = send(&mut app, [empty_delta("t2"), empty_delta("t3")]);
+    assert_eq!(fetches_of_the_user(&effects), 1);
+    assert!(!effects.iter().any(|e| matches!(e, Effect::OpenLive { .. })));
+
+    effects = send(&mut app, [Event::UserFetched(Ok(user("u-1")))]);
+
+    assert_eq!(
+        effects,
+        [Effect::OpenLive {
+            url: "wss://live.example.invalid/ws".to_owned()
+        }]
+    );
+    assert!(!app.state().store.tasks.is_empty(), "the cached tasks stay");
+}
+
+#[test]
+fn a_first_answer_with_the_user_does_not_ask_for_it() {
+    let mut app = from_cache("u-1");
+
+    let effects = app
+        .handle(Event::Synced(Ok(delta(
+            r#"{"full_sync": false, "sync_token": "t2", "user": {"id": "u-1"}}"#,
+        ))))
+        .unwrap();
+
+    assert_eq!(fetches_of_the_user(&effects), 0);
+}
+
+#[test]
+fn another_user_from_the_fetch_discards_the_cache() {
+    let mut app = from_cache("someone-else");
+    send(&mut app, [empty_delta("t2")]);
+
+    let effects = send(&mut app, [Event::UserFetched(Ok(user("u-1")))]);
+
+    assert!(app.state().store.tasks.is_empty());
+    assert!(shows(&app, "Loading your tasks"));
+    assert_eq!(syncs(&effects), ["*"]);
+}
+
+#[test]
+fn a_failed_fetch_of_the_user_is_logged_keeps_the_cached_tasks_and_asks_again() {
+    let mut app = from_cache("u-1");
+    send(&mut app, [empty_delta("t2")]);
+
+    let effects = send(
+        &mut app,
+        [Event::UserFetched(Err(ClientError::Network(
+            "offline".to_owned(),
+        )))],
+    );
+
+    assert!(effects.is_empty());
+    assert_eq!(app.state().failures.len(), 1);
+    assert!(!app.state().store.tasks.is_empty());
+    let later = send(&mut app, [empty_delta("t3")]);
+    assert_eq!(fetches_of_the_user(&later), 1, "the check is asked again");
+    assert_eq!(app.state().sync_token, "t3");
+}
+
+fn offline() -> Event {
+    Event::Synced(Err(ClientError::Network("offline".to_owned())))
+}
+
+#[test]
+fn after_a_failed_first_sync_a_poll_reads_everything_and_opens_live() {
+    let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
+    send(&mut app, [offline(), tick(1)]);
+
+    let polled = send(&mut app, [tick(61)]);
+    let answered = send(&mut app, [Event::Synced(Ok(full_sync()))]);
+
+    let requests: Vec<_> = polled
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Sync(request) => Some(request),
+            _ => None,
+        })
+        .collect();
+    let [request] = requests.as_slice() else {
+        panic!("{polled:?}");
+    };
+    assert_eq!(request.sync_token, "*");
+    assert!(request.resource_types.contains(&"workspaces".to_owned()));
+    assert!(request.resource_types.contains(&"user".to_owned()));
+    assert!(answered.contains(&Effect::OpenLive {
+        url: "wss://live.example.invalid/ws".to_owned()
+    }));
+}
+
+#[test]
+fn after_a_failed_first_sync_from_the_cache_the_next_answer_checks_the_user() {
+    let mut app = from_cache("someone-else");
+    send(&mut app, [offline()]);
+
+    let effects = app
+        .handle(Event::Synced(Ok(delta(
+            r#"{"full_sync": false, "sync_token": "t2", "user": {"id": "u-1"}}"#,
+        ))))
+        .unwrap();
+
+    assert!(app.state().store.tasks.is_empty());
+    assert_eq!(syncs(&effects), ["*"]);
+}
+
+#[test]
+fn a_later_failed_sync_before_any_success_is_only_logged() {
+    let mut app = from_cache("u-1");
+    send(&mut app, [offline(), key('j')]);
+
+    send(&mut app, [offline()]);
+
+    assert_eq!(app.state().failures.len(), 2);
+    assert!(!shows(&app, "Could not load your tasks"));
+}
+
+/// Adds "Pay rent" to the Inbox and focuses it; the add's command.
+fn add_pay_rent(app: &mut App<TestBackend>) -> SyncCommand {
+    send(app, [key('1'), key('a')]);
+    send(app, "Pay rent".chars().map(key));
+    let add = single_command(&send(app, [press(KeyCode::Enter)]));
+    send(app, [key('g'), key('g')]);
+    for _ in 0..20 {
+        if app.state().selected_task().map(|t| t.content.as_str()) == Some("Pay rent") {
+            return add;
+        }
+        send(app, [key('j')]);
+    }
+    panic!("the new task is not in the list");
+}
+
+/// Todoist's answer to `add`, mapping its temp id to `t-rent`.
+fn add_answered(add: &SyncCommand) -> Event {
+    let temp_id = add.temp_id.clone().unwrap();
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":"ok"}},"temp_id_mapping":{{"{temp_id}":"t-rent"}}}}"#,
+        add.uuid
+    );
+    Event::CommandsSent {
+        uuids: vec![add.uuid.clone()],
+        result: Ok(delta(&answer)),
+    }
+}
+
+#[test]
+fn a_prompt_opened_while_a_new_task_s_add_is_in_flight_writes_to_its_real_id() {
+    let mut app = app();
+    let add = add_pay_rent(&mut app);
+    send(&mut app, [key('E')]);
+    send(&mut app, "On the 1st".chars().map(key));
+
+    send(&mut app, [add_answered(&add)]);
+    let edit = single_command(&send(&mut app, [press(KeyCode::Enter)]));
+
+    assert_eq!(edit.r#type, "item_update");
+    assert_eq!(edit.args["id"], "t-rent");
+    assert_eq!(edit.args["description"], "On the 1st");
+    assert_eq!(task(&app, "t-rent").description, "On the 1st");
+}
+
+#[test]
+fn a_write_to_a_new_task_rejected_after_its_add_answers_rolls_back() {
+    let mut app = app();
+    let add = add_pay_rent(&mut app);
+    let close = single_command(&send(&mut app, [key('x')]));
+
+    send(&mut app, [add_answered(&add)]);
+    let rejection = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-3",
+            "sync_status":{{"{}":{{"error_code":22,"error":"Item not found"}}}}}}"#,
+        close.uuid
+    );
+    send(
+        &mut app,
+        [Event::CommandsSent {
+            uuids: vec![close.uuid],
+            result: Ok(delta(&rejection)),
+        }],
+    );
+
+    let rent = task(&app, "t-rent");
+    assert!(!rent.checked);
+    assert_eq!(rent.id, "t-rent");
+    assert!(app.state().rollback_reason("t-rent").is_some());
+}
+
+/// The fixture's full sync with "Buy oat milk" renamed elsewhere.
+fn full_sync_with_milk_renamed() -> Event {
+    let mut full: serde_json::Value = serde_json::from_str(FULL_SYNC).unwrap();
+    let items = full["items"].as_array_mut().unwrap();
+    let milk = items.iter_mut().find(|t| t["id"] == "t-milk").unwrap();
+    milk["content"] = "Buy oat milk and bread".into();
+    full["sync_token"] = "full-token".into();
+    Event::Synced(Ok(Box::new(serde_json::from_value(full).unwrap())))
+}
+
+fn rejected(command: &SyncCommand) -> Event {
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"after-rejection",
+            "sync_status":{{"{}":{{"error_code":22,"error":"Item not found"}}}}}}"#,
+        command.uuid
+    );
+    Event::CommandsSent {
+        uuids: vec![command.uuid.clone()],
+        result: Ok(delta(&answer)),
+    }
+}
+
+#[test]
+fn a_full_sync_answer_keeps_a_write_in_flight() {
+    let mut app = from_cache("u1");
+    single_command(&send(&mut app, [key('1'), key('x')]));
+
+    send(&mut app, [full_sync_with_milk_renamed()]);
+
+    let milk = task(&app, "t-milk");
+    assert!(milk.checked, "the pending completion survives");
+    assert_eq!(milk.content, "Buy oat milk");
+}
+
+#[test]
+fn a_write_rejected_after_a_full_sync_restores_the_full_sync_s_task() {
+    let mut app = from_cache("u1");
+    let close = single_command(&send(&mut app, [key('1'), key('x')]));
+    send(&mut app, [full_sync_with_milk_renamed()]);
+
+    send(&mut app, [rejected(&close)]);
+
+    let milk = task(&app, "t-milk");
+    assert!(!milk.checked);
+    assert_eq!(milk.content, "Buy oat milk and bread");
+}
+
+#[test]
+fn a_write_to_a_task_a_full_sync_left_out_removes_it_when_rejected() {
+    let mut app = from_cache("u1");
+    let close = single_command(&send(&mut app, [key('1'), key('x')]));
+    let mut full: serde_json::Value = serde_json::from_str(FULL_SYNC).unwrap();
+    full["items"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|t| t["id"] != "t-milk");
+    send(
+        &mut app,
+        [Event::Synced(Ok(Box::new(
+            serde_json::from_value(full).unwrap(),
+        )))],
+    );
+    assert!(task(&app, "t-milk").checked, "kept while in flight");
+
+    send(&mut app, [rejected(&close)]);
+
+    assert!(app.state().store.tasks.iter().all(|t| t.id != "t-milk"));
+}
+
+#[test]
+fn a_full_sync_answer_keeps_a_task_being_added() {
+    let mut app = from_cache("u1");
+    let add = add_pay_rent(&mut app);
+
+    send(
+        &mut app,
+        [full_sync_with_milk_renamed(), add_answered(&add)],
+    );
+
+    assert_eq!(task(&app, "t-rent").content, "Pay rent");
 }

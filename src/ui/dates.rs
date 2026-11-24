@@ -1,8 +1,10 @@
-use chrono::NaiveDate;
+use jiff::Timestamp;
+use jiff::civil::{Date, DateTime, Time};
+use jiff::tz::TimeZone;
 use ratatui::style::Style;
 
 use super::theme::Theme;
-use crate::todoist::model::Due;
+use crate::todoist::model::{Deadline, Due, Duration, DurationUnit, Reminder, ReminderKind};
 
 pub struct FormattedDue {
     pub text: String,
@@ -10,7 +12,8 @@ pub struct FormattedDue {
 }
 
 /// Where a due date falls relative to today. Timed dues count by their
-/// calendar day, so a task due at 09:00 today is due today all day.
+/// calendar day, so a task due at 09:00 today is due today all day; a due
+/// with a fixed timezone counts by its day in the user's zone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DueBucket {
     Overdue,
@@ -22,9 +25,9 @@ pub enum DueBucket {
     NoDate,
 }
 
-/// The bucket `due` falls in on `today`.
-pub fn due_bucket(due: Option<&Due>, today: NaiveDate) -> DueBucket {
-    match due.and_then(|due| days_away(due, today)) {
+/// The bucket `due` falls in on `today`, in `zone`.
+pub fn due_bucket(due: Option<&Due>, today: Date, zone: &TimeZone) -> DueBucket {
+    match due.and_then(|due| days_away(due_day(due, zone)?, today)) {
         None => DueBucket::NoDate,
         Some(days) if days < 0 => DueBucket::Overdue,
         Some(0) => DueBucket::Today,
@@ -33,22 +36,31 @@ pub fn due_bucket(due: Option<&Due>, today: NaiveDate) -> DueBucket {
     }
 }
 
-/// Days from `today` to the calendar day of `due`, negative when past.
-fn days_away(due: &Due, today: NaiveDate) -> Option<i64> {
-    let day = NaiveDate::parse_from_str(date_part(&due.date), "%Y-%m-%d").ok()?;
-    Some((day - today).num_days())
+/// The calendar day `due` falls on in `zone`. A floating or all-day due
+/// names its day as written; a due with a fixed timezone is an instant
+/// (`2026-11-23T05:30:00Z`), which falls on its day in `zone`.
+pub fn due_day(due: &Due, zone: &TimeZone) -> Option<Date> {
+    if let Ok(instant) = due.date.parse::<Timestamp>() {
+        return Some(zone.to_datetime(instant).date());
+    }
+    Date::strptime("%Y-%m-%d", date_part(&due.date)).ok()
 }
 
-/// How `due` reads and looks on `today`.
-pub fn format_due(due: &Due, today: NaiveDate, theme: &Theme) -> FormattedDue {
-    let style = match due_bucket(Some(due), today) {
+/// Days from `today` to `day`, negative when past.
+fn days_away(day: Date, today: Date) -> Option<i32> {
+    Some(day.since(today).ok()?.get_days())
+}
+
+/// How `due` reads and looks on `today`, in `zone`.
+pub fn format_due(due: &Due, today: Date, zone: &TimeZone, theme: &Theme) -> FormattedDue {
+    let style = match due_bucket(Some(due), today, zone) {
         DueBucket::Overdue => theme.due_overdue(),
         DueBucket::Today => theme.due_today(),
         DueBucket::ThisWeek => theme.due_upcoming(),
         DueBucket::Later | DueBucket::NoDate => theme.due_future(),
     };
     FormattedDue {
-        text: display_label(due, days_away(due, today)),
+        text: display_label(due, due_day(due, zone), today),
         style,
     }
 }
@@ -58,16 +70,88 @@ pub fn format_due(due: &Due, today: NaiveDate, theme: &Theme) -> FormattedDue {
 /// string the user typed: that names the day relative to when it was typed
 /// ("tomorrow" goes stale the next day) and, for a recurring task, the rule
 /// rather than the next date. The detail shows the rule beside the date.
-fn display_label(due: &Due, days_away: Option<i64>) -> String {
-    let day = match days_away {
-        Some(0) => "today".to_string(),
-        Some(1) => "tomorrow".to_string(),
-        Some(-1) => "yesterday".to_string(),
-        _ => format_short_date(date_part(&due.date)),
+fn display_label(due: &Due, day: Option<Date>, today: Date) -> String {
+    let day = match day {
+        Some(day) => day_label(day, today),
+        None => date_part(&due.date).to_string(),
     };
     match time_part(due) {
         Some(time) => format!("{day} {time}"),
         None => day,
+    }
+}
+
+/// `day` relative to `today` where that is near, else as `Nov 28`.
+fn day_label(day: Date, today: Date) -> String {
+    match days_away(day, today) {
+        Some(0) => "today".to_string(),
+        Some(1) => "tomorrow".to_string(),
+        Some(-1) => "yesterday".to_string(),
+        _ => day.strftime("%b %-d").to_string(),
+    }
+}
+
+/// When `deadline` is, as `tomorrow` or `Dec 1`, in the deadline style, or
+/// the missed one once its day has passed; `None` when its date does not
+/// parse.
+pub fn format_deadline(deadline: &Deadline, today: Date, theme: &Theme) -> Option<FormattedDue> {
+    let day = Date::strptime("%Y-%m-%d", &deadline.date).ok()?;
+    let style = if day < today {
+        theme.deadline_missed()
+    } else {
+        theme.deadline()
+    };
+    Some(FormattedDue {
+        text: day_label(day, today),
+        style,
+    })
+}
+
+/// How long `duration` is, as `45 min`, `1 h 30 min` or `2 days`.
+pub fn format_duration(duration: &Duration) -> String {
+    match duration.unit {
+        DurationUnit::Minute => minutes(i64::from(duration.amount)),
+        DurationUnit::Day => plural(i64::from(duration.amount), "day"),
+        DurationUnit::Other => duration.amount.to_string(),
+    }
+}
+
+/// `count` minutes in hours and minutes, as `1 h 30 min`.
+fn minutes(count: i64) -> String {
+    match (count / 60, count % 60) {
+        (0, minutes) => format!("{minutes} min"),
+        (hours, 0) => format!("{hours} h"),
+        (hours, minutes) => format!("{hours} h {minutes} min"),
+    }
+}
+
+fn plural(count: i64, unit: &str) -> String {
+    let s = if count == 1 { "" } else { "s" };
+    format!("{count} {unit}{s}")
+}
+
+/// When `reminder` goes off, as `30 min before` or `tomorrow 8:00` in
+/// `zone`; `None` for a location reminder or a kind this version does not
+/// know, which the detail leaves out.
+pub fn format_reminder(reminder: &Reminder, today: Date, zone: &TimeZone) -> Option<String> {
+    match reminder.kind {
+        ReminderKind::Relative => Some(match reminder.minute_offset.unwrap_or(0) {
+            0 => "at the due time".to_owned(),
+            offset => format!("{} before", minutes(offset)),
+        }),
+        ReminderKind::Absolute => {
+            let due = reminder.due.as_ref()?;
+            let at = match due.date.parse::<Timestamp>() {
+                Ok(instant) => zone.to_datetime(instant),
+                Err(_) => due.date.parse::<DateTime>().ok()?,
+            };
+            Some(format!(
+                "{} {}",
+                day_label(at.date(), today),
+                at.time().strftime("%-H:%M")
+            ))
+        }
+        ReminderKind::Location | ReminderKind::Other => None,
     }
 }
 
@@ -80,10 +164,10 @@ fn time_part(due: &Due) -> Option<String> {
     if time.ends_with('Z') {
         return None;
     }
-    let parsed = chrono::NaiveTime::parse_from_str(time, "%H:%M:%S")
-        .or_else(|_| chrono::NaiveTime::parse_from_str(time, "%H:%M"))
+    let parsed = Time::strptime("%H:%M:%S", time)
+        .or_else(|_| Time::strptime("%H:%M", time))
         .ok()?;
-    Some(parsed.format("%-H:%M").to_string())
+    Some(parsed.strftime("%-H:%M").to_string())
 }
 
 /// The calendar-date portion of a Todoist due date, which may be a bare
@@ -92,29 +176,114 @@ pub fn date_part(due_date: &str) -> &str {
     due_date.split('T').next().unwrap_or(due_date)
 }
 
-fn format_short_date(date_str: &str) -> String {
-    match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-        Ok(day) => day.format("%b %-d").to_string(),
-        Err(_) => date_str.to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use chrono::NaiveDate;
+    use jiff::civil::{Date, date};
+    use jiff::tz::{self, TimeZone};
 
-    use super::{DueBucket, date_part, due_bucket, format_due};
-    use crate::todoist::model::Due;
+    use super::{
+        DueBucket, date_part, due_bucket, format_deadline, format_due, format_duration,
+        format_reminder,
+    };
+    use crate::todoist::model::{Deadline, Due, Duration, DurationUnit, Reminder, ReminderKind};
     use crate::ui::theme::Theme;
 
-    fn sunday() -> NaiveDate {
-        NaiveDate::from_ymd_opt(2026, 11, 22).unwrap()
+    const UTC: TimeZone = TimeZone::UTC;
+
+    fn sunday() -> Date {
+        date(2026, 11, 22)
+    }
+
+    fn monday() -> Date {
+        date(2026, 11, 23)
+    }
+
+    /// UTC-6, as `America/Mexico_City`.
+    fn west() -> TimeZone {
+        TimeZone::fixed(tz::offset(-6))
+    }
+
+    /// UTC+9, as `Asia/Tokyo`.
+    fn east() -> TimeZone {
+        TimeZone::fixed(tz::offset(9))
+    }
+
+    fn deadline(date: &str) -> Deadline {
+        Deadline {
+            date: date.to_owned(),
+            lang: None,
+        }
+    }
+
+    #[test]
+    fn a_deadline_reads_relative_to_today_and_is_missed_once_past() {
+        let theme = Theme::built_in("nord").unwrap();
+        let on = |date: &str| format_deadline(&deadline(date), monday(), &theme).unwrap();
+
+        assert_eq!(on("2026-11-23").text, "today");
+        assert_eq!(on("2026-11-23").style, theme.deadline());
+        assert_eq!(on("2026-12-01").text, "Dec 1");
+        assert_eq!(on("2026-11-20").text, "Nov 20");
+        assert_eq!(on("2026-11-20").style, theme.deadline_missed());
+        assert!(format_deadline(&deadline(""), monday(), &theme).is_none());
+    }
+
+    #[test]
+    fn a_duration_reads_in_minutes_hours_or_days() {
+        let of = |amount, unit| format_duration(&Duration { amount, unit });
+
+        assert_eq!(of(45, DurationUnit::Minute), "45 min");
+        assert_eq!(of(60, DurationUnit::Minute), "1 h");
+        assert_eq!(of(90, DurationUnit::Minute), "1 h 30 min");
+        assert_eq!(of(1, DurationUnit::Day), "1 day");
+        assert_eq!(of(3, DurationUnit::Day), "3 days");
+        assert_eq!(of(2, DurationUnit::Other), "2");
+    }
+
+    #[test]
+    fn reminders_read_as_an_offset_or_a_local_time_and_location_ones_hide() {
+        let relative = |offset| Reminder {
+            kind: ReminderKind::Relative,
+            minute_offset: Some(offset),
+            ..Reminder::default()
+        };
+        let absolute = |date: &str| Reminder {
+            kind: ReminderKind::Absolute,
+            due: Some(due(date)),
+            ..Reminder::default()
+        };
+        let read = |reminder: &Reminder, zone: &TimeZone| format_reminder(reminder, monday(), zone);
+
+        assert_eq!(read(&relative(30), &UTC).unwrap(), "30 min before");
+        assert_eq!(read(&relative(0), &UTC).unwrap(), "at the due time");
+        let utc = absolute("2026-11-24T08:00:00.000000Z");
+        assert_eq!(read(&utc, &UTC).unwrap(), "tomorrow 8:00");
+        assert_eq!(read(&utc, &east()).unwrap(), "tomorrow 17:00");
+        assert_eq!(read(&utc, &west()).unwrap(), "tomorrow 2:00");
+        assert_eq!(
+            read(&absolute("2026-11-30T18:30:00"), &east()).unwrap(),
+            "Nov 30 18:30"
+        );
+        let location = Reminder {
+            kind: ReminderKind::Location,
+            ..Reminder::default()
+        };
+        assert!(read(&location, &UTC).is_none());
+        assert!(read(&Reminder::default(), &UTC).is_none());
     }
 
     fn due(date: &str) -> Due {
         Due {
             date: date.to_owned(),
             ..Due::default()
+        }
+    }
+
+    /// A due with a fixed timezone: Todoist sends its instant in UTC.
+    fn fixed(date: &str) -> Due {
+        Due {
+            timezone: Some("America/Mexico_City".to_owned()),
+            ..due(date)
         }
     }
 
@@ -126,7 +295,7 @@ mod tests {
             ..due("2026-11-22")
         };
 
-        assert_eq!(format_due(&stale, sunday(), theme).text, "today");
+        assert_eq!(format_due(&stale, sunday(), &UTC, theme).text, "today");
     }
 
     #[test]
@@ -138,14 +307,17 @@ mod tests {
             ..due("2026-11-28T17:00:00")
         };
 
-        assert_eq!(format_due(&recurring, sunday(), theme).text, "Nov 28 17:00");
+        assert_eq!(
+            format_due(&recurring, sunday(), &UTC, theme).text,
+            "Nov 28 17:00"
+        );
     }
 
     #[test]
     fn a_timed_due_earlier_today_reads_and_looks_like_today() {
         let theme = &Theme::built_in("nord").unwrap();
 
-        let formatted = format_due(&due("2026-11-22T09:00:00"), sunday(), theme);
+        let formatted = format_due(&due("2026-11-22T09:00:00"), sunday(), &UTC, theme);
 
         assert_eq!(formatted.text, "today 9:00");
         assert_eq!(formatted.style, theme.due_today());
@@ -155,7 +327,7 @@ mod tests {
     fn a_timed_due_yesterday_looks_overdue() {
         let theme = &Theme::built_in("nord").unwrap();
 
-        let formatted = format_due(&due("2026-11-21T18:30:00Z"), sunday(), theme);
+        let formatted = format_due(&due("2026-11-21T18:30:00Z"), sunday(), &UTC, theme);
 
         assert_eq!(formatted.text, "yesterday");
         assert_eq!(formatted.style, theme.due_overdue());
@@ -169,7 +341,7 @@ mod tests {
     }
 
     fn bucket(date: &str) -> DueBucket {
-        due_bucket(Some(&due(date)), sunday())
+        due_bucket(Some(&due(date)), sunday(), &UTC)
     }
 
     #[test]
@@ -188,6 +360,17 @@ mod tests {
     }
 
     #[test]
+    fn floating_dues_keep_the_day_they_name_in_any_zone() {
+        for zone in [west(), east()] {
+            let on = |date: &str| due_bucket(Some(&due(date)), sunday(), &zone);
+            assert_eq!(on("2026-11-22"), DueBucket::Today);
+            assert_eq!(on("2026-11-22T00:00:00"), DueBucket::Today);
+            assert_eq!(on("2026-11-22T23:59:59"), DueBucket::Today);
+            assert_eq!(on("2026-11-23T00:00:00"), DueBucket::ThisWeek);
+        }
+    }
+
+    #[test]
     fn week_boundaries_for_all_day_dues() {
         assert_eq!(bucket("2026-11-28"), DueBucket::ThisWeek);
         assert_eq!(bucket("2026-11-29"), DueBucket::Later);
@@ -200,15 +383,102 @@ mod tests {
     }
 
     #[test]
-    fn a_fixed_timezone_due_counts_by_the_day_it_names() {
+    fn a_fixed_timezone_due_counts_by_its_day_in_the_users_zone() {
         assert_eq!(bucket("2026-11-21T23:00:00Z"), DueBucket::Overdue);
         assert_eq!(bucket("2026-11-22T08:00:00Z"), DueBucket::Today);
+        let in_zone = |date: &str, zone| due_bucket(Some(&fixed(date)), sunday(), &zone);
+        assert_eq!(in_zone("2026-11-21T23:00:00Z", east()), DueBucket::Today);
+        assert_eq!(in_zone("2026-11-22T03:00:00Z", west()), DueBucket::Overdue);
+    }
+
+    #[test]
+    fn a_fixed_due_late_tonight_west_of_utc_is_due_today() {
+        let theme = &Theme::built_in("nord").unwrap();
+        let tonight = fixed("2026-11-23T05:30:00Z");
+
+        assert_eq!(
+            due_bucket(Some(&tonight), sunday(), &west()),
+            DueBucket::Today
+        );
+        let formatted = format_due(&tonight, sunday(), &west(), theme);
+        assert_eq!(formatted.text, "today");
+        assert_eq!(formatted.style, theme.due_today());
+    }
+
+    #[test]
+    fn a_fixed_due_early_tomorrow_east_of_utc_is_due_tomorrow() {
+        let theme = &Theme::built_in("nord").unwrap();
+        let tomorrow_morning = fixed("2026-11-22T23:00:00Z");
+
+        assert_eq!(
+            due_bucket(Some(&tomorrow_morning), sunday(), &east()),
+            DueBucket::ThisWeek
+        );
+        assert_eq!(
+            format_due(&tomorrow_morning, sunday(), &east(), theme).text,
+            "tomorrow"
+        );
+        assert_eq!(
+            due_bucket(Some(&tomorrow_morning), monday(), &east()),
+            DueBucket::Today
+        );
+        assert_eq!(
+            format_due(&tomorrow_morning, monday(), &east(), theme).text,
+            "today"
+        );
+    }
+
+    #[test]
+    fn a_fixed_due_turns_over_at_local_midnight() {
+        let theme = &Theme::built_in("nord").unwrap();
+        // 23:59 and 00:00 local, on both sides of UTC.
+        for (zone, last_minute, midnight) in [
+            (west(), "2026-11-23T05:59:00Z", "2026-11-23T06:00:00Z"),
+            (east(), "2026-11-22T14:59:00Z", "2026-11-22T15:00:00Z"),
+        ] {
+            let on = |date: &str| due_bucket(Some(&fixed(date)), sunday(), &zone);
+            let reads = |date: &str| format_due(&fixed(date), sunday(), &zone, theme).text;
+            assert_eq!(on(last_minute), DueBucket::Today, "{zone:?}");
+            assert_eq!(reads(last_minute), "today", "{zone:?}");
+            assert_eq!(on(midnight), DueBucket::ThisWeek, "{zone:?}");
+            assert_eq!(reads(midnight), "tomorrow", "{zone:?}");
+        }
+    }
+
+    #[test]
+    fn a_fixed_due_before_local_midnight_today_is_overdue() {
+        let late_yesterday = fixed("2026-11-22T05:59:00Z");
+        let midnight = fixed("2026-11-22T06:00:00Z");
+
+        assert_eq!(
+            due_bucket(Some(&late_yesterday), sunday(), &west()),
+            DueBucket::Overdue
+        );
+        assert_eq!(
+            due_bucket(Some(&midnight), sunday(), &west()),
+            DueBucket::Today
+        );
+    }
+
+    #[test]
+    fn a_due_with_an_offset_counts_as_an_instant() {
+        assert_eq!(
+            due_bucket(Some(&due("2026-11-23T05:30:00+00:00")), sunday(), &west()),
+            DueBucket::Today
+        );
+    }
+
+    #[test]
+    fn a_far_fixed_due_reads_as_its_local_date() {
+        let theme = &Theme::built_in("nord").unwrap();
+        let formatted = format_due(&fixed("2026-12-13T03:00:00Z"), sunday(), &west(), theme);
+        assert_eq!(formatted.text, "Dec 12");
     }
 
     #[test]
     fn the_week_crosses_a_month_and_a_year() {
-        let new_years_eve = NaiveDate::from_ymd_opt(2026, 12, 31).unwrap();
-        let on = |date: &str| due_bucket(Some(&due(date)), new_years_eve);
+        let new_years_eve = date(2026, 12, 31);
+        let on = |date: &str| due_bucket(Some(&due(date)), new_years_eve, &UTC);
         assert_eq!(on("2026-12-30"), DueBucket::Overdue);
         assert_eq!(on("2027-01-06T10:00:00"), DueBucket::ThisWeek);
         assert_eq!(on("2027-01-07"), DueBucket::Later);
@@ -216,7 +486,7 @@ mod tests {
 
     #[test]
     fn no_due_or_an_unreadable_one_has_no_date() {
-        assert_eq!(due_bucket(None, sunday()), DueBucket::NoDate);
+        assert_eq!(due_bucket(None, sunday(), &UTC), DueBucket::NoDate);
         assert_eq!(bucket("not-a-date"), DueBucket::NoDate);
         assert_eq!(bucket("2026/11/22"), DueBucket::NoDate);
         assert_eq!(bucket(""), DueBucket::NoDate);
@@ -225,7 +495,7 @@ mod tests {
     #[test]
     fn a_due_without_a_string_reads_as_a_short_date() {
         let theme = &Theme::built_in("nord").unwrap();
-        let formatted = format_due(&due("2026-12-12T18:00:00"), sunday(), theme);
+        let formatted = format_due(&due("2026-12-12T18:00:00"), sunday(), &UTC, theme);
         assert_eq!(formatted.text, "Dec 12 18:00");
         assert_eq!(formatted.style, theme.due_future());
     }

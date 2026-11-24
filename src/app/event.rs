@@ -1,9 +1,10 @@
 use crossterm::event::KeyEvent;
 use semver::Version;
 
-use crate::todoist::model::{Comment, Task};
+use crate::config_write::ThemeNotSaved;
+use crate::todoist::model::{Comment, Task, UserInfo};
 use crate::todoist::sync::SyncResponse;
-use crate::todoist::{ClientError, LiveMessage};
+use crate::todoist::{ClientError, CompletedQuery, LiveMessage};
 
 /// Everything that can change what ratatoist shows.
 #[derive(Debug)]
@@ -20,7 +21,7 @@ pub enum Event {
     },
     /// The clock moved on: the runtime sends the current time.
     Tick {
-        now: chrono::DateTime<chrono::Local>,
+        now: jiff::Zoned,
     },
     /// The answer to [`super::Effect::Sync`].
     Synced(Result<Box<SyncResponse>, ClientError>),
@@ -38,14 +39,23 @@ pub enum Event {
     },
     /// The answer to [`super::Effect::FetchCompletedTasks`].
     CompletedTasks {
-        project_id: Option<String>,
+        query: CompletedQuery,
         result: Result<Vec<Task>, ClientError>,
     },
+    /// The answer to [`super::Effect::FetchUser`].
+    UserFetched(Result<UserInfo, ClientError>),
     /// A message from the connection [`super::Effect::OpenLive`] opened.
     Live(LiveMessage),
+    /// The answer to [`super::Effect::ScheduleLiveSync`].
+    LiveSyncDue,
     /// The answer to [`super::Effect::CheckRelease`]: the latest stable
     /// release, or `None` when the check failed, which the runtime logged.
     ReleaseChecked(Option<Version>),
+    /// The answer to [`super::Effect::SaveTheme`] for the theme `slug`.
+    ThemeSaved {
+        slug: String,
+        result: Result<(), ThemeNotSaved>,
+    },
     /// SIGINT, SIGTERM or SIGHUP: quit through the normal path.
     Shutdown,
 }

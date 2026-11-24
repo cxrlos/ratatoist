@@ -6,7 +6,9 @@
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::{DateTime, Local, TimeZone};
+use jiff::civil::date;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Zoned};
 use ratatoist::app::{ErrorKind, Failure};
 use ratatoist::auth::ApiToken;
 use ratatoist::todoist::sync::{SyncCommandResult, SyncRequest};
@@ -25,10 +27,10 @@ fn fixture(name: &str) -> Value {
     serde_json::from_str(&text).unwrap()
 }
 
-fn now() -> DateTime<Local> {
-    Local
-        .with_ymd_and_hms(2026, 11, 23, 9, 0, 0)
-        .earliest()
+fn now() -> Zoned {
+    date(2026, 11, 23)
+        .at(9, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
         .unwrap()
 }
 
@@ -68,7 +70,7 @@ async fn sync_error(response: ResponseTemplate) -> ClientError {
 async fn a_401_is_a_rejected_token() {
     let error = sync_error(ResponseTemplate::new(401)).await;
 
-    assert_eq!(ErrorKind::of(&error, now()), ErrorKind::TokenRejected);
+    assert_eq!(ErrorKind::of(&error, &now()), ErrorKind::TokenRejected);
 }
 
 #[tokio::test]
@@ -76,12 +78,12 @@ async fn a_429_is_rate_limited_until_its_retry_after() {
     let body = fixture("HYPOTHETICAL_rate_limited.json");
     let error = sync_error(ResponseTemplate::new(429).set_body_json(body)).await;
 
-    let kind = ErrorKind::of(&error, now());
+    let kind = ErrorKind::of(&error, &now());
 
     assert_eq!(
         kind,
         ErrorKind::RateLimited {
-            until: Some(now() + chrono::Duration::seconds(30))
+            until: Some(now() + SignedDuration::from_secs(30))
         }
     );
     assert_eq!(
@@ -95,7 +97,7 @@ async fn a_500_is_a_server_error() {
     let body = fixture("HYPOTHETICAL_server_error.json");
     let error = sync_error(ResponseTemplate::new(500).set_body_json(body)).await;
 
-    assert_eq!(ErrorKind::of(&error, now()), ErrorKind::Server);
+    assert_eq!(ErrorKind::of(&error, &now()), ErrorKind::Server);
 }
 
 #[tokio::test]
@@ -114,7 +116,7 @@ async fn a_request_that_times_out_is_offline() {
         .await
         .unwrap_err();
 
-    assert_eq!(ErrorKind::of(&error, now()), ErrorKind::Offline);
+    assert_eq!(ErrorKind::of(&error, &now()), ErrorKind::Offline);
 }
 
 #[tokio::test]
@@ -124,7 +126,7 @@ async fn a_refused_connection_is_offline() {
         .await
         .unwrap_err();
 
-    assert_eq!(ErrorKind::of(&error, now()), ErrorKind::Offline);
+    assert_eq!(ErrorKind::of(&error, &now()), ErrorKind::Offline);
 }
 
 #[tokio::test]
@@ -148,7 +150,7 @@ async fn a_sync_status_error_is_a_validation_failure_with_todoist_s_message() {
             SyncCommandResult::Err(error) => Some(Failure::from_command(
                 "complete \"Buy oat milk\"",
                 error,
-                now(),
+                &now(),
             )),
             SyncCommandResult::Ok(_) => None,
         })
@@ -181,7 +183,7 @@ fn every_kind_has_a_name_a_summary_and_a_fix() {
 
 #[test]
 fn other_client_errors_map_by_what_they_say() {
-    let at = now();
+    let at = &now();
     let http = |status| ClientError::Http {
         status,
         message: String::new(),

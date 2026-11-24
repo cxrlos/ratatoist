@@ -2,41 +2,43 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use chrono::{DateTime, Days, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatoist::app::{App, Effect, Event, State};
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
+use jiff::{ToSpan, Zoned};
+use ratatoist::app::{App, Effect, Event, State, command_request};
 use ratatoist::todoist::demo::{self, DemoClient};
-use ratatoist::todoist::model::{CompletedTasksResponse, Task};
+use ratatoist::todoist::model::{CompletedTasksResponse, ReminderKind, Task};
 use ratatoist::todoist::sync::{SyncCommand, SyncRequest, SyncResponse};
-use ratatoist::todoist::{CompletedQuery, TodoistClient};
+use ratatoist::todoist::{CompletedQuery, CompletedWindow, TodoistClient};
 use ratatui::backend::TestBackend;
 use serde_json::json;
 
-fn today() -> NaiveDate {
+fn today() -> Date {
     demo::NOW.date()
 }
 
-fn now() -> DateTime<Local> {
-    Local.from_local_datetime(&demo::NOW).earliest().unwrap()
+fn now() -> Zoned {
+    demo::NOW.to_zoned(TimeZone::UTC).unwrap()
+}
+
+/// The demo account built on `day`, in UTC.
+fn on(day: Date) -> Zoned {
+    day.to_zoned(TimeZone::UTC).unwrap()
 }
 
 fn day(offset: i64) -> String {
-    let date = if offset < 0 {
-        today() - Days::new(offset.unsigned_abs())
-    } else {
-        today() + Days::new(offset.unsigned_abs())
-    };
-    date.format("%Y-%m-%d").to_string()
+    (today() + offset.days()).to_string()
 }
 
 fn sync() -> SyncResponse {
-    serde_json::from_value(demo::account(today()).sync).unwrap()
+    serde_json::from_value(demo::account(&now()).sync).unwrap()
 }
 
 fn completed() -> Vec<Task> {
     let response: CompletedTasksResponse =
-        serde_json::from_value(demo::account(today()).completed).unwrap();
-    response.items.into_iter().map(|r| r.into_task()).collect()
+        serde_json::from_value(demo::account(&now()).completed).unwrap();
+    response.into_tasks()
 }
 
 fn tasks() -> Vec<Task> {
@@ -49,14 +51,14 @@ fn due_date(task: &Task) -> Option<&str> {
 
 #[test]
 fn two_builds_of_the_account_are_equal() {
-    assert_eq!(demo::account(today()), demo::account(today()));
+    assert_eq!(demo::account(&now()), demo::account(&now()));
 }
 
 #[test]
 fn the_account_is_dated_from_the_day_it_is_built_for() {
-    let later = today() + Days::new(40);
-    let account: SyncResponse = serde_json::from_value(demo::account(later).sync).unwrap();
-    let later = later.format("%Y-%m-%d").to_string();
+    let later = today() + 40.days();
+    let account: SyncResponse = serde_json::from_value(demo::account(&on(later)).sync).unwrap();
+    let later = later.to_string();
 
     assert!(
         account
@@ -80,10 +82,34 @@ fn the_account_for_now_has_fixed_dates() {
 }
 
 #[test]
+fn the_account_shows_deadlines_durations_and_reminders() {
+    let account = sync();
+    let tasks = account.items.unwrap();
+    let task = |id: &str| tasks.iter().find(|t| t.id == id).unwrap();
+    let reminders = account.reminders.unwrap();
+
+    assert_eq!(task("t-shopping").deadline.as_ref().unwrap().date, day(1));
+    assert_eq!(task("t-quotes").deadline.as_ref().unwrap().date, day(-2));
+    assert_eq!(task("t-plumber").duration.as_ref().unwrap().amount, 15);
+    let kinds: Vec<(&str, ReminderKind)> = reminders
+        .iter()
+        .map(|r| (r.item_id.as_str(), r.kind))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ("t-plumber", ReminderKind::Absolute),
+            ("t-cake", ReminderKind::Relative),
+            ("t-library", ReminderKind::Location),
+        ]
+    );
+}
+
+#[test]
 fn weekday_recurrences_name_the_day_they_are_due_on_any_day() {
     for offset in 0..7 {
-        let built = today() + Days::new(offset);
-        let account: SyncResponse = serde_json::from_value(demo::account(built).sync).unwrap();
+        let built = today() + offset.days();
+        let account: SyncResponse = serde_json::from_value(demo::account(&on(built)).sync).unwrap();
         for task in account.items.unwrap() {
             let Some(due) = task.due.filter(|d| d.is_recurring) else {
                 continue;
@@ -95,11 +121,13 @@ fn weekday_recurrences_name_the_day_they_are_due_on_any_day() {
                 .unwrap()
                 .trim_start_matches("every ");
             let named: Vec<&str> = days.split(", ").collect();
-            if !named.iter().all(|d| d.parse::<chrono::Weekday>().is_ok()) {
+            const WEEKDAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+            if !named.iter().all(|d| WEEKDAYS.contains(d)) {
                 continue;
             }
-            let date = NaiveDate::parse_from_str(&due.date[..10], "%Y-%m-%d").unwrap();
-            let weekday = date.format("%a").to_string().to_lowercase();
+            let date: Date = due.date[..10].parse().unwrap();
+            let weekday = date.strftime("%a").to_string().to_lowercase();
+
             assert!(named.contains(&weekday.as_str()));
         }
     }
@@ -370,11 +398,7 @@ async fn drive(
                 Effect::Sync(request) => Event::Synced(client.sync(request).await.map(Box::new)),
                 Effect::SendCommands(commands) => {
                     let uuids = commands.iter().map(|c| c.uuid.clone()).collect();
-                    let request = SyncRequest {
-                        sync_token: app.state().sync_token.clone(),
-                        resource_types: vec![],
-                        commands,
-                    };
+                    let request = command_request(&app.state().sync_token, commands);
                     let result = client.sync(request).await.map(Box::new);
                     Event::CommandsSent { uuids, result }
                 }
@@ -387,9 +411,8 @@ async fn drive(
                     }
                 }
                 Effect::FetchCompletedTasks(query) => {
-                    let project_id = query.project_id.clone();
-                    let result = client.completed_tasks(query).await;
-                    Event::CompletedTasks { project_id, result }
+                    let result = client.completed_tasks(query.clone()).await;
+                    Event::CompletedTasks { query, result }
                 }
                 _ => continue,
             };
@@ -422,7 +445,7 @@ fn loads_through_the_normal_sync_path() {
 
 #[tokio::test]
 async fn starts_with_tasks_visible_and_never_opens_the_live_connection() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
 
     let (app, effects) = started(&client).await;
 
@@ -435,7 +458,7 @@ async fn starts_with_tasks_visible_and_never_opens_the_live_connection() {
 
 #[tokio::test]
 async fn completing_a_task_keeps_it_completed_and_lists_it_under_done() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
     let (mut app, _) = started(&client).await;
     drive(&mut app, &client, [key('1')]).await;
     let first = app.state().visible_tasks()[0].clone();
@@ -450,8 +473,39 @@ async fn completing_a_task_keeps_it_completed_and_lists_it_under_done() {
 }
 
 #[tokio::test]
+async fn completing_a_recurring_task_shows_its_next_date_after_one_flush() {
+    let client = demo::client(&now());
+    let (mut app, _) = started(&client).await;
+    drive(&mut app, &client, [key('2')]).await;
+    let (at, before) = app
+        .state()
+        .visible_tasks()
+        .iter()
+        .enumerate()
+        .find(|(_, t)| t.due.as_ref().is_some_and(|d| d.is_recurring))
+        .map(|(at, t)| (at, (*t).clone()))
+        .unwrap();
+
+    let moves = (0..at).map(|_| key('j'));
+    let effects = drive(&mut app, &client, moves.chain([key('x')])).await;
+
+    let syncs = effects
+        .iter()
+        .filter(|e| matches!(e, Effect::Sync(_)))
+        .count();
+    assert_eq!(syncs, 0, "the flush answer alone carries the next date");
+    let after = app.state().store.tasks.by_id(&before.id).unwrap();
+    assert!(!after.checked);
+    assert_ne!(
+        after.due.as_ref().unwrap().date,
+        before.due.as_ref().unwrap().date
+    );
+    assert_eq!(app.state().pending_due(&before.id), None);
+}
+
+#[tokio::test]
 async fn an_added_task_stays_under_its_new_id_and_survives_a_full_sync() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
     let (mut app, _) = started(&client).await;
 
     drive(&mut app, &client, [key('1'), key('a')]).await;
@@ -460,11 +514,12 @@ async fn an_added_task_stays_under_its_new_id_and_survives_a_full_sync() {
 
     let added = app
         .state()
+        .store
         .tasks
         .iter()
         .find(|t| t.content == "Feed the parrot")
         .unwrap();
-    assert!(!added.id.starts_with("tmp_"));
+    assert!(added.id.starts_with("demo-"), "{}", added.id);
     assert!(shows(&app, "Feed the parrot"));
     drive(&mut app, &client, [key('R')]).await;
     assert!(shows(&app, "Feed the parrot"));
@@ -472,7 +527,7 @@ async fn an_added_task_stays_under_its_new_id_and_survives_a_full_sync() {
 
 #[tokio::test]
 async fn a_comment_stays_after_the_comments_reload() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
     let (mut app, _) = started(&client).await;
 
     drive(
@@ -496,7 +551,7 @@ async fn a_comment_stays_after_the_comments_reload() {
 
 #[tokio::test]
 async fn comments_are_served_per_task() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
     let account = sync();
     let notes = account.notes.unwrap();
     let task_id = notes[0].item_id.clone().unwrap();
@@ -513,19 +568,31 @@ async fn comments_are_served_per_task() {
 
 #[tokio::test]
 async fn completed_tasks_are_served_per_project() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
     let project_id = completed()[0].project_id.clone();
 
     let served = client
         .completed_tasks(CompletedQuery {
             project_id: Some(project_id.clone()),
-            since: None,
+            window: CompletedWindow::latest(today()),
         })
         .await
         .unwrap();
 
     assert!(!served.is_empty());
     assert!(served.iter().all(|t| t.project_id == project_id));
+}
+
+#[tokio::test]
+async fn completed_tasks_are_served_per_window() {
+    let client = demo::client(&now());
+    let older = CompletedQuery {
+        project_id: None,
+        window: CompletedWindow::latest(today()).before(),
+    };
+
+    assert_eq!(done(&client).await.len(), completed().len());
+    assert!(client.completed_tasks(older).await.unwrap().is_empty());
 }
 
 // Writes against the demo client, checked through the next full sync.
@@ -557,14 +624,14 @@ async fn full_sync(client: &DemoClient) -> Vec<Task> {
 async fn done(client: &DemoClient) -> Vec<Task> {
     let query = CompletedQuery {
         project_id: None,
-        since: None,
+        window: CompletedWindow::latest(today()),
     };
     client.completed_tasks(query).await.unwrap()
 }
 
 #[tokio::test]
 async fn reopening_a_seeded_completed_task_brings_it_back_whole() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
 
     send(&client, "item_reopen", json!({ "id": "t-dentist" })).await;
 
@@ -579,7 +646,7 @@ async fn reopening_a_seeded_completed_task_brings_it_back_whole() {
 
 #[tokio::test]
 async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
     let (mut app, _) = started(&client).await;
     drive(&mut app, &client, [key('1'), key('f'), key('2')]).await;
     assert!(shows(&app, "Book the dentist check-up"));
@@ -587,13 +654,13 @@ async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
     drive(&mut app, &client, [key('x'), key('R')]).await;
 
     assert!(app.state().failures.is_empty());
-    let reopened = app.state().tasks.iter().find(|t| t.id == "t-dentist");
+    let reopened = app.state().store.tasks.iter().find(|t| t.id == "t-dentist");
     assert!(reopened.is_some_and(|t| !t.checked));
 }
 
 #[tokio::test]
 async fn completing_a_parent_completes_its_subtasks() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
     let family = ["t-tiles", "t-samples", "t-grout", "t-worktop"];
 
     send(&client, "item_close", json!({ "id": "t-tiles" })).await;
@@ -608,7 +675,7 @@ async fn completing_a_parent_completes_its_subtasks() {
 
 #[tokio::test]
 async fn reopening_a_subtask_reopens_its_completed_parents() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
     send(&client, "item_close", json!({ "id": "t-tiles" })).await;
 
     send(&client, "item_reopen", json!({ "id": "t-grout" })).await;
@@ -634,7 +701,7 @@ async fn completing_a_recurring_task_moves_it_to_its_next_date() {
         ("t-electricity", "2026-12-23T17:00:00".to_owned()),
     ];
     for (id, next) in cases {
-        let client = demo::client(today());
+        let client = demo::client(&now());
 
         send(&client, "item_complete", json!({ "id": id })).await;
 
@@ -649,7 +716,7 @@ async fn completing_a_recurring_task_moves_it_to_its_next_date() {
 
 #[tokio::test]
 async fn closing_a_recurring_task_ends_the_series() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
 
     send(&client, "item_close", json!({ "id": "t-pages" })).await;
 
@@ -669,7 +736,7 @@ async fn a_due_edit_changes_the_due_date() {
         ("", None),
     ];
     for (due_string, expected) in cases {
-        let client = demo::client(today());
+        let client = demo::client(&now());
 
         send(
             &client,
@@ -687,7 +754,7 @@ async fn a_due_edit_changes_the_due_date() {
 
 #[tokio::test]
 async fn a_due_edit_the_demo_cannot_read_leaves_the_date_alone() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
 
     send(
         &client,
@@ -703,7 +770,7 @@ async fn a_due_edit_the_demo_cannot_read_leaves_the_date_alone() {
 
 #[tokio::test]
 async fn an_added_task_keeps_its_due_date() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
 
     send(
         &client,
@@ -722,7 +789,7 @@ async fn an_added_task_keeps_its_due_date() {
 
 #[tokio::test]
 async fn an_added_task_goes_after_the_tasks_already_in_its_project() {
-    let client = demo::client(today());
+    let client = demo::client(&now());
 
     send(
         &client,

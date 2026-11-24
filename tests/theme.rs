@@ -4,8 +4,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use chrono::{Local, TimeZone};
 use insta::assert_debug_snapshot;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Event, State};
 use ratatoist::config::{self, Config};
 use ratatoist::runtime::{UiSettings, initial_state_from};
@@ -25,10 +25,12 @@ const DIM: &str = r#"{
 
 /// The demo account's main screen at 80x24, drawn with `config`.
 fn demo_with(config: &Config) -> App<TestBackend> {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let state = initial_state_from(config, &UiSettings::default(), "*".to_owned(), now, false);
     let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
-    let sync = serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap();
+    let sync =
+        serde_json::from_value(demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync)
+            .unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     app
 }
@@ -70,7 +72,7 @@ fn there_are_the_terminal_default_and_ten_base16_built_in_themes() {
 
 #[test]
 fn a_new_state_draws_with_the_terminal_theme() {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
 
     assert_eq!(*State::new(now).theme(), Theme::default());
 }

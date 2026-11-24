@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context as _;
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use reqwest::header::ACCEPT;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,7 @@ pub const LATEST_URL: &str = "https://api.github.com/repos/cxrlos/ratatoist/rele
 pub const OFF_VAR: &str = "RATATOIST_NO_UPDATE_CHECK";
 
 /// How long a check holds before the next one is due.
-pub const CHECK_EVERY: TimeDelta = TimeDelta::hours(24);
+pub const CHECK_EVERY: SignedDuration = SignedDuration::from_hours(24);
 
 /// How long one check may take, connecting included.
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -169,7 +169,7 @@ pub fn background_check(
 /// it saw and the release the user skipped.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Record {
-    pub checked_at: Option<DateTime<Utc>>,
+    pub checked_at: Option<Timestamp>,
     pub latest: Option<Version>,
     pub skipped: Option<Version>,
 }
@@ -177,17 +177,17 @@ pub struct Record {
 impl Record {
     /// Whether a check is due at `now`: never checked, a day after the
     /// last one, or the clock was set back past it.
-    pub fn due(&self, now: DateTime<Utc>) -> bool {
+    pub fn due(&self, now: Timestamp) -> bool {
         self.checked_at.is_none_or(|checked| {
-            let since = now - checked;
-            since >= CHECK_EVERY || since < TimeDelta::zero()
+            let since = now.duration_since(checked);
+            since >= CHECK_EVERY || since.is_negative()
         })
     }
 }
 
 #[derive(Serialize, Deserialize)]
 struct File {
-    checked_at: Option<DateTime<Utc>>,
+    checked_at: Option<Timestamp>,
     latest: Option<String>,
     skipped: Option<String>,
 }
@@ -347,8 +347,9 @@ mod tests {
     use std::ffi::OsStr;
     use std::path::Path;
 
-    use chrono::TimeZone;
     use clap::Parser;
+    use jiff::civil;
+    use jiff::tz::TimeZone;
     use semver::Version;
 
     use super::*;
@@ -468,8 +469,10 @@ mod tests {
     #[test]
     fn a_check_is_due_a_day_after_the_last_one() {
         let at = |day, hour, minute, second| {
-            Utc.with_ymd_and_hms(2026, 11, day, hour, minute, second)
+            civil::datetime(2026, 11, day, hour, minute, second, 0)
+                .to_zoned(TimeZone::UTC)
                 .unwrap()
+                .timestamp()
         };
         let record = Record {
             checked_at: Some(at(18, 9, 0, 0)),
@@ -510,7 +513,12 @@ mod tests {
         let scratch = Scratch::new("round-trip");
         let cache = scratch.cache();
         let record = Record {
-            checked_at: Some(Utc.with_ymd_and_hms(2026, 11, 18, 9, 0, 0).unwrap()),
+            checked_at: Some(
+                civil::datetime(2026, 11, 18, 9, 0, 0, 0)
+                    .to_zoned(TimeZone::UTC)
+                    .unwrap()
+                    .timestamp(),
+            ),
             latest: Some(version("0.7.1")),
             skipped: Some(version("0.7.1")),
         };

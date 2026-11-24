@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use chrono::{Local, TimeZone};
 use insta::assert_snapshot;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Event, State};
 use ratatoist::todoist::demo;
 use ratatui::backend::TestBackend;
@@ -10,9 +10,9 @@ use ratatui::buffer::Buffer;
 /// The demo account at 80x24 on the Inbox screen, with `edit` applied to
 /// the account before it loads.
 fn demo_inbox(edit: impl FnOnce(&mut serde_json::Value)) -> App<TestBackend> {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let mut app = App::new(TestBackend::new(80, 24), State::new(now)).unwrap();
-    let mut sync = demo::account(demo::NOW.date()).sync;
+    let mut sync = demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync;
     edit(&mut sync);
     let sync = serde_json::from_value(sync).unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();

@@ -1,6 +1,6 @@
 # Configuration
 
-ratatoist reads `config.toml` from `$XDG_CONFIG_HOME/ratatoist/`, which is `~/.config/ratatoist/config.toml` by default, on macOS too. The file is optional: without it every setting has its default. ratatoist never writes it. The one exception is the one-time move of an old `api_token` line into the OS keyring, described in [auth.md](auth.md).
+ratatoist reads `config.toml` from `$XDG_CONFIG_HOME/ratatoist/`, which is `~/.config/ratatoist/config.toml` by default, on macOS too. The file is optional: without it every setting has its default. ratatoist writes it in two cases only: picking a theme sets `[theme] name` (see [`[theme]`](#theme)), and the one-time move of an old `api_token` line into the OS keyring removes that line, described in [auth.md](auth.md). Both keep every other byte.
 
 ```toml
 [ui]
@@ -52,9 +52,11 @@ The Nerd set uses the Font Awesome glyphs of the same meaning, one cell each. Wi
 | --- | --- | --- | --- |
 | `name` | The name of a built-in theme, or the `name` inside a file in `themes/`. Case, spaces and hyphens do not matter, so `"rose-pine"` finds "Rose Pine". | `terminal` | The colours ratatoist draws with. |
 
+A theme I pick in the palette's theme picker applies at once and is kept: ratatoist sets `name` in `[theme]`, and nothing else. Comments, order and layout stay as I wrote them; a missing file or `[theme]` table is created with just that key. The file is replaced in one rename, and a symlinked `config.toml` keeps its link while the file it points to changes. A `config.toml` that does not parse is left alone: the theme lasts the session and a notice says why. A write that fails goes to the messages log (`!`), and the session keeps the theme. `--demo`, the Not logged in screen and `NO_COLOR` write nothing.
+
 The built-in themes are `terminal`, `catppuccin-mocha`, `dracula`, `gruvbox-dark`, `material-dark`, `monokai`, `nord`, `one-dark`, `rose-pine`, `solarized-dark` and `tokyo-night`. `terminal`, the default, draws with my terminal's own colours and paints no background. Every other theme paints its background behind the whole screen, since its colours are only legible on it.
 
-Every theme draws with a few roles: text, muted for what is inactive or secondary, accent for what I can act on now (bold in titles and key hints), error, the border, and the focused row, which is reversed. Priorities p1 to p3 take the theme's red, orange and blue and p4 is muted; a due date is in the error colour when overdue, the accent today, text in the next six days and muted after. Muted text is lightened toward the text colour until it reaches a 3:1 contrast with the background, so it stays readable in every theme.
+Every theme draws with a few roles: text, muted for what is inactive or secondary, accent for what I can act on now (bold in titles and key hints), error, the border, and the focused row, which is reversed. Priorities p1 to p3 take the theme's red, orange and blue and p4 is muted; a due date is in the error colour when overdue, the accent today, text in the next six days and muted after. A deadline takes p2's colour, and the error colour once its day has passed. Muted text is lightened toward the text colour until it reaches a 3:1 contrast with the background, so it stays readable in every theme.
 
 When the `NO_COLOR` environment variable is set to anything but an empty string, ratatoist draws with no colour at all, whatever `[theme] name` says. Bold still marks titles and key hints, and reverse video still marks the focused row. ratatoist reads `NO_COLOR` once, at startup.
 
@@ -62,7 +64,9 @@ When the `NO_COLOR` environment variable is set to anything but an empty string,
 
 | Key | Values | Default | Effect |
 | --- | --- | --- | --- |
-| `idle-timeout` | Whole seconds, 0 to 86400. 0 turns idle detection off. | 300 | How long without a key press before the session counts as idle. |
+| `idle-timeout` | Whole seconds, 0 to 86400. 0 turns idle detection off. | 300 | How long without a key press before the session counts as idle. While idle, ratatoist keeps the live connection open but runs no sync on its own; the first key after idle runs one. |
+
+ratatoist keeps what it last synced in `cache.json` in `$XDG_CACHE_HOME/ratatoist/` (`~/.cache/ratatoist/` by default), readable by my user alone. It holds my tasks, projects, labels and comments, the Todoist user they belong to and the sync token, never the API token. A start paints my tasks from it at once and then asks Todoist only for what changed. ratatoist writes it about two seconds after a sync changes something, and on quit, but never while a change I made is still waiting for Todoist's answer. A file it cannot read, from another version, with no user or sync token, or of another Todoist user is thrown away for a full sync, so deleting it is always safe. `R` starts over from a full sync and replaces the file too. `--demo` and the Not logged in screen neither read nor write it. Versions before 0.8.0 kept only the sync token, in `sync_state.json` in the config folder; ratatoist deletes that file after its first sync.
 
 ## `[updates]`
 
@@ -124,13 +128,13 @@ config.toml:5:16: `sync.idle-timeout` must be a whole number of seconds from 0 t
 - A `[theme] name` that matches no theme is reported, and the theme `ui_settings.json` names is used if that file names one, otherwise the default theme.
 - A theme file that fails to load is reported as `themes/FILE.json:LINE:COL: problem; the theme is skipped`, or `themes/FILE.json: baseNN: problem; the theme is skipped` for a colour that is not one.
 
-ratatoist still starts in every case, and the file is never rewritten.
+ratatoist still starts in every case, and never rewrites the file to fix it.
 
 `api_token` at the top of the file is the token setting of versions before 0.6.0. It is not reported as unknown, and the config loader never reads its value.
 
 ## The old macOS folder
 
-Before 0.6.0, ratatoist kept its files on macOS in `~/Library/Application Support/ratatoist/`. If `~/.config/ratatoist/` does not exist and that folder does, ratatoist reads the old folder and prints the command that moves it:
+Before 0.6.0, ratatoist kept its files on macOS in `~/Library/Application Support/ratatoist/`. If `~/.config/ratatoist/` does not exist and that folder does, ratatoist reads the old folder and prints the command that moves it. Until I move it, a theme I pick is kept in the old folder's `config.toml`, and `ui_settings.json` is read from there:
 
 ```bash
 mkdir -p ~/.config && mv ~/Library/Application\ Support/ratatoist ~/.config/ratatoist

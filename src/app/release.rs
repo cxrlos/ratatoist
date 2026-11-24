@@ -1,7 +1,7 @@
 //! The release notice: when to check GitHub for a newer release, what the
 //! answer shows, and skipping a release (ADR 0002).
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use semver::Version;
 
 use super::{Effect, State};
@@ -58,7 +58,7 @@ impl ReleaseState {
 /// At each tick, a check when one is due. It counts as the day's check from
 /// when it starts, so no second one starts while it runs, and a failed one
 /// is tried again only a day later.
-pub(super) fn tick(state: &mut State, now: DateTime<Utc>) -> Option<Effect> {
+pub(super) fn tick(state: &mut State, now: Timestamp) -> Option<Effect> {
     let release = &mut state.release;
     if !release.check || !release.record.due(now) {
         return None;

@@ -2,13 +2,13 @@
 source: tests/list.rs
 expression: app.backend()
 ---
-" [1] │ [2] │ [3] │ [4] Projects │ [5]                             synced 0s ago "
+" [1] │ [2] │ [3] │ [4] Projects │ [5]                    polling, synced 0s ago "
 "┌Kitchen renovation────────────────────────────────────────────────────────────┐"
 "│› ▿ Pick the tiles  @deep-work                                    Dec 3 ▮▮▯ P2│"
 "│    ▿ Order tile samples  @computer                              Nov 25 ··· P4│"
 "│      ○ Compare grout colours with the samples  @errand                 ··· P4│"
 "│    ○ Measure the worktop  @quick                                       ··· P4│"
-"│  ○ Get three quotes for the plumbing  @phone @waiting  ✉2       Nov 20 ▮▮▮ P1│"
+"│  ○ Get three quotes for the plumbing  @phone @waiting  ⚑  ✉2    Nov 20 ▮▮▮ P1│"
 "│  ○ Choose the cabinet handles                                   Dec 14 ▮▯▯ P3│"
 "│                                                                              │"
 "│                                                                              │"

@@ -3,8 +3,10 @@
 
 #![cfg(test)]
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use jiff::Zoned;
+use jiff::civil::date;
+use jiff::tz::TimeZone;
 use ratatoist::app::{
     App, Effect, Event, ListFilter, Modal, Pane, PickerKind, PromptField, Screen, Sort, State,
 };
@@ -18,11 +20,11 @@ const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json")
 const STANDARD_PRESET: &str = "[keys]\npreset = \"standard\"\n";
 
 /// 2026-11-22 09:00 local time, a Sunday.
-fn now() -> DateTime<Local> {
-    let naive = NaiveDate::from_ymd_opt(2026, 11, 22)
-        .and_then(|day| day.and_hms_opt(9, 0, 0))
-        .unwrap();
-    Local.from_local_datetime(&naive).earliest().unwrap()
+fn now() -> Zoned {
+    date(2026, 11, 22)
+        .at(9, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
 }
 
 fn state_with(config: &str) -> State {
@@ -501,7 +503,13 @@ fn esc_in_a_prompt_or_the_form_sends_nothing() {
         assert!(commands(&comment).is_empty());
         assert!(commands(&form).is_empty());
         assert!(app.state().modals.is_empty());
-        assert!(app.state().tasks.iter().all(|t| t.content != "Pay rent"));
+        assert!(
+            app.state()
+                .store
+                .tasks
+                .iter()
+                .all(|t| t.content != "Pay rent")
+        );
     }
 }
 

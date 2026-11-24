@@ -8,12 +8,14 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
+use jiff::civil::date;
 use ratatoist::auth::ApiToken;
 use ratatoist::todoist::fake::CommandMatch;
 use ratatoist::todoist::model::{CompletedTasksResponse, Paginated, UserInfo};
 use ratatoist::todoist::sync::{SyncCommand, SyncCommandError, SyncRequest, SyncResponse};
 use ratatoist::todoist::{
-    ClientConfig, ClientError, CompletedQuery, FakeClient, HttpClient, LiveMessage, TodoistClient,
+    ClientConfig, ClientError, CompletedQuery, CompletedWindow, FakeClient, HttpClient,
+    LiveMessage, TodoistClient,
 };
 use serde_json::{Value, json};
 use wiremock::matchers::{body_json, header, method, path, query_param, query_param_is_missing};
@@ -193,13 +195,26 @@ async fn paging_stops_after_fifty_pages() {
     assert_eq!(comments.len(), 50);
 }
 
+fn window() -> CompletedWindow {
+    CompletedWindow::latest(date(2026, 11, 23))
+}
+
+fn query(project_id: Option<&str>) -> CompletedQuery {
+    CompletedQuery {
+        project_id: project_id.map(str::to_owned),
+        window: window(),
+    }
+}
+
 #[tokio::test]
-async fn completed_tasks_keep_the_full_task_or_build_one_from_the_record() {
+async fn completed_tasks_load_one_window_by_completion_date() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/tasks/completed"))
-        .and(query_param("annotate_items", "1"))
+        .and(path("/tasks/completed/by_completion_date"))
+        .and(query_param("since", "2026-09-02T00:00:00Z"))
+        .and(query_param("until", "2026-11-25T00:00:00Z"))
         .and(query_param("project_id", "6Jf8VQXxpwv56VQ8"))
+        .and(query_param_is_missing("annotate_items"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(fixture("HYPOTHETICAL_completed_tasks.json")),
         )
@@ -207,16 +222,106 @@ async fn completed_tasks_keep_the_full_task_or_build_one_from_the_record() {
         .mount(&server)
         .await;
 
-    let query = CompletedQuery {
-        project_id: Some("6Jf8VQXxpwv56VQ8".to_owned()),
-        since: None,
-    };
-    let tasks = client_for(&server).completed_tasks(query).await.unwrap();
+    let tasks = client_for(&server)
+        .completed_tasks(query(Some("6Jf8VQXxpwv56VQ8")))
+        .await
+        .unwrap();
 
     assert_eq!(tasks.len(), 2);
     assert_eq!(tasks[0].priority, 4);
     assert_eq!(tasks[1].content, "Sharpen the shears");
-    assert!(tasks[1].checked);
+    assert!(tasks.iter().all(|task| task.checked));
+}
+
+#[tokio::test]
+async fn an_older_window_ends_where_the_newer_one_starts() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tasks/completed/by_completion_date"))
+        .and(query_param("since", "2026-06-10T00:00:00Z"))
+        .and(query_param("until", "2026-09-02T00:00:00Z"))
+        .and(query_param_is_missing("project_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let older = CompletedQuery {
+        project_id: None,
+        window: window().before(),
+    };
+    let tasks = client_for(&server).completed_tasks(older).await.unwrap();
+
+    assert!(tasks.is_empty());
+}
+
+#[tokio::test]
+async fn completed_tasks_follow_the_cursor_with_the_same_window() {
+    // Todoist's cursors are `[0-9a-zA-Z_-]`; these characters prove the
+    // cursor is encoded, not pasted into the URL.
+    let cursor = "a+b/c=d&e";
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tasks/completed/by_completion_date"))
+        .and(query_param_is_missing("cursor"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "items": [{ "id": "t1", "content": "first page" }],
+            "next_cursor": cursor,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/tasks/completed/by_completion_date"))
+        .and(query_param("cursor", cursor))
+        .and(query_param("since", "2026-09-02T00:00:00Z"))
+        .and(query_param("until", "2026-11-25T00:00:00Z"))
+        .and(query_param("project_id", "p 1&x=y"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "items": [{ "id": "t2", "content": "last page" }],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let tasks = client_for(&server)
+        .completed_tasks(query(Some("p 1&x=y")))
+        .await
+        .unwrap();
+
+    let ids: Vec<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["t1", "t2"]);
+}
+
+#[tokio::test]
+async fn comments_encode_the_task_id_and_cursor() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/comments"))
+        .and(query_param("task_id", "t+1/2=3"))
+        .and(query_param_is_missing("cursor"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "results": [{ "id": "c1" }],
+            "next_cursor": "x+y/z=",
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/comments"))
+        .and(query_param("task_id", "t+1/2=3"))
+        .and(query_param("cursor", "x+y/z="))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "results": [{ "id": "c2" }],
+            "next_cursor": null,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let comments = client_for(&server).comments("t+1/2=3").await.unwrap();
+
+    assert_eq!(comments.len(), 2);
 }
 
 #[tokio::test]
@@ -389,7 +494,7 @@ async fn no_client_call_logs_the_token_even_at_trace_level() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/tasks/completed"))
+        .and(path("/tasks/completed/by_completion_date"))
         .respond_with(ResponseTemplate::new(401))
         .mount(&server)
         .await;
@@ -410,7 +515,7 @@ async fn no_client_call_logs_the_token_even_at_trace_level() {
 
     client.user().await.unwrap();
     client.comments("6Jf8VQXxpwv56VT2").await.unwrap();
-    let completed = client.completed_tasks(CompletedQuery::default()).await;
+    let completed = client.completed_tasks(query(None)).await;
     let synced = client
         .sync(write_request(vec![command("item_close", "6f3a9c4e")]))
         .await;
@@ -508,6 +613,7 @@ fn every_fixture_parses_into_the_model() {
         let value = fixture(name);
         let parsed = match name.as_str() {
             "HYPOTHETICAL_full_sync.json"
+            | "HYPOTHETICAL_drifted_sync.json"
             | "HYPOTHETICAL_incremental_sync.json"
             | "HYPOTHETICAL_command_results.json" => {
                 serde_json::from_value::<SyncResponse>(value).map(drop)
@@ -527,7 +633,7 @@ fn every_fixture_parses_into_the_model() {
         };
         assert!(parsed.is_ok(), "{name}: {parsed:?}");
     }
-    assert_eq!(names.len(), 9, "{names:?}");
+    assert_eq!(names.len(), 10, "{names:?}");
     let limited = fixture("HYPOTHETICAL_rate_limited.json");
     assert_eq!(limited["error_extra"]["retry_after"].as_u64(), Some(30));
 
@@ -562,10 +668,7 @@ async fn the_fake_serves_its_fixtures() {
     assert!(!delta.full_sync);
     assert_eq!(fake.user().await.unwrap().id, "1000001");
     assert_eq!(fake.comments("6Jf8VQXxpwv56VT2").await.unwrap().len(), 1);
-    let completed = fake
-        .completed_tasks(CompletedQuery::default())
-        .await
-        .unwrap();
+    let completed = fake.completed_tasks(query(None)).await.unwrap();
     assert_eq!(completed.len(), 2);
 }
 
@@ -641,7 +744,7 @@ async fn the_fake_with_nothing_configured_is_an_empty_account() {
 // The handshake callback returns tungstenite's error type, not ours.
 #[allow(clippy::result_large_err)]
 #[tokio::test]
-async fn live_events_report_the_connection_and_each_message() {
+async fn live_events_report_the_connection_and_each_change_but_not_keep_alives() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
@@ -660,6 +763,12 @@ async fn live_events_report_the_connection_and_each_message() {
         .await
         .unwrap();
         socket
+            .send(tokio_tungstenite::tungstenite::Message::Ping(
+                tokio_tungstenite::tungstenite::Bytes::new(),
+            ))
+            .await
+            .unwrap();
+        socket
             .send(tokio_tungstenite::tungstenite::Message::text(
                 r#"{"type":"sync_needed"}"#,
             ))
@@ -674,18 +783,17 @@ async fn live_events_report_the_connection_and_each_message() {
         Duration::from_secs(5),
         client
             .live_events(&format!("ws://{address}/ws"))
-            .take(4)
+            .take(3)
             .collect(),
     )
     .await
     .unwrap();
 
-    // The close frame is a message too, so it also reads as a change.
+    // The ping is a keep-alive and the close frame ends the connection.
     assert_eq!(
         messages,
         [
             LiveMessage::Connected,
-            LiveMessage::Changed,
             LiveMessage::Changed,
             LiveMessage::Disconnected
         ]
@@ -694,4 +802,121 @@ async fn live_events_report_the_connection_and_each_message() {
         server.await.unwrap().as_deref(),
         Some("https://app.todoist.com")
     );
+}
+
+/// A WebSocket server on loopback that hands each accepted socket to
+/// `serve`, and its `ws://` URL.
+async fn live_server<F, Fut>(serve: F) -> String
+where
+    F: Fn(tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            tokio::spawn(serve(socket));
+        }
+    });
+    format!("ws://{address}/ws")
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_socket_that_sends_nothing_for_75_seconds_is_disconnected() {
+    // The server holds the socket and never reads it, so no pong comes back.
+    let url = live_server(|socket| async move {
+        tokio::time::sleep(Duration::from_secs(3600)).await;
+        drop(socket);
+    })
+    .await;
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
+    let mut events = Box::pin(client.live_events(&url));
+
+    assert_eq!(events.next().await, Some(LiveMessage::Connected));
+    let connected = tokio::time::Instant::now();
+    let next = tokio::time::timeout(Duration::from_secs(300), events.next()).await;
+
+    assert_eq!(next, Ok(Some(LiveMessage::Disconnected)));
+    let waited = connected.elapsed();
+    assert!(
+        waited >= Duration::from_secs(75) && waited < Duration::from_secs(80),
+        "{waited:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_socket_that_answers_pings_stays_live() {
+    let (pings_tx, mut pings) = tokio::sync::mpsc::unbounded_channel();
+    let url = live_server(move |mut socket| {
+        let pings_tx = pings_tx.clone();
+        async move {
+            // Reading the socket answers each ping with a pong.
+            while let Some(Ok(message)) = socket.next().await {
+                if message.is_ping() {
+                    let _ = pings_tx.send(());
+                }
+            }
+        }
+    })
+    .await;
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
+    let mut events = Box::pin(client.live_events(&url));
+
+    assert_eq!(events.next().await, Some(LiveMessage::Connected));
+    let next = tokio::time::timeout(Duration::from_secs(300), events.next()).await;
+
+    assert!(next.is_err(), "{next:?}");
+    let mut count = 0;
+    while pings.try_recv().is_ok() {
+        count += 1;
+    }
+    assert!(count >= 9, "{count} pings in 300 s");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_socket_that_closes_at_once_backs_off_instead_of_reconnecting_each_second() {
+    let url = live_server(|mut socket| async move {
+        let _ = socket.close(None).await;
+    })
+    .await;
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
+    let mut connects = 0;
+
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        client.live_events(&url).for_each(|message| {
+            if message == LiveMessage::Connected {
+                connects += 1;
+            }
+            async {}
+        }),
+    )
+    .await;
+
+    // Backing off from 5 s, doubling, jittered down to half: at most five
+    // connections fit in a minute.
+    assert!(
+        (1..=5).contains(&connects),
+        "{connects} connections in 60 s"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_socket_that_stayed_up_30_seconds_reconnects_after_a_second() {
+    let url = live_server(|mut socket| async move {
+        tokio::time::sleep(Duration::from_secs(31)).await;
+        let _ = socket.close(None).await;
+    })
+    .await;
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
+    let mut events = Box::pin(client.live_events(&url));
+
+    assert_eq!(events.next().await, Some(LiveMessage::Connected));
+    assert_eq!(events.next().await, Some(LiveMessage::Disconnected));
+    let dropped = tokio::time::Instant::now();
+    assert_eq!(events.next().await, Some(LiveMessage::Connected));
+
+    let waited = dropped.elapsed();
+    assert!(waited <= Duration::from_secs(2), "{waited:?}");
 }

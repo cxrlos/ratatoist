@@ -1,21 +1,24 @@
 #![cfg(test)]
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::Zoned;
+use jiff::civil::date;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::keys::{Keymap, Preset};
 use ratatoist::todoist::sync::SyncResponse;
+use ratatoist::ui::list;
 use ratatui::backend::TestBackend;
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
 
 /// 2026-11-22 09:00 local time, a Sunday.
-fn now() -> DateTime<Local> {
-    let naive = NaiveDate::from_ymd_opt(2026, 11, 22)
-        .and_then(|day| day.and_hms_opt(9, 0, 0))
-        .unwrap();
-    Local.from_local_datetime(&naive).earliest().unwrap()
+fn now() -> Zoned {
+    date(2026, 11, 22)
+        .at(9, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
 }
 
 fn response(json: &str) -> Box<SyncResponse> {
@@ -335,6 +338,97 @@ fn ctrl_d_scrolls_a_long_description_half_a_page() {
     assert_ne!(screen(&app), before);
     assert!(shows(&app, "Line 18 of the notes"), "{:#?}", screen(&app));
     assert_snapshot!(app.backend());
+}
+
+/// "Call the dentist" due today at 10:00, with a deadline on Tuesday, a
+/// 90-minute duration and a relative, an absolute and a location reminder.
+fn planned_call() -> Box<SyncResponse> {
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "fixture-token-2",
+        "items": [{
+            "id": "t-call",
+            "content": "Call the dentist",
+            "checked": false,
+            "child_order": 2,
+            "priority": 3,
+            "project_id": "p-inbox",
+            "due": { "date": "2026-11-22T10:00:00", "is_recurring": false },
+            "deadline": { "date": "2026-11-24", "lang": "en" },
+            "duration": { "amount": 90, "unit": "minute" },
+            "note_count": 2,
+            "added_at": "2026-11-19T08:30:00Z"
+        }],
+        "reminders": [
+            { "id": "r1", "item_id": "t-call", "type": "relative", "minute_offset": 30 },
+            {
+                "id": "r2",
+                "item_id": "t-call",
+                "type": "absolute",
+                "due": { "date": "2026-11-23T08:00:00.000000Z" }
+            },
+            { "id": "r3", "item_id": "t-call", "type": "location", "name": "Clinic" }
+        ]
+    });
+    response(&delta.to_string())
+}
+
+#[test]
+fn the_detail_shows_the_deadline_duration_and_time_reminders() {
+    let mut app = sized(120, 36);
+    app.handle(Event::Synced(Ok(planned_call()))).unwrap();
+    open_call_detail(&mut app);
+
+    assert!(shows(&app, "Deadline  ⚑ Nov 24"), "{:#?}", screen(&app));
+    assert!(shows(&app, "Duration  1 h 30 min"));
+    assert!(shows(&app, "Reminders 30 min before"));
+    assert!(shows(&app, "          tomorrow 8:00"));
+    assert!(!shows(&app, "Clinic"));
+}
+
+#[test]
+fn the_detail_leaves_out_the_plan_fields_a_task_does_not_have() {
+    let mut app = sized(120, 36);
+    open_call_detail(&mut app);
+
+    assert!(shows(&app, "Due"), "{:#?}", screen(&app));
+    for name in ["Deadline", "Duration", "Reminders"] {
+        assert!(!shows(&app, name), "{name}: {:#?}", screen(&app));
+    }
+}
+
+#[test]
+fn a_row_marks_its_deadline() {
+    let mut app = sized(120, 36);
+    app.handle(Event::Synced(Ok(planned_call()))).unwrap();
+    send(&mut app, [key('1')]);
+
+    let row = screen(&app)
+        .into_iter()
+        .find(|line| line.contains("Call the dentist"))
+        .unwrap();
+    assert!(row.contains("⚑ Nov 24"), "{row}");
+}
+
+/// The "Call the dentist" row as drawn into `room` cells.
+fn planned_row(room: usize) -> String {
+    let mut app = sized(120, 36);
+    app.handle(Event::Synced(Ok(planned_call()))).unwrap();
+    let state = app.state();
+    let task = state.store.tasks.by_id("t-call").unwrap();
+    let line = list::content_line(state, task, 0, state.icons(), room);
+    ratatoist::ui::text::fit_line(line, room).to_string()
+}
+
+#[test]
+fn a_deadline_mark_shrinks_to_its_glyph_rather_than_cut_its_date() {
+    assert_eq!(
+        planned_row(40).trim_end(),
+        "○ Call the dentist  ⚑ Nov 24  ✉2"
+    );
+    assert_eq!(planned_row(26), "○ Call the dentist  ⚑  ✉2");
+    // The date fits to the last cell, where the overflow's `…` would go.
+    assert_eq!(planned_row(28).trim_end(), "○ Call the dentist  ⚑  ✉2");
 }
 
 #[test]

@@ -2,7 +2,7 @@
 source: tests/frame.rs
 expression: "screen_at('2', 120, 36).backend()"
 ---
-" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 4s ago "
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 4s ago "
 "┏Today━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Home › Repairs────────────────────────────────┐"
 "┃▲ Overdue (8)                                                         ┃│Fix the wobbly chair leg                      │"
 "┃› ○ Fix the wobbly chair leg  ✉1        Nov 18 ▮▯▯ P3 Home            ┃│                                              │"
@@ -15,7 +15,7 @@ expression: "screen_at('2', 120, 36).backend()"
 "┃  ○ Review the logo options from In… yesterday ▮▮▯ P2 Atlas redesign  ┃│                                              │"
 "┃◆ Today (11)                                                          ┃│Comments (1)                                  │"
 "┃  ○ Call the plumber about the leaking…  today ▮▮▯ P2 Inbox           ┃│Inés Halloran · 5 days ago                    │"
-"┃  ○ 買い物リストを作る  @quick           today ··· P4 Inbox           ┃│  Wood glue is in the second drawer.          │" Hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
+"┃  ○ 買い物リストを作る  @quick  ⚑        today ··· P4 Inbox           ┃│  Wood glue is in the second drawer.          │" Hidden by multi-width symbols: [(6, " "), (8, " "), (10, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
 "┃  ○ Take out the recycling  @15min  ↻    today ··· P4 Home            ┃│                                              │"
 "┃  ○ Pay the electricity bill  @co… today 17:00 ▮▮▮ P1 Home            ┃│Details                                       │"
 "┃  ○ Finish «La casa del faro», chapter…  today ▮▯▯ P3 Reading         ┃│Project   Home                                │"

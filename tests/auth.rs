@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use futures_util::Stream;
 use ratatoist::auth::keyring::{Keyring, KeyringError, MemoryKeyring};
 use ratatoist::auth::{self, ApiToken, AuthError, Resolved, Source};
+use ratatoist::cli::AuthCommand;
 use ratatoist::todoist::model::{Comment, Task, UserInfo};
 use ratatoist::todoist::sync::{SyncRequest, SyncResponse};
 use ratatoist::todoist::{
@@ -537,4 +538,172 @@ fn a_piped_token_is_trimmed_and_an_empty_one_refused() {
 
     let error = auth::read_token(&b"\n"[..]).unwrap_err();
     assert!(error.to_string().contains("empty"), "{error}");
+}
+
+// What `ratatoist auth` prints, through `run_with` as the binary runs it
+
+/// What one `ratatoist auth` command wrote, and its error as `main` prints it.
+struct Printed {
+    out: String,
+    notes: String,
+    error: Option<String>,
+}
+
+impl Printed {
+    fn assert_no_token(&self) {
+        for text in [&self.out, &self.notes] {
+            assert!(!text.contains(SECRET), "{text}");
+        }
+        if let Some(error) = &self.error {
+            assert!(!error.contains(SECRET), "{error}");
+        }
+    }
+}
+
+/// A Todoist whose `/user` answers with `status`, the fixture body on a 200.
+async fn todoist(status: u16) -> MockServer {
+    let server = MockServer::start().await;
+    let body = if status == 200 {
+        fs::read_to_string("tests/fixtures/todoist/HYPOTHETICAL_user.json").unwrap()
+    } else {
+        "Forbidden".to_owned()
+    };
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .respond_with(ResponseTemplate::new(status).set_body_string(body))
+        .expect(1)
+        .mount(&server)
+        .await;
+    server
+}
+
+async fn run_auth(
+    command: AuthCommand,
+    keyring: &MemoryKeyring,
+    env: Option<&str>,
+    input: &str,
+    server: &MockServer,
+    test: &str,
+) -> Printed {
+    let dir = TempDir::new(test);
+    let config_dir = dir.0.clone();
+    let config = ClientConfig {
+        base_url: server.uri(),
+        ..ClientConfig::default()
+    };
+    let mut out = Vec::new();
+    let mut notes = Vec::new();
+    let result = auth::run_with(
+        command,
+        keyring,
+        env.map(str::to_owned),
+        move || Ok(config_dir),
+        |token| HttpClient::with_config(token, config),
+        auth::Console {
+            input: std::io::Cursor::new(input.to_owned()),
+            out: &mut out,
+            notes: &mut notes,
+        },
+    )
+    .await;
+    Printed {
+        out: String::from_utf8(out).unwrap(),
+        notes: String::from_utf8(notes).unwrap(),
+        error: result.err().map(|error| format!("{error:#}")),
+    }
+}
+
+#[tokio::test]
+async fn auth_login_stdin_stores_the_token_and_never_prints_it() {
+    let server = todoist(200).await;
+    let keyring = MemoryKeyring::default();
+
+    let printed = run_auth(
+        AuthCommand::Login { stdin: true },
+        &keyring,
+        None,
+        &format!("{SECRET}\n"),
+        &server,
+        "runlogin",
+    )
+    .await;
+
+    assert_eq!(printed.error, None);
+    assert!(printed.out.contains("Wren Example"), "{}", printed.out);
+    assert_eq!(keyring.stored().unwrap().expose(), SECRET);
+    printed.assert_no_token();
+}
+
+#[tokio::test]
+async fn auth_login_stdin_rejected_stores_nothing_and_never_prints_the_token() {
+    let server = todoist(401).await;
+    let keyring = MemoryKeyring::default();
+
+    let printed = run_auth(
+        AuthCommand::Login { stdin: true },
+        &keyring,
+        None,
+        &format!("{SECRET}\n"),
+        &server,
+        "runloginrejected",
+    )
+    .await;
+
+    let error = printed.error.as_deref().unwrap();
+    assert!(error.contains("Nothing was stored"), "{error}");
+    assert_eq!(keyring.stored(), None);
+    printed.assert_no_token();
+}
+
+#[tokio::test]
+async fn auth_status_never_prints_the_token_from_either_source() {
+    for (source, status) in [
+        ("keyring", 200),
+        ("keyring", 401),
+        ("env", 200),
+        ("env", 401),
+    ] {
+        let server = todoist(status).await;
+        let (keyring, env) = match source {
+            "keyring" => (MemoryKeyring::holding(token(SECRET)), None),
+            _ => (MemoryKeyring::default(), Some(SECRET)),
+        };
+
+        let printed = run_auth(
+            AuthCommand::Status,
+            &keyring,
+            env,
+            "",
+            &server,
+            &format!("runstatus{source}{status}"),
+        )
+        .await;
+
+        assert_eq!(printed.error.is_none(), status == 200, "{source} {status}");
+        if status == 200 {
+            assert!(printed.out.contains("Wren Example"), "{}", printed.out);
+        }
+        printed.assert_no_token();
+    }
+}
+
+#[tokio::test]
+async fn auth_logout_empties_the_keyring_and_never_prints_the_token() {
+    let server = MockServer::start().await;
+    let keyring = MemoryKeyring::holding(token(SECRET));
+
+    let printed = run_auth(
+        AuthCommand::Logout,
+        &keyring,
+        None,
+        "",
+        &server,
+        "runlogout",
+    )
+    .await;
+
+    assert_eq!(printed.error, None);
+    assert!(printed.out.starts_with("Removed"), "{}", printed.out);
+    assert_eq!(keyring.stored(), None);
+    printed.assert_no_token();
 }

@@ -1,5 +1,4 @@
 use std::io;
-use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::Result;
@@ -36,19 +35,13 @@ async fn start(cli: Cli) -> Result<()> {
 
     if cli.demo {
         // The demo account is fictional: it reads nothing from the config
-        // folder (no config.toml, themes, settings or sync token) and writes
-        // nothing there, so it always starts from defaults.
+        // or cache folder (no config.toml, themes, settings or cache) and
+        // writes nothing there, so it always starts from defaults.
         let _log_guard = logging::init(&paths::state_dir()?)?;
         let config = Config::default();
         let mut state = runtime::initial_state(&config, None);
         let releases = release_check(&cli, &config, &mut state);
-        return run_app(
-            demo::client(runtime::today()),
-            state,
-            None,
-            releases.as_ref(),
-        )
-        .await;
+        return run_app(demo::client(&state.now), state, None, releases.as_ref()).await;
     }
 
     let config_dir = paths::config_dir()?;
@@ -57,22 +50,27 @@ async fn start(cli: Cli) -> Result<()> {
         eprintln!("{warning}");
     }
     let _log_guard = logging::init(&paths::state_dir()?)?;
-    let mut state = runtime::initial_state(&config, Some(&config_dir));
+    let mut state = runtime::initial_state(&config, Some(&config.dir));
     let releases = release_check(&cli, &config, &mut state);
-    let resolved = match auth::resolve() {
+    let resolved = match tokio::task::spawn_blocking(auth::resolve).await? {
         Ok(resolved) => resolved,
         Err(error) if runtime::is_missing_token(&error) => {
             state.not_loaded(LoadError::NoToken);
             // With no token there is nothing to ask Todoist, and no sync
-            // starts, so the client is never called and no sync token is
-            // saved.
+            // starts, so the client is never called and no cache is read or
+            // written.
             return run_app(FakeClient::new(), state, None, releases.as_ref()).await;
         }
         Err(error) => return Err(error),
     };
     state.token_source = Some(resolved.source);
     let client = HttpClient::new(&resolved.token)?;
-    run_app(client, state, Some(&config_dir), releases.as_ref()).await
+    let files = runtime::Files {
+        config: config.dir.clone(),
+        cache: paths::cache_dir()?,
+    };
+    runtime::paint_from_cache(&mut state, &files.cache);
+    run_app(client, state, Some(&files), releases.as_ref()).await
 }
 
 /// The release check for this run, with its cached record and install
@@ -89,12 +87,12 @@ fn release_check(cli: &Cli, config: &Config, state: &mut State) -> Option<Releas
     Some(check)
 }
 
-/// Runs the TUI from `state` against `client`, saving the sync token in
-/// `files` and asking `releases` for a newer release.
+/// Runs the TUI from `state` against `client`, saving the cache in `files`
+/// and asking `releases` for a newer release.
 async fn run_app<C: TodoistClient>(
     client: C,
     state: State,
-    files: Option<&Path>,
+    files: Option<&runtime::Files>,
     releases: Option<&ReleaseCheck>,
 ) -> Result<()> {
     let shutdown = terminal::shutdown_signal()?;

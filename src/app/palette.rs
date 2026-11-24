@@ -69,11 +69,12 @@ pub fn palette_matches<'a>(state: &'a State, query: &str) -> Vec<PaletteEntry<'a
         .filter(|spec| spec.availability(state).can_run())
         .map(PaletteEntry::Action);
     let tasks = state
+        .store
         .tasks
         .iter()
         .filter(|task| !task.checked && !task.is_deleted)
         .map(PaletteEntry::Task);
-    let projects = state.projects.iter().map(PaletteEntry::Project);
+    let projects = state.store.projects.iter().map(PaletteEntry::Project);
 
     let mut found: Vec<(u32, PaletteEntry)> = actions
         .chain(tasks)
@@ -154,7 +155,7 @@ pub(super) fn accept(state: &mut State) -> Update {
         Some(PaletteEntry::Action(spec)) => Chosen::Action(spec.action),
         Some(PaletteEntry::Task(task)) => Chosen::Task(task.id.clone()),
         Some(PaletteEntry::Project(project)) => {
-            match state.projects.iter().position(|p| p.id == project.id) {
+            match state.store.projects.iter().position(|p| p.id == project.id) {
                 Some(index) => Chosen::Project(index),
                 None => return Update::default(),
             }
@@ -181,7 +182,11 @@ pub(super) fn accept(state: &mut State) -> Update {
 /// the Inbox screen for the Inbox, on the Projects screen otherwise, with
 /// no list filter so every open task shows.
 fn open_project(state: &mut State, index: usize) {
-    let inbox = state.projects.get(index).is_some_and(|p| p.is_inbox());
+    let inbox = state
+        .store
+        .projects
+        .get(index)
+        .is_some_and(|p| p.is_inbox());
     state.screen = if inbox {
         Screen::Inbox
     } else {
@@ -197,7 +202,7 @@ fn open_project(state: &mut State, index: usize) {
 /// Focuses the task `id` in its project's list, unfolding the tasks above
 /// it so it shows.
 fn jump_to(state: &mut State, id: &str) {
-    let Some(task) = state.tasks.iter().find(|task| task.id == id) else {
+    let Some(task) = state.store.tasks.iter().find(|task| task.id == id) else {
         return;
     };
     let project_id = task.project_id.clone();
@@ -205,12 +210,14 @@ fn jump_to(state: &mut State, id: &str) {
     while let Some(parent_id) = parent {
         state.collapsed.remove(&parent_id);
         parent = state
+            .store
             .tasks
             .iter()
             .find(|task| task.id == parent_id)
             .and_then(|task| task.parent_id.clone());
     }
     let index = state
+        .store
         .projects
         .iter()
         .position(|project| project.id == project_id)

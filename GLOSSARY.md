@@ -34,6 +34,14 @@ _Avoid_: deadline (a separate field), schedule
 The date a task must be finished by, separate from its due date; it has no time and never recurs.
 _Avoid_: due date, cutoff
 
+**Duration**:
+How long a task takes, in minutes or days.
+_Avoid_: estimate, length
+
+**Reminder**:
+A notification for a task: relative (minutes before its due time), absolute (at a date and time) or location (on entering or leaving a place). ratatoist shows the first two and reads the third without showing it.
+_Avoid_: alert, alarm
+
 **Recurring task**:
 A task whose due date repeats (`is_recurring`). Completing it moves the due date to the next occurrence instead of closing the task.
 _Avoid_: repeating task, routine
@@ -95,6 +103,26 @@ _Avoid_: points, score
 **Sync token**:
 The opaque string Todoist returns with each sync; sending it back asks only for what changed since. `*` asks for everything (a full sync).
 _Avoid_: cursor (the paging token of list endpoints), version, etag
+
+**Full sync**:
+A sync with the token `*`, which answers with everything the account holds and replaces what ratatoist had.
+_Avoid_: refresh, reload
+
+**Incremental sync**:
+A sync with the last sync token, which answers only with what changed since.
+_Avoid_: delta sync, partial sync, refresh
+
+**Cache**:
+The account as last synced, with its sync token and user, kept in `cache.json` so a start paints at once and runs an incremental sync.
+_Avoid_: database, offline data
+
+**Live connection**:
+The WebSocket through which Todoist says that something changed, with no data; each message schedules an incremental sync.
+_Avoid_: push, stream, realtime
+
+**Polling**:
+An incremental sync every 60 seconds while the live connection is down.
+_Avoid_: refresh, auto-sync
 
 **Command**:
 One write sent to the Sync API (for example `item_close`), with its own uuid and, for a new object, a temp id.

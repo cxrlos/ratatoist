@@ -898,7 +898,7 @@ pub static ACTIONS: &[ActionSpec] = &[
     ActionSpec {
         action: Action::ChooseTheme,
         id: "choose-theme",
-        description: "Choose a theme for this session",
+        description: "Choose a theme",
         label: "theme",
         group: Group::App,
         hint: None,
@@ -906,6 +906,18 @@ pub static ACTIONS: &[ActionSpec] = &[
         overlays: &[],
         default_keys: &[],
         available: always,
+    },
+    ActionSpec {
+        action: Action::LoadOlderCompleted,
+        id: "load-older-completed",
+        description: "Load older completed tasks",
+        label: "older completed",
+        group: Group::Screen,
+        hint: None,
+        contexts: LIST,
+        overlays: &[],
+        default_keys: &[],
+        available: |state| state.listed_oldest_completed().is_some(),
     },
     ActionSpec {
         action: Action::SkipRelease,

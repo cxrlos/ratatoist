@@ -111,7 +111,7 @@ fn entry(state: &State, failure: &Failure, width: usize) -> Vec<Line<'static>> {
     let first = Line::from(vec![
         Span::raw(" "),
         Span::styled(
-            format!("{}  ", failure.at.format("%H:%M:%S")),
+            format!("{}  ", failure.at.strftime("%H:%M:%S")),
             style::muted(theme),
         ),
         Span::styled(failure.kind.name().to_owned(), style::error(theme)),

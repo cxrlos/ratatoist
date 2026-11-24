@@ -8,12 +8,14 @@ mod confirm;
 mod effect;
 mod event;
 mod failure;
+mod live;
 mod modal;
 mod palette;
 mod picker;
 mod prompt;
 mod release;
 mod state;
+mod store;
 mod sync;
 mod task_form;
 mod text_field;
@@ -26,6 +28,7 @@ pub use confirm::{Confirm, Confirmed};
 pub use effect::Effect;
 pub use event::Event;
 pub use failure::{ERROR_LOG_CAP, ErrorKind, ErrorLog, Failure, LoadError};
+pub use live::{LIVE_DEBOUNCE, LiveLink, POLL_INTERVAL};
 pub use modal::Modal;
 pub use palette::{
     Palette, PaletteEntry, palette_can_step_down, palette_has_selection, palette_highlight,
@@ -38,6 +41,8 @@ pub use state::{
     COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_WIDE_LAYOUT_COLUMNS, Indicator, ListFilter,
     OverviewStats, Pane, Screen, Sort, State, SyncHealth, UserRecord,
 };
+pub use store::{Keyed, Merged, Stamped, Store, Table};
+pub use sync::command_request;
 pub use task_form::{FormField, TaskForm};
 pub use text_field::TextField;
 pub use update::{Update, perform, update};

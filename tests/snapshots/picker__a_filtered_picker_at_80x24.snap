@@ -2,12 +2,12 @@
 source: tests/picker.rs
 expression: app.backend()
 ---
-" [1] Inbox │ [2] │ [3] │ [4] │ [5]                                synced 0s ago "
+" [1] Inbox │ [2] │ [3] │ [4] │ [5]                       polling, synced 0s ago "
 "┌Inbox─────────────────────────────────────────────────────────────────────────┐"
 "│› ○ Call the plumber about the leaking tap  @phone  ✉1            today ▮▮▯ P2│"
 "│  ○ Return the library books  @errand                            Nov 21 ▮▯▯ P3│"
 "│  ○ Renew the bike insurance  @computer                          Nov 28 ··· P4│"
-"│  ○ 買い物リストを作る  @quick                                    today ··· P4│" Hidden by multi-width symbols: [(6, "e"), (8, " "), (10, "h"), (12, "e"), (14, " "), (16, "u"), (18, "t"), (20, " "), (22, "y")]
+"│  ○ 買い物リストを作る  @quick  ⚑ tomorrow                        today ··· P4│" Hidden by multi-width symbols: [(6, "e"), (8, " "), (10, "h"), (12, "e"), (14, " "), (16, "u"), (18, "t"), (20, " "), (22, "y")]
 "│  ○ Réserver la crêperie pour l'anniversaire de Zoé  @phone      Nov 26 ▮▮▯ P2│"
 "│  ○ Write down every idea from Sunday's walk before they fade: the she… ··· P4│"
 "│  ○ 🎂 Order a c┌ Show in Inbox ────────────────────────────┐v 27 12:00 ▮▮▮ P1│" Hidden by multi-width symbols: [(6, "e")]

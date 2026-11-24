@@ -2,7 +2,7 @@
 source: tests/frame.rs
 expression: "screen_at('4', 80, 24).backend()"
 ---
-" [1] │ [2] │ [3] │ [4] Projects │ [5]                             synced 4s ago "
+" [1] │ [2] │ [3] │ [4] Projects │ [5]                    polling, synced 4s ago "
 "┌Projects──────────────────────────────────────────────────────────────────────┐"
 "│  Personal                                                                    │"
 "│›   ★ Home  8                                                                 │"

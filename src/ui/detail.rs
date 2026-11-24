@@ -3,7 +3,8 @@
 //! wrapped to the pane, so scrolling counts real rows. A prompt editing the
 //! task draws in place of the field it edits.
 
-use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use jiff::tz::TimeZone;
+use jiff::{Timestamp, Zoned, civil};
 use ratatui::Frame;
 use ratatui::layout::{Rect, Size};
 use ratatui::style::{Modifier, Style};
@@ -78,6 +79,7 @@ pub fn page_height(state: &State, screen: Size) -> u16 {
 /// `Personal › Admin`.
 fn breadcrumb(state: &State, task: &Task) -> String {
     let project = state
+        .store
         .projects
         .iter()
         .find(|project| project.id == task.project_id)
@@ -92,6 +94,7 @@ fn section_name<'a>(state: &'a State, task: &'a Task) -> Option<&'a str> {
     let id = task.section_id.as_deref()?;
     Some(
         state
+            .store
             .sections
             .iter()
             .find(|section| section.id == id)
@@ -166,6 +169,7 @@ fn build(
         }
         None => lines.extend(field(state, "Due", due_pieces(state, task), width)),
     }
+    lines.extend(plan_lines(state, task, width));
     let labels = if task.labels.is_empty() {
         vec![("None".to_owned(), muted)]
     } else {
@@ -194,7 +198,7 @@ fn build(
 
     let comments = comments(state, task);
     let loading = comments.is_empty()
-        && !state.comments_by_task.contains_key(&task.id)
+        && !state.store.comments_by_task.contains_key(&task.id)
         && task.note_count.unwrap_or(0) > 0;
     lines.push(Line::default());
     let heading = if loading {
@@ -238,13 +242,14 @@ fn due_pieces(state: &State, task: &Task) -> Pieces {
     let Some(due) = &task.due else {
         return vec![("None".to_owned(), muted)];
     };
-    let formatted = dates::format_due(due, state.today, state.theme());
-    let spelled_out = State::due_day(task)
-        .map(|day| (day.format("%b %-d").to_string(), day))
+    let formatted = dates::format_due(due, state.today, state.now.time_zone(), state.theme());
+    let spelled_out = state
+        .due_day(task)
+        .map(|day| (day.strftime("%b %-d").to_string(), day))
         .filter(|(short, _)| !formatted.text.contains(short.as_str()));
     let mut pieces = vec![(formatted.text, formatted.style)];
     if let Some((_, day)) = spelled_out {
-        pieces.push((format!(" ({})", day.format("%a %b %-d")), muted));
+        pieces.push((format!(" ({})", day.strftime("%a %b %-d")), muted));
     }
     if due.is_recurring {
         let rule = due.string.as_deref().filter(|rule| !rule.is_empty());
@@ -260,9 +265,41 @@ fn due_pieces(state: &State, task: &Task) -> Pieces {
     pieces
 }
 
+/// The Deadline, Duration and Reminders fields, each only when `task` has
+/// one: a reminder per row, location reminders left out.
+fn plan_lines(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let deadline = task
+        .deadline
+        .as_ref()
+        .and_then(|deadline| dates::format_deadline(deadline, state.today, state.theme()));
+    if let Some(deadline) = deadline {
+        let mark = format!("{} {}", state.icons().deadline, deadline.text);
+        lines.extend(field(
+            state,
+            "Deadline",
+            vec![(mark, deadline.style)],
+            width,
+        ));
+    }
+    if let Some(duration) = &task.duration {
+        let duration_text = dates::format_duration(duration);
+        lines.extend(field(state, "Duration", plain(duration_text), width));
+    }
+    let reminders = state.store.reminders_of(&task.id).filter_map(|reminder| {
+        dates::format_reminder(reminder, state.today, state.now.time_zone())
+    });
+    for (index, reminder) in reminders.enumerate() {
+        let name = if index == 0 { "Reminders" } else { "" };
+        lines.extend(field(state, name, plain(reminder), width));
+    }
+    lines
+}
+
 /// `Subtasks  1/3 done` and a row for each subtask, when `task` has any.
 fn subtask_lines(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
     let mut children: Vec<&Task> = state
+        .store
         .tasks
         .iter()
         .filter(|t| !t.is_deleted && t.parent_id.as_deref() == Some(task.id.as_str()))
@@ -296,6 +333,7 @@ fn subtask_lines(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
 /// sync or fetch brought, then any just written that are not among them.
 fn comments<'a>(state: &'a State, task: &Task) -> Vec<&'a Comment> {
     let mut shown: Vec<&Comment> = state
+        .store
         .comments_by_task
         .get(&task.id)
         .map(|list| list.iter().filter(|c| !c.is_deleted).collect())
@@ -314,16 +352,18 @@ fn comments<'a>(state: &'a State, task: &Task) -> Vec<&'a Comment> {
 fn comment_lines(state: &State, comment: &Comment, width: u16) -> Vec<Line<'static>> {
     let muted = style::muted(state.theme());
     let uid = comment.posted_by_uid.as_deref();
-    let author = uid.and_then(|uid| state.user_names.get(uid)).map_or_else(
-        || uid.unwrap_or("Unknown").to_owned(),
-        |user| user.name.clone(),
-    );
+    let author = uid
+        .and_then(|uid| state.store.user_names.get(uid))
+        .map_or_else(
+            || uid.unwrap_or("Unknown").to_owned(),
+            |user| user.name.clone(),
+        );
     let mut header = vec![(author, Style::new().add_modifier(Modifier::BOLD))];
-    if uid.is_some() && uid == state.current_user_id.as_deref() {
+    if uid.is_some() && uid == state.store.current_user_id.as_deref() {
         header.push((" (you)".to_owned(), muted));
     }
     if let Some(posted) = comment.posted_at.as_deref().and_then(parse_time) {
-        header.push((format!(" · {}", ago(posted, state.now)), muted));
+        header.push((format!(" · {}", ago(posted, &state.now)), muted));
     }
     let mut lines = wrap(&header, width, &[], &[]);
     let indent = [(BODY_INDENT.to_owned(), Style::new())];
@@ -350,6 +390,7 @@ fn details(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
     let muted = style::muted(state.theme());
     let none = || vec![("None".to_owned(), muted)];
     let project = state
+        .store
         .projects
         .iter()
         .find(|project| project.id == task.project_id)
@@ -357,6 +398,7 @@ fn details(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
     let section = section_name(state, task).map_or_else(none, plain);
     let parent = task.parent_id.as_deref().map_or_else(none, |id| {
         state
+            .store
             .tasks
             .iter()
             .find(|t| t.id == id)
@@ -367,9 +409,9 @@ fn details(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
         |at| {
             plain(format!(
                 "{} ({})",
-                at.with_timezone(&state.now.timezone())
-                    .format("%Y-%m-%d %H:%M"),
-                ago(at, state.now)
+                at.to_zoned(state.now.time_zone().clone())
+                    .strftime("%Y-%m-%d %H:%M"),
+                ago(at, &state.now)
             ))
         },
     );
@@ -401,22 +443,24 @@ fn field(state: &State, name: &str, value: Pieces, width: u16) -> Vec<Line<'stat
 
 /// A time Todoist sent: RFC 3339, or an ISO time without an offset, read
 /// as UTC.
-fn parse_time(at: &str) -> Option<DateTime<Utc>> {
-    if let Ok(time) = DateTime::parse_from_rfc3339(at) {
-        return Some(time.with_timezone(&Utc));
+fn parse_time(at: &str) -> Option<Timestamp> {
+    if let Ok(time) = at.parse::<Timestamp>() {
+        return Some(time);
     }
-    NaiveDateTime::parse_from_str(at, "%Y-%m-%dT%H:%M:%S%.f")
+    at.parse::<civil::DateTime>()
+        .ok()?
+        .to_zoned(TimeZone::UTC)
         .ok()
-        .map(|time| time.and_utc())
+        .map(|time| time.timestamp())
 }
 
 /// How long before `now` `then` was, in the largest whole unit, as
 /// `2 days ago`.
-fn ago(then: DateTime<Utc>, now: DateTime<Local>) -> String {
+fn ago(then: Timestamp, now: &Zoned) -> String {
     const MINUTE: i64 = 60;
     const HOUR: i64 = 60 * MINUTE;
     const DAY: i64 = 24 * HOUR;
-    let seconds = (now.with_timezone(&Utc) - then).num_seconds();
+    let seconds = now.timestamp().duration_since(then).as_secs();
     let (count, unit) = match seconds {
         _ if seconds < MINUTE => return "just now".to_owned(),
         _ if seconds < HOUR => (seconds / MINUTE, "minute"),
@@ -601,9 +645,9 @@ mod tests {
 
     #[test]
     fn ago_names_the_largest_whole_unit() {
-        let now = DateTime::parse_from_rfc3339("2026-11-23T09:00:00Z")
+        let now = &parse_time("2026-11-23T09:00:00Z")
             .unwrap()
-            .with_timezone(&Local);
+            .to_zoned(TimeZone::UTC);
         let then = |at: &str| parse_time(at).unwrap();
 
         assert_eq!(ago(then("2026-11-23T08:59:30Z"), now), "just now");
