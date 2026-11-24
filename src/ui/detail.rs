@@ -283,8 +283,8 @@ fn plan_lines(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
         ));
     }
     if let Some(duration) = &task.duration {
-        let length = dates::format_duration(duration);
-        lines.extend(field(state, "Duration", plain(length), width));
+        let duration_text = dates::format_duration(duration);
+        lines.extend(field(state, "Duration", plain(duration_text), width));
     }
     let reminders = state.store.reminders_of(&task.id).filter_map(|reminder| {
         dates::format_reminder(reminder, state.today, state.now.time_zone())
