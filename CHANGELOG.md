@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/cxrlos/ratatoist/compare/v0.6.0...v0.7.0) - 2026-11-24
+
+### Added
+
+- complete ratatoist 0.7.0 ([#94](https://github.com/cxrlos/ratatoist/pull/94))
+
 ## ratatoist-core 0.4.0 / ratatoist-tui 0.5.0 -- 2026-06-16
 
 ### Added
