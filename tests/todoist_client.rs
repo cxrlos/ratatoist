@@ -873,3 +873,50 @@ async fn a_socket_that_answers_pings_stays_live() {
     }
     assert!(count >= 9, "{count} pings in 300 s");
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_socket_that_closes_at_once_backs_off_instead_of_reconnecting_each_second() {
+    let url = live_server(|mut socket| async move {
+        let _ = socket.close(None).await;
+    })
+    .await;
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
+    let mut connects = 0;
+
+    let _ = tokio::time::timeout(
+        Duration::from_secs(60),
+        client.live_events(&url).for_each(|message| {
+            if message == LiveMessage::Connected {
+                connects += 1;
+            }
+            async {}
+        }),
+    )
+    .await;
+
+    // Backing off from 5 s, doubling, jittered down to half: at most five
+    // connections fit in a minute.
+    assert!(
+        (1..=5).contains(&connects),
+        "{connects} connections in 60 s"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_socket_that_stayed_up_30_seconds_reconnects_after_a_second() {
+    let url = live_server(|mut socket| async move {
+        tokio::time::sleep(Duration::from_secs(31)).await;
+        let _ = socket.close(None).await;
+    })
+    .await;
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
+    let mut events = Box::pin(client.live_events(&url));
+
+    assert_eq!(events.next().await, Some(LiveMessage::Connected));
+    assert_eq!(events.next().await, Some(LiveMessage::Disconnected));
+    let dropped = tokio::time::Instant::now();
+    assert_eq!(events.next().await, Some(LiveMessage::Connected));
+
+    let waited = dropped.elapsed();
+    assert!(waited <= Duration::from_secs(2), "{waited:?}");
+}

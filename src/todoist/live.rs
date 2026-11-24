@@ -25,7 +25,11 @@ const ORIGIN: &str = "https://app.todoist.com";
 /// cap.
 const FIRST_BACKOFF: Duration = Duration::from_secs(5);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
-/// A clean disconnect reconnects after this, without growing the backoff.
+/// A socket that drops after staying up this long reconnects after
+/// `AFTER_DISCONNECT` and resets the backoff; one that drops sooner waits as
+/// a failed connection does, so a server that accepts and closes at once is
+/// not hammered.
+const STABLE_AFTER: Duration = Duration::from_secs(30);
 const AFTER_DISCONNECT: Duration = Duration::from_secs(1);
 /// How often ratatoist pings the server.
 const PING_EVERY: Duration = Duration::from_secs(30);
@@ -39,8 +43,18 @@ struct Live {
     socket: Option<Socket>,
     wait: Option<Duration>,
     backoff: Duration,
+    up_since: Instant,
     last_frame: Instant,
     next_ping: Instant,
+}
+
+impl Live {
+    /// Waits the jittered backoff before the next connection, and doubles
+    /// it up to the cap.
+    fn back_off(&mut self) {
+        self.wait = Some(jittered(self.backoff));
+        self.backoff = (self.backoff * 2).min(MAX_BACKOFF);
+    }
 }
 
 pub(super) fn events(url: String) -> impl Stream<Item = LiveMessage> + Send + 'static {
@@ -49,6 +63,7 @@ pub(super) fn events(url: String) -> impl Stream<Item = LiveMessage> + Send + 's
         socket: None,
         wait: None,
         backoff: FIRST_BACKOFF,
+        up_since: Instant::now(),
         last_frame: Instant::now(),
         next_ping: Instant::now(),
     };
@@ -85,7 +100,12 @@ pub(super) fn events(url: String) -> impl Stream<Item = LiveMessage> + Send + 's
                     }
                 }
                 live.socket = None;
-                live.wait = Some(AFTER_DISCONNECT);
+                if live.up_since.elapsed() >= STABLE_AFTER {
+                    live.backoff = FIRST_BACKOFF;
+                    live.wait = Some(AFTER_DISCONNECT);
+                } else {
+                    live.back_off();
+                }
                 return Some((LiveMessage::Disconnected, live));
             }
             if let Some(wait) = live.wait.take() {
@@ -94,15 +114,14 @@ pub(super) fn events(url: String) -> impl Stream<Item = LiveMessage> + Send + 's
             match connect(&live.url).await {
                 Ok(socket) => {
                     live.socket = Some(socket);
-                    live.last_frame = Instant::now();
+                    live.up_since = Instant::now();
+                    live.last_frame = live.up_since;
                     live.next_ping = live.last_frame + PING_EVERY;
-                    live.backoff = FIRST_BACKOFF;
                     return Some((LiveMessage::Connected, live));
                 }
                 Err(error) => {
                     debug!(error = %error, "websocket connection failed, retrying");
-                    live.wait = Some(jittered(live.backoff));
-                    live.backoff = (live.backoff * 2).min(MAX_BACKOFF);
+                    live.back_off();
                 }
             }
         }
