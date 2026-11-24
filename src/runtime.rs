@@ -6,6 +6,7 @@ use std::future::Future;
 use std::io;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -232,6 +233,7 @@ where
     let (tx, answers) = mpsc::unbounded_channel();
     let outside = Outside {
         client,
+        syncs: sync_lane(tx.clone()),
         answers: tx,
         files: files.cloned(),
         saves,
@@ -400,11 +402,31 @@ impl Writer {
     }
 }
 
+/// A `/sync` request on its way, which ends with the event that answers it.
+type SyncRequest = Pin<Box<dyn Future<Output = Event> + Send>>;
+
+/// Runs every `/sync` request, reads and command flushes alike, one at a
+/// time in the order sent. Each answer carries a sync token and the changes
+/// up to it, so answers must reach the loop in the order Todoist handled
+/// them: an older answer landing after a newer one would take the store and
+/// the token back.
+fn sync_lane(answers: mpsc::UnboundedSender<Event>) -> mpsc::UnboundedSender<SyncRequest> {
+    let (syncs, mut queue) = mpsc::unbounded_channel::<SyncRequest>();
+    tokio::spawn(async move {
+        while let Some(request) = queue.recv().await {
+            // The loop has stopped if this fails; nothing is waiting.
+            let _ = answers.send(request.await);
+        }
+    });
+    syncs
+}
+
 /// What effects reach: the client, the way back for answers, the folder
 /// files are saved in and the writer that saves them, and GitHub's releases
 /// with their cache.
 struct Outside<'a, C> {
     client: &'a C,
+    syncs: mpsc::UnboundedSender<SyncRequest>,
     answers: mpsc::UnboundedSender<Event>,
     files: Option<Files>,
     saves: mpsc::UnboundedSender<Save>,
@@ -418,17 +440,19 @@ impl<C: TodoistClient> Outside<'_, C> {
         match effect {
             Effect::Quit => return ControlFlow::Break(()),
             Effect::Sync(request) => {
-                self.spawn(|client| async move {
+                let client = self.client.clone();
+                let _ = self.syncs.send(Box::pin(async move {
                     Event::Synced(client.sync(request).await.map(Box::new))
-                });
+                }));
             }
             Effect::SendCommands(commands) => {
                 let uuids = commands.iter().map(|c| c.uuid.clone()).collect();
                 let request = command_request(&state.sync_token, commands);
-                self.spawn(|client| async move {
+                let client = self.client.clone();
+                let _ = self.syncs.send(Box::pin(async move {
                     let result = client.sync(request).await.map(Box::new);
                     Event::CommandsSent { uuids, result }
-                });
+                }));
             }
             Effect::FetchComments { task_id, fetch_seq } => {
                 self.spawn(|client| async move {
@@ -580,6 +604,21 @@ mod tests {
 
     fn start(config: &Config, ui: &UiSettings) -> State {
         initial_state_from(config, ui, "*".to_owned(), now(), false)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sync_requests_answer_in_the_order_sent_however_long_each_takes() {
+        let (answers, mut received) = mpsc::unbounded_channel();
+        let syncs = sync_lane(answers);
+        let slow: SyncRequest = Box::pin(async {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            Event::Start
+        });
+        let fast: SyncRequest = Box::pin(async { Event::LiveSyncDue });
+        syncs.send(slow).unwrap();
+        syncs.send(fast).unwrap();
+        assert!(matches!(received.recv().await, Some(Event::Start)));
+        assert!(matches!(received.recv().await, Some(Event::LiveSyncDue)));
     }
 
     #[test]
@@ -1002,6 +1041,7 @@ mod tests {
         let (answers, _) = mpsc::unbounded_channel();
         let outside = Outside {
             client: &client,
+            syncs: sync_lane(answers.clone()),
             answers,
             files: Some(files.clone()),
             saves: writer.saves,
@@ -1031,6 +1071,7 @@ mod tests {
         let (answers, mut answered) = mpsc::unbounded_channel();
         let outside = Outside {
             client: &client,
+            syncs: sync_lane(answers.clone()),
             answers,
             files: Some(files.clone()),
             saves: writer.saves,
@@ -1059,6 +1100,7 @@ mod tests {
         let (answers, mut answered) = mpsc::unbounded_channel();
         let outside = Outside {
             client: &client,
+            syncs: sync_lane(answers.clone()),
             answers,
             files: None,
             saves: writer.saves,
