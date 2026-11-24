@@ -2,7 +2,7 @@
 source: tests/list.rs
 expression: app.backend()
 ---
-" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago "
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 0s ago "
 "┏Atlas redesign━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Atlas redesign › Research─────────────────────┐"
 "┃Research (2)                                                          ┃│Interview five café owners about online       │"
 "┃› ○ Interview five café owners about online ordering  @… Nov 26 ▮▮▯ P2┃│ordering                                      │"

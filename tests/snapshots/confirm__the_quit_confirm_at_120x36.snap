@@ -2,7 +2,7 @@
 source: tests/confirm.rs
 expression: app.backend()
 ---
-" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago "
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 0s ago "
 "┌Today─────────────────────────────────────────────────────────────────┐┏Harbor app━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
 "│▲ Overdue (7)                                                         │┃Ask Teo for the push-notification certificate ┃"
 "│› ○ Ask Teo for the push-notification…  Nov 19 ▮▮▯ P2 Harbor app      │┃                                              ┃"

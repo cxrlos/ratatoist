@@ -2,7 +2,7 @@
 source: tests/confirm.rs
 expression: app.backend()
 ---
-" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
+" [1] │ [2] Today │ [3] │ [4] │ [5]                       polling, synced 0s ago "
 "┌Kitchen renovation────────────────────────────────────────────────────────────┐"
 "│Get three quotes for the plumbing                                             │"
 "│                                                                              │"

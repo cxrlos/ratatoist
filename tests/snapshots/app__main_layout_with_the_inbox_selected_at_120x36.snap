@@ -2,7 +2,7 @@
 source: tests/app.rs
 expression: app.backend()
 ---
-" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago "
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 0s ago "
 "┏Today━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐"
 "┃▲ Overdue (1)                                                         ┃│Buy oat milk                                  │"
 "┃› ○ Buy oat milk  @errand                          Nov 20 ▮▮▮ P1 Inbox┃│                                              │"

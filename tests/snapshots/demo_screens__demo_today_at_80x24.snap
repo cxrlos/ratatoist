@@ -2,7 +2,7 @@
 source: tests/demo_screens.rs
 expression: app.backend()
 ---
-" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
+" [1] │ [2] Today │ [3] │ [4] │ [5]                       polling, synced 0s ago "
 "┌Today─────────────────────────────────────────────────────────────────────────┐"
 "│▲ Overdue (8)                                                                 │"
 "│› ○ Fix the wobbly chair leg  ✉1                Nov 18 ▮▯▯ P3 Home            │"

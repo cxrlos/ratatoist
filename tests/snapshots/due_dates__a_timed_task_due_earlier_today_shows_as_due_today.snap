@@ -2,7 +2,7 @@
 source: tests/due_dates.rs
 expression: app.backend()
 ---
-" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago "
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 0s ago "
 "┏Today━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐"
 "┃▲ Overdue (3)                                                         ┃│Return the call                               │"
 "┃  ○ Pay the bill                                   Nov 20 ▮▯▯ P3 Inbox┃│                                              │"

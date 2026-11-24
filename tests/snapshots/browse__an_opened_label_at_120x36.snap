@@ -2,7 +2,7 @@
 source: tests/browse.rs
 expression: app.backend()
 ---
-" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago "
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 0s ago "
 "┏@errand━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐"
 "┃Inbox (2)                                                             ┃│Return the library books                      │"
 "┃› ○ Return the library books  @errand                    Nov 21 ▮▯▯ P3┃│                                              │"

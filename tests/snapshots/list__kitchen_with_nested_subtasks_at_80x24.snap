@@ -2,7 +2,7 @@
 source: tests/list.rs
 expression: app.backend()
 ---
-" [1] │ [2] │ [3] │ [4] Projects │ [5]                             synced 0s ago "
+" [1] │ [2] │ [3] │ [4] Projects │ [5]                    polling, synced 0s ago "
 "┌Kitchen renovation────────────────────────────────────────────────────────────┐"
 "│› ▿ Pick the tiles  @deep-work                                    Dec 3 ▮▮▯ P2│"
 "│    ▿ Order tile samples  @computer                              Nov 25 ··· P4│"

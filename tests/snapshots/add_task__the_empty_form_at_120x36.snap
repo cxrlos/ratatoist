@@ -2,7 +2,7 @@
 source: tests/add_task.rs
 expression: drawn(&app)
 ---
-" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago "
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                polling, synced 0s ago "
 "┏Inbox━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐"
 "┃› ○ Call the plumber about the leaking tap  @phone  ✉1    today ▮▮▯ P2┃│Call the plumber about the leaking tap        │"
 "┃  ○ Return the library books  @errand                    Nov 21 ▮▯▯ P3┃│                                              │"

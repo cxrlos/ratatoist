@@ -2,7 +2,7 @@
 source: tests/frame.rs
 expression: "screen_at('3', 80, 24).backend()"
 ---
-" [1] │ [2] │ [3] Upcoming │ [4] │ [5]                             synced 4s ago "
+" [1] │ [2] │ [3] Upcoming │ [4] │ [5]                    polling, synced 4s ago "
 "┌Upcoming──────────────────────────────────────────────────────────────────────┐"
 "│Mon 23 Nov (11)                                                               │"
 "│› ○ Call the plumber about the leaking tap  @phon… today ▮▮▯ P2 Inbox         │"
