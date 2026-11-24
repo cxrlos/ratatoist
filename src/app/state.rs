@@ -148,10 +148,14 @@ pub struct State {
     pub(crate) cache_dirty_since: Option<jiff::Timestamp>,
     /// Revert snapshots of optimistic writes, keyed by command uuid.
     pub(crate) temp_id_pending: HashMap<String, OptimisticOp>,
+    /// The uuids in `temp_id_pending`, oldest write first.
+    pub(crate) pending_order: Vec<String>,
     /// What each command still waiting for Todoist does, as `complete "Buy
     /// oat milk"`, keyed by its uuid, to name it if it fails.
     pub(crate) pending_actions: HashMap<String, String>,
-    pub(crate) next_temp_id: u64,
+    /// The newest state an incremental sync brought for a task with a write
+    /// in flight, by task id, applied once its last write settles.
+    pub(crate) parked: HashMap<String, Task>,
     /// The lists derived from the store and the list state, rebuilt on the
     /// first read after either changes.
     pub(crate) lists: RefCell<Option<Lists>>,
@@ -217,8 +221,9 @@ impl State {
             user_to_confirm: None,
             cache_dirty_since: None,
             temp_id_pending: HashMap::new(),
+            pending_order: Vec::new(),
             pending_actions: HashMap::new(),
-            next_temp_id: 0,
+            parked: HashMap::new(),
             lists: RefCell::new(None),
             reported_cycles: HashSet::new(),
         }

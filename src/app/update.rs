@@ -1049,7 +1049,7 @@ impl State {
         }
         let form = form.clone();
         let due_string = form.due_string.trim().to_owned();
-        let temp_id = self.new_temp_id();
+        let temp_id = new_uuid();
 
         // The one due string known without Todoist: Today's default, so the
         // row shows on Today at once.
@@ -1092,7 +1092,7 @@ impl State {
         let Some(task_id) = self.edit_task.take() else {
             return;
         };
-        let temp_id = self.new_temp_id();
+        let temp_id = new_uuid();
 
         let optimistic = Comment {
             id: temp_id.clone(),

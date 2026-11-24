@@ -519,7 +519,7 @@ async fn an_added_task_stays_under_its_new_id_and_survives_a_full_sync() {
         .iter()
         .find(|t| t.content == "Feed the parrot")
         .unwrap();
-    assert!(!added.id.starts_with("tmp_"));
+    assert!(added.id.starts_with("demo-"), "{}", added.id);
     assert!(shows(&app, "Feed the parrot"));
     drive(&mut app, &client, [key('R')]).await;
     assert!(shows(&app, "Feed the parrot"));

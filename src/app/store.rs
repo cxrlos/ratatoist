@@ -255,13 +255,16 @@ pub struct Merged {
     pub comments: Vec<String>,
     /// Projects, workspaces or folders changed, so the tree order may have.
     pub projects: bool,
+    /// The incoming tasks an incremental sync held back because a write to
+    /// them is in flight, in the order they came.
+    pub parked: Vec<Task>,
 }
 
 impl Store {
     /// Merges `resp`: a full sync replaces each resource it carries, an
     /// incremental one upserts and deletes by id. An incoming task for which
-    /// `in_flight` holds is skipped, so a racing delta never clobbers a
-    /// write Todoist has not answered.
+    /// `in_flight` holds is held back in [`Merged::parked`], so a racing
+    /// delta never clobbers a write Todoist has not answered.
     pub fn merge(&mut self, resp: SyncResponse, in_flight: impl Fn(&str) -> bool) -> Merged {
         let mut merged = Merged {
             projects: resp.projects.is_some()
@@ -275,6 +278,13 @@ impl Store {
             self.apply_delta(resp, &in_flight, &mut merged);
         }
         merged
+    }
+
+    /// Applies one task as an incremental sync would: upserted, or removed
+    /// when deleted.
+    pub fn apply_task(&mut self, task: Task) {
+        let deleted = task.is_deleted;
+        upsert_or_remove(&mut self.tasks, task, deleted);
     }
 
     fn replace(&mut self, resp: SyncResponse, merged: &mut Merged) {
@@ -339,6 +349,7 @@ impl Store {
         }
         for item in resp.items.into_iter().flatten() {
             if in_flight(&item.id) {
+                merged.parked.push(item);
                 continue;
             }
             merged.tasks.push(item.id.clone());
@@ -576,10 +587,10 @@ mod tests {
     }
 
     #[test]
-    fn a_delta_skips_a_task_with_a_write_in_flight() {
+    fn a_delta_parks_a_task_with_a_write_in_flight() {
         let mut store = Store::default();
         store.merge(sync(true, vec![task("a", "mine")], vec![]), |_| false);
-        store.merge(sync(false, vec![task("a", "theirs")], vec![]), |id| {
+        let merged = store.merge(sync(false, vec![task("a", "theirs")], vec![]), |id| {
             id == "a"
         });
 
@@ -587,6 +598,9 @@ mod tests {
             store.tasks.by_id("a").map(|t| t.content.as_str()),
             Some("mine")
         );
+        let parked: Vec<&str> = merged.parked.iter().map(|t| t.content.as_str()).collect();
+        assert_eq!(parked, ["theirs"]);
+        assert!(merged.tasks.is_empty());
     }
 
     fn reminder(id: &str, task_id: &str, deleted: bool) -> Reminder {

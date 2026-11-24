@@ -7,7 +7,7 @@ use insta::assert_snapshot;
 use jiff::civil::date;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Zoned};
-use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
+use ratatoist::app::{App, Effect, ErrorKind, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::model::Task;
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
@@ -508,6 +508,120 @@ fn a_racing_delta_does_not_clobber_a_task_with_a_pending_command() {
     assert!(app.state().is_pending(&command.uuid));
     assert!(task(&app, "t-milk").checked, "the pending value survives");
     assert_eq!(task(&app, "t-read").content, "Read chapter two");
+}
+
+const RENAMED_MILK: &str = r#"{"full_sync":false,"sync_token":"fixture-token-2",
+    "items":[{"id":"t-milk","content":"Buy oat milk and bread","checked":false,
+      "priority":4,"project_id":"p-inbox","child_order":1}]}"#;
+
+#[test]
+fn a_racing_delta_is_parked_and_lands_once_the_command_succeeds() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+    app.handle(Event::Synced(Ok(delta(RENAMED_MILK)))).unwrap();
+    assert_eq!(app.state().sync_token, "fixture-token-2");
+    assert_eq!(task(&app, "t-milk").content, "Buy oat milk");
+
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-3",
+            "sync_status":{{"{}":"ok"}}}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Ok(delta(&answer)),
+    })
+    .unwrap();
+
+    assert_eq!(task(&app, "t-milk").content, "Buy oat milk and bread");
+}
+
+#[test]
+fn a_parked_delta_wins_over_the_rollback_snapshot() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+    app.handle(Event::Synced(Ok(delta(RENAMED_MILK)))).unwrap();
+
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Err(ClientError::Network("offline".to_owned())),
+    })
+    .unwrap();
+
+    let milk = task(&app, "t-milk");
+    assert_eq!(milk.content, "Buy oat milk and bread");
+    assert!(!milk.checked);
+    let reason = app.state().rollback_reason("t-milk").map(|f| &f.kind);
+    assert_eq!(reason, Some(&ErrorKind::Offline));
+}
+
+#[test]
+fn a_rejected_write_rolls_back_with_the_validation_kind() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+
+    let rejection = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":{{"error_code":22,"error":"Item not found"}}}}}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Ok(delta(&rejection)),
+    })
+    .unwrap();
+
+    let reason = app.state().rollback_reason("t-milk").map(|f| &f.kind);
+    assert_eq!(reason, Some(&ErrorKind::Validation));
+}
+
+#[test]
+fn a_new_task_s_temp_id_is_a_version_4_uuid() {
+    let mut app = app();
+    send(&mut app, [key('1'), key('a')]);
+    send(&mut app, "Pay rent".chars().map(key));
+    let command = single_command(&send(&mut app, [press(KeyCode::Enter)]));
+
+    let temp_id = command.temp_id.unwrap();
+    assert_eq!(temp_id.len(), 36);
+    assert_eq!(&temp_id[14..15], "4");
+    assert!(matches!(&temp_id[19..20], "8" | "9" | "a" | "b"));
+    assert_ne!(temp_id, command.uuid);
+}
+
+#[test]
+fn a_sync_that_brought_the_new_task_first_leaves_one_copy() {
+    let mut app = app();
+    send(&mut app, [key('1'), key('a')]);
+    send(&mut app, "Pay rent".chars().map(key));
+    let command = single_command(&send(&mut app, [press(KeyCode::Enter)]));
+    let temp_id = command.temp_id.clone().unwrap();
+    app.handle(Event::Synced(Ok(delta(
+        r#"{"full_sync":false,"sync_token":"fixture-token-2",
+            "items":[{"id":"t-rent","content":"Pay rent","checked":false,"priority":1,
+              "project_id":"p-inbox","child_order":9}]}"#,
+    ))))
+    .unwrap();
+
+    let confirmation = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-3",
+            "sync_status":{{"{}":"ok"}},"temp_id_mapping":{{"{temp_id}":"t-rent"}}}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Ok(delta(&confirmation)),
+    })
+    .unwrap();
+
+    let copies = app
+        .state()
+        .store
+        .tasks
+        .iter()
+        .filter(|t| t.content == "Pay rent")
+        .count();
+    assert_eq!(copies, 1);
 }
 
 #[test]

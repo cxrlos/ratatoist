@@ -125,11 +125,6 @@ pub(crate) fn new_uuid() -> String {
 }
 
 impl State {
-    pub(crate) fn new_temp_id(&mut self) -> String {
-        self.next_temp_id += 1;
-        format!("tmp_{}", self.next_temp_id)
-    }
-
     /// Records `op` under the command's uuid and asks the runtime to send the
     /// command, alone. One command per flush: the rollback snapshots are
     /// absolute `before` values that do not compose when two edits of the
@@ -148,8 +143,44 @@ impl State {
         self.pending_actions.insert(command.uuid.clone(), action);
         if let Some(op) = op {
             self.temp_id_pending.insert(command.uuid.clone(), op);
+            self.pending_order.push(command.uuid.clone());
         }
         effects.push(Effect::SendCommands(vec![command]));
+    }
+
+    /// Takes the write with `uuid` out of the pending ones, with the place
+    /// it held among them, oldest first.
+    fn take_pending(&mut self, uuid: &str) -> Option<(usize, OptimisticOp)> {
+        let op = self.temp_id_pending.remove(uuid)?;
+        let at = self.pending_order.iter().position(|u| u == uuid);
+        if let Some(at) = at {
+            self.pending_order.remove(at);
+        }
+        Some((at.unwrap_or(self.pending_order.len()), op))
+    }
+
+    /// The writes sent after the rolled-back `op`, to the same task or
+    /// project, now start from `op`'s snapshot: `op` never happened.
+    fn rebase_later_writes(&mut self, from: usize, op: &OptimisticOp) {
+        for uuid in self.pending_order.iter().skip(from) {
+            match (self.temp_id_pending.get_mut(uuid), op) {
+                (
+                    Some(OptimisticOp::TaskUpdated { task_id, before }),
+                    OptimisticOp::TaskUpdated {
+                        task_id: rolled_back,
+                        before: snapshot,
+                    },
+                ) if task_id == rolled_back => before.clone_from(snapshot),
+                (
+                    Some(OptimisticOp::ProjectUpdated { project_id, before }),
+                    OptimisticOp::ProjectUpdated {
+                        project_id: rolled_back,
+                        before: snapshot,
+                    },
+                ) if project_id == rolled_back => before.clone_from(snapshot),
+                _ => {}
+            }
+        }
     }
 
     /// Whether a command with `uuid` is still waiting for Todoist.
@@ -224,7 +255,13 @@ impl State {
         }
         let ops = &self.temp_id_pending;
         let in_flight = |id: &str| !full && ops.values().any(|op| op.task() == Some(id));
-        let merged = self.store.merge(resp, in_flight);
+        let mut merged = self.store.merge(resp, in_flight);
+        if full {
+            self.parked.clear();
+        }
+        for task in std::mem::take(&mut merged.parked) {
+            self.parked.insert(task.id.clone(), task);
+        }
         if merged.projects {
             self.sort_projects();
         }
@@ -356,6 +393,7 @@ impl State {
         self.oldest_completed.clear();
         self.rolled_back.clear();
         self.pending_due.clear();
+        self.parked.clear();
         self.loading = true;
         self.selected_task = 0;
         let request = full_sync_request();
@@ -461,13 +499,17 @@ impl State {
                     ));
                 }
                 SyncCommandResult::Ok(_) => {
-                    if let Some(op) = self.temp_id_pending.remove(uuid)
-                        && let OptimisticOp::CommentAdded { task_id, .. } = &op
-                    {
+                    let Some((_, op)) = self.take_pending(uuid) else {
+                        continue;
+                    };
+                    if let OptimisticOp::CommentAdded { task_id, .. } = &op {
                         let current = self.selected_task().map(|t| t.id.clone());
                         if current.as_deref() == Some(task_id.as_str()) {
                             refresh_comments_for = Some(task_id.clone());
                         }
+                    }
+                    if let Some(task_id) = op.task() {
+                        self.release_parked(task_id);
                     }
                 }
             }
@@ -507,18 +549,40 @@ impl State {
     }
 
     /// Restores what the write with `uuid` changed, and marks its task or
-    /// project with `failure`.
+    /// project with `failure`. A state parked for the task while the write
+    /// was in flight is newer than the snapshot, so it wins.
     fn roll_back(&mut self, uuid: &str, failure: &Failure) {
-        let Some(op) = self.temp_id_pending.remove(uuid) else {
+        let Some((at, op)) = self.take_pending(uuid) else {
             return;
         };
+        self.rebase_later_writes(at, &op);
         if let OptimisticOp::ProjectUpdated { project_id, .. } = &op {
             self.rolled_back_projects
                 .insert(project_id.clone(), failure.clone());
         }
+        let parked_for = op.task().map(str::to_owned);
         if let Some(task_id) = self.revert_optimistic(op) {
             self.pending_due.remove(&task_id);
             self.rolled_back.insert(task_id, failure.clone());
+        }
+        if let Some(task_id) = parked_for {
+            self.release_parked(&task_id);
+        }
+    }
+
+    /// Applies the state an incremental sync parked for `task_id`, once no
+    /// write to it is in flight.
+    fn release_parked(&mut self, task_id: &str) {
+        if self
+            .temp_id_pending
+            .values()
+            .any(|op| op.task() == Some(task_id))
+        {
+            return;
+        }
+        if let Some(task) = self.parked.remove(task_id) {
+            self.pending_due.remove(task_id);
+            self.store.apply_task(task);
         }
     }
 
@@ -564,10 +628,15 @@ impl State {
         }
     }
 
+    /// Gives the task or comment under `temp_id` its real id; a task a sync
+    /// already brought under that id replaces the optimistic one.
     fn apply_temp_id_mapping(&mut self, temp_id: &str, real_id: &str) {
-        self.store
-            .tasks
-            .rekey(temp_id, real_id, |task, id| task.id = id.to_owned());
+        let tasks = &mut self.store.tasks;
+        if tasks.by_id(real_id).is_some() {
+            tasks.retain(|task| task.id != temp_id);
+        } else {
+            tasks.rekey(temp_id, real_id, |task, id| task.id = id.to_owned());
+        }
         for c in &mut self.comments {
             if c.id == temp_id {
                 c.id = real_id.to_string();
@@ -630,7 +699,9 @@ impl State {
     /// task list wholesale, so a late command result must not revert against it.
     pub(crate) fn force_full_resync(&mut self, effects: &mut Vec<Effect>) {
         self.temp_id_pending.clear();
+        self.pending_order.clear();
         self.pending_actions.clear();
+        self.parked.clear();
         let request = full_sync_request();
         self.sync_token = request.sync_token.clone();
         // Written with token `*`, the cache is deleted: what it holds may be
@@ -799,6 +870,9 @@ fn collect_project_subtree(parent_id: Option<&str>, all: &[Project], out: &mut V
         collect_project_subtree(Some(&child.id), all, out);
     }
 }
+
+#[cfg(test)]
+mod interleavings;
 
 #[cfg(test)]
 mod tests {
