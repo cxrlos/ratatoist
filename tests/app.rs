@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
 use jiff::civil::date;
@@ -530,38 +532,183 @@ fn force_resync_drops_pending_writes_and_reads_everything() {
     );
 }
 
-#[test]
-fn a_live_change_syncs_from_the_last_token() {
-    let mut app = app();
+/// How many syncs `effects` ask for.
+fn sync_count(effects: &[Effect]) -> usize {
+    syncs(effects).len()
+}
 
-    let effects = send(&mut app, [Event::Live(LiveMessage::Changed)]);
-
-    let [Effect::Sync(request)] = effects.as_slice() else {
-        panic!("{effects:?}");
-    };
-    assert_eq!(request.sync_token, "fixture-token-1");
-    assert!(shows(&app, "synced 0s ago"));
+fn live(message: LiveMessage) -> Event {
+    Event::Live(message)
 }
 
 #[test]
-fn a_live_change_while_idle_waits_for_the_next_key() {
+fn ten_live_changes_in_a_second_give_one_sync_after_the_debounce() {
     let mut app = app();
-    send(&mut app, [Event::Live(LiveMessage::Connected)]);
+    send(&mut app, [live(LiveMessage::Connected)]);
+
+    let burst = send(&mut app, (0..10).map(|_| live(LiveMessage::Changed)));
+    let due = send(&mut app, [Event::LiveSyncDue]);
+
+    assert_eq!(
+        burst,
+        vec![Effect::ScheduleLiveSync {
+            after: Duration::from_secs(2)
+        }]
+    );
+    let [Effect::Sync(request)] = due.as_slice() else {
+        panic!("{due:?}");
+    };
+    assert_eq!(request.sync_token, "fixture-token-1");
+}
+
+#[test]
+fn a_steady_stream_of_live_changes_still_syncs_once_per_debounce() {
+    let mut app = app();
+    send(&mut app, [live(LiveMessage::Connected)]);
+
+    let mut synced = 0;
+    for _ in 0..3 {
+        let scheduled = send(&mut app, (0..5).map(|_| live(LiveMessage::Changed)));
+        assert_eq!(scheduled.len(), 1, "{scheduled:?}");
+        synced += sync_count(&send(&mut app, [Event::LiveSyncDue]));
+    }
+
+    assert_eq!(synced, 3);
+}
+
+#[test]
+fn a_dropped_live_connection_polls_every_minute() {
+    let mut app = app();
     send(
         &mut app,
-        [Event::Tick {
-            now: now() + SignedDuration::from_mins(6),
-        }],
+        [
+            live(LiveMessage::Connected),
+            live(LiveMessage::Disconnected),
+        ],
     );
+
+    let polls: Vec<_> = [1, 30, 61, 90, 121]
+        .map(|secs| sync_count(&send(&mut app, [tick(secs)])))
+        .into();
+
+    assert_eq!(polls, vec![0, 0, 1, 0, 1]);
+}
+
+#[test]
+fn a_live_connection_that_never_came_up_polls_too() {
+    let mut app = app();
+
+    send(&mut app, [tick(1)]);
+    let polled = send(&mut app, [tick(61)]);
+
+    assert_eq!(sync_count(&polled), 1);
+}
+
+#[test]
+fn a_live_connection_that_is_up_polls_nothing() {
+    let mut app = app();
+    send(&mut app, [live(LiveMessage::Connected)]);
+
+    let effects = send(&mut app, (1..=200).map(tick));
+
+    assert_eq!(sync_count(&effects), 0);
+}
+
+#[test]
+fn reconnecting_catches_up_once_and_stops_polling() {
+    let mut app = app();
+    send(
+        &mut app,
+        [
+            live(LiveMessage::Connected),
+            live(LiveMessage::Disconnected),
+            tick(1),
+        ],
+    );
+
+    let reconnected = send(&mut app, [live(LiveMessage::Connected)]);
+    let later = send(&mut app, [tick(61), tick(121)]);
+
+    assert_eq!(
+        reconnected,
+        vec![Effect::ScheduleLiveSync {
+            after: Duration::from_secs(2)
+        }]
+    );
+    assert_eq!(sync_count(&later), 0);
+}
+
+#[test]
+fn nothing_polls_before_the_account_loads() {
+    let mut app = App::new(TestBackend::new(120, 36), State::new(now())).unwrap();
+
+    let effects = send(&mut app, [tick(1), tick(61), tick(121)]);
+
+    assert_eq!(sync_count(&effects), 0);
+}
+
+#[test]
+fn idle_pauses_polling_and_live_syncs_until_the_next_key() {
+    let mut app = app();
+    send(&mut app, [live(LiveMessage::Connected)]);
+    send(&mut app, [live(LiveMessage::Changed)]);
+    send(&mut app, [live(LiveMessage::Disconnected), tick(6 * 60)]);
     assert!(shows(&app, "idle, synced 6m ago"), "{:#?}", screen(&app));
 
-    let while_idle = send(&mut app, [Event::Live(LiveMessage::Changed)]);
+    let while_idle = send(
+        &mut app,
+        [
+            Event::LiveSyncDue,
+            live(LiveMessage::Changed),
+            tick(7 * 60),
+            tick(9 * 60),
+        ],
+    );
     let on_key = send(&mut app, [key('y')]);
 
-    assert!(while_idle.is_empty(), "{while_idle:?}");
-    assert!(matches!(on_key.as_slice(), [Effect::Sync(_)]), "{on_key:?}");
-    assert!(shows(&app, "synced 6m ago"));
-    assert!(!shows(&app, "idle"));
+    assert_eq!(sync_count(&while_idle), 0, "{while_idle:?}");
+    assert!(
+        !while_idle
+            .iter()
+            .any(|e| matches!(e, Effect::ScheduleLiveSync { .. })),
+        "{while_idle:?}"
+    );
+    assert_eq!(sync_count(&on_key), 1, "{on_key:?}");
+    assert!(shows(&app, "live, synced 9m ago"));
+}
+
+#[test]
+fn the_first_key_after_idle_syncs_even_without_live_changes() {
+    let mut app = app();
+    send(&mut app, [live(LiveMessage::Connected), tick(6 * 60)]);
+
+    let on_key = send(&mut app, [key('y')]);
+    let next_key = send(&mut app, [key('y')]);
+
+    assert_eq!(sync_count(&on_key), 1, "{on_key:?}");
+    assert_eq!(sync_count(&next_key), 0, "{next_key:?}");
+}
+
+#[test]
+fn the_indicator_says_how_changes_arrive() {
+    let mut app = app();
+    assert!(shows(&app, "polling, synced 0s ago"), "{:#?}", screen(&app));
+
+    send(&mut app, [live(LiveMessage::Connected)]);
+    assert!(shows(&app, "live, synced 0s ago"), "{:#?}", screen(&app));
+
+    send(&mut app, [live(LiveMessage::Disconnected)]);
+    assert!(shows(&app, "polling, synced 0s ago"), "{:#?}", screen(&app));
+
+    send(
+        &mut app,
+        [Event::Synced(Err(ClientError::Network(
+            "connection refused".to_owned(),
+        )))],
+    );
+    let indicator = app.state().indicator().unwrap();
+    assert_eq!(indicator.text, "offline");
+    assert!(indicator.alert);
 }
 
 #[test]

@@ -2,11 +2,12 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use jiff::civil::Date;
-use jiff::{SignedDuration, Zoned};
+use jiff::{SignedDuration, Timestamp, Zoned};
 use ratatui::layout::Size;
 
 use super::browse::TreeItem;
 use super::failure::{ErrorLog, Failure, LoadError};
+use super::live::LiveLink;
 use super::modal::Modal;
 use super::release::ReleaseState;
 use super::store::{Stamped, Store};
@@ -108,8 +109,8 @@ pub struct State {
     pub no_color: bool,
     /// How reading from Todoist went the last time, for the sync indicator.
     pub sync_health: SyncHealth,
-    /// The live connection dropped and has not come back yet.
-    pub live_dropped: bool,
+    /// Whether the live connection is up, for the indicator and polling.
+    pub live: LiveLink,
     pub sync_token: String,
     /// The completed tasks loaded for each project, by project id.
     pub completed_cache: Stamped<HashMap<String, Vec<Task>>>,
@@ -129,7 +130,10 @@ pub struct State {
     pub rolled_back_projects: HashMap<String, Failure>,
     pub overdue_section_collapsed: bool,
     pub last_activity: Zoned,
-    pub(crate) pending_ws_sync: bool,
+    /// A sync after a live change is waiting out its debounce.
+    pub(crate) live_sync_scheduled: bool,
+    /// When the next poll runs, while the live connection is not up.
+    pub(crate) poll_due: Option<Timestamp>,
     pub(crate) comments_fetch_seq: u64,
     pub(crate) websocket_url: Option<String>,
     pub(crate) live_opened: bool,
@@ -191,7 +195,7 @@ impl State {
             theme_idx: 0,
             no_color: false,
             sync_health: SyncHealth::Fine,
-            live_dropped: false,
+            live: LiveLink::Never,
             sync_token: "*".to_owned(),
             completed_cache: Stamped::default(),
             oldest_completed: HashMap::new(),
@@ -204,7 +208,8 @@ impl State {
             rolled_back_projects: HashMap::new(),
             overdue_section_collapsed: false,
             last_activity: now,
-            pending_ws_sync: false,
+            live_sync_scheduled: false,
+            poll_due: None,
             comments_fetch_seq: 0,
             websocket_url: None,
             live_opened: false,
@@ -287,7 +292,10 @@ impl State {
         self.rolled_back.get(task_id)
     }
 
-    /// What the sync indicator shows: `synced 4s ago`, or what is wrong.
+    /// What the sync indicator shows: how changes arrive (`live` from the
+    /// live connection, `polling` while it is down, `idle` while both
+    /// pause) and when the last sync was, as `live, synced 4s ago`; or what
+    /// is wrong, as `offline` when the last sync could not reach Todoist.
     /// `None` before anything has synced or failed, and while an error
     /// screen fills the body, which already says what is wrong.
     pub fn indicator(&self) -> Option<Indicator> {
@@ -297,7 +305,6 @@ impl State {
         let problem = match self.sync_health {
             SyncHealth::Offline => Some("offline"),
             SyncHealth::Failing => Some("sync failing"),
-            SyncHealth::Fine if self.live_dropped => Some("reconnecting"),
             SyncHealth::Fine => None,
         };
         if let Some(text) = problem {
@@ -307,12 +314,21 @@ impl State {
             });
         }
         let ago = age(self.now.duration_since(self.last_sync_at.as_ref()?));
-        let text = if self.is_idle() {
-            format!("idle, synced {ago} ago")
+        let mode = if self.is_idle() {
+            "idle"
+        } else if self.live == LiveLink::Up {
+            "live"
         } else {
-            format!("synced {ago} ago")
+            "polling"
         };
+        let text = format!("{mode}, synced {ago} ago");
         Some(Indicator { text, alert: false })
+    }
+
+    /// Whether the account is on screen, from a sync or the cache, so
+    /// syncing in the background makes sense.
+    pub fn account_loaded(&self) -> bool {
+        !self.loading && self.load_error.is_none()
     }
 
     pub fn is_idle(&self) -> bool {
@@ -365,7 +381,7 @@ pub enum SyncHealth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Indicator {
     pub text: String,
-    /// Sync is failing or the live connection is down.
+    /// Sync is offline or failing.
     pub alert: bool,
 }
 

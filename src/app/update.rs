@@ -6,13 +6,14 @@ use tracing::info;
 
 use super::confirm;
 use super::failure::{ErrorKind, Failure};
+use super::live;
 use super::modal::Modal;
 use super::palette::{self, Palette};
 use super::picker::{Choice, PickerKind, open_picker};
 use super::prompt::{PromptField, open_prompt};
 use super::release;
 use super::state::{ListFilter, Pane, Screen};
-use super::sync::{OptimisticOp, incremental_sync_request, new_uuid, startup_sync_request};
+use super::sync::{OptimisticOp, new_uuid, startup_sync_request};
 use super::task_form::{FormField, TODAY, TaskForm};
 use super::text_field::TextField;
 use super::{Action, Editable, Effect, Event, State};
@@ -20,7 +21,7 @@ use crate::config_write::ThemeNotSaved;
 use crate::keys::{self, Key, Resolution};
 use crate::todoist::model::{Comment, Due, Task};
 use crate::todoist::sync::SyncCommand;
-use crate::todoist::{CompletedQuery, CompletedWindow, LiveMessage};
+use crate::todoist::{CompletedQuery, CompletedWindow};
 use crate::ui;
 use crate::ui::detail;
 use crate::ui::theme;
@@ -109,6 +110,7 @@ pub fn update(state: &mut State, event: Event) -> Update {
             let before = (state.today, state.indicator());
             state.today = now.date();
             state.now = now;
+            live::tick(state, &mut effects);
             Update {
                 redraw: before != (state.today, state.indicator()),
                 effects,
@@ -138,32 +140,14 @@ pub fn update(state: &mut State, event: Event) -> Update {
             state.completed_loaded(query, result);
             Update::redraw(effects)
         }
-        Event::Live(message) => {
-            let was_dropped = state.live_dropped;
-            match message {
-                LiveMessage::Connected => state.live_dropped = false,
-                LiveMessage::Changed => {
-                    state.live_dropped = false;
-                    if state.is_idle() {
-                        state.pending_ws_sync = true;
-                    } else {
-                        effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
-                    }
-                }
-                LiveMessage::Disconnected => {
-                    if !was_dropped {
-                        state.log_failure(Failure::new(
-                            ErrorKind::Offline,
-                            "keep the live connection open",
-                            "the live-updates connection dropped",
-                            &state.now,
-                        ));
-                    }
-                    state.live_dropped = true;
-                }
-            }
+        Event::Live(message) => Update {
+            redraw: live::message(state, message, &mut effects),
+            effects,
+        },
+        Event::LiveSyncDue => {
+            live::sync_due(state, &mut effects);
             Update {
-                redraw: was_dropped != state.live_dropped,
+                redraw: false,
                 effects,
             }
         }
@@ -178,9 +162,8 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
     let mut effects = Vec::new();
     let was_idle = state.is_idle();
     state.last_activity = state.now.clone();
-    if was_idle && state.pending_ws_sync {
-        state.pending_ws_sync = false;
-        effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
+    if was_idle {
+        live::back_from_idle(state, &mut effects);
     }
 
     let cleared_notice = state.notice.take().is_some() | std::mem::take(&mut state.show_failure);

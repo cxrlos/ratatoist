@@ -154,7 +154,7 @@ fn titles_width(titles: &[String]) -> u16 {
 }
 
 /// The sync indicator at the right end of the tab row, muted while sync is
-/// fine and accented when it is failing or the live connection is down.
+/// fine, live or polling, and accented when it is offline or failing.
 /// Left out when it would touch the tabs. Returns how many columns it took.
 fn render_sync_indicator(state: &State, frame: &mut Frame, area: Rect, tabs_width: u16) -> u16 {
     let Some(indicator) = state.indicator() else {

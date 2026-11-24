@@ -295,6 +295,7 @@ fn background_failures_log_without_a_notice_and_accent_the_indicator() {
         &mut app,
         [
             Event::Synced(Err(offline())),
+            Event::Live(LiveMessage::Connected),
             Event::Live(LiveMessage::Disconnected),
             Event::Live(LiveMessage::Disconnected),
         ],

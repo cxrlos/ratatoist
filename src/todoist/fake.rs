@@ -1,8 +1,9 @@
 //! A [`TodoistClient`] that never touches the network.
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
-use futures_util::Stream;
+use futures_util::{Stream, StreamExt};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -36,7 +37,9 @@ struct Shared {
     completed_tasks: Option<Value>,
     failures: Vec<(CommandMatch, SyncCommandError)>,
     commands: Vec<SyncCommand>,
+    reads: usize,
     syncs_held: bool,
+    live: Vec<(Duration, LiveMessage)>,
 }
 
 impl FakeClient {
@@ -81,6 +84,13 @@ impl FakeClient {
         self
     }
 
+    /// The live connection sends each message after its wait, counted from
+    /// the one before, then stays silent.
+    pub fn with_live(self, script: Vec<(Duration, LiveMessage)>) -> Self {
+        self.shared().live = script;
+        self
+    }
+
     /// From now on, commands that `which` matches get `error` in
     /// `sync_status` instead of `ok`. The first matching failure wins.
     pub fn fail_command(&self, which: CommandMatch, error: SyncCommandError) {
@@ -90,6 +100,11 @@ impl FakeClient {
     /// Every command received so far, oldest first.
     pub fn commands(&self) -> Vec<SyncCommand> {
         self.shared().commands.clone()
+    }
+
+    /// How many syncs carried no commands: reads, not writes.
+    pub fn reads(&self) -> usize {
+        self.shared().reads
     }
 
     fn shared(&self) -> MutexGuard<'_, Shared> {
@@ -130,6 +145,9 @@ impl TodoistClient for FakeClient {
             .iter()
             .map(|command| (command.uuid.clone(), shared.status(command)))
             .collect();
+        if request.commands.is_empty() {
+            shared.reads += 1;
+        }
         shared.commands.extend(request.commands);
         let full = request.sync_token == "*";
         let body = if full {
@@ -168,6 +186,12 @@ impl TodoistClient for FakeClient {
     }
 
     fn live_events(&self, _url: &str) -> impl Stream<Item = LiveMessage> + Send + 'static {
-        futures_util::stream::empty()
+        let script = self.shared().live.clone();
+        futures_util::stream::iter(script)
+            .then(|(wait, message)| async move {
+                tokio::time::sleep(wait).await;
+                message
+            })
+            .chain(futures_util::stream::pending())
     }
 }

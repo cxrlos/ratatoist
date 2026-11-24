@@ -8,6 +8,7 @@ mod confirm;
 mod effect;
 mod event;
 mod failure;
+mod live;
 mod modal;
 mod palette;
 mod picker;
@@ -27,6 +28,7 @@ pub use confirm::{Confirm, Confirmed};
 pub use effect::Effect;
 pub use event::Event;
 pub use failure::{ERROR_LOG_CAP, ErrorKind, ErrorLog, Failure, LoadError};
+pub use live::{LIVE_DEBOUNCE, LiveLink, POLL_INTERVAL};
 pub use modal::Modal;
 pub use palette::{
     Palette, PaletteEntry, palette_can_step_down, palette_has_selection, palette_highlight,

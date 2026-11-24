@@ -744,7 +744,7 @@ async fn the_fake_with_nothing_configured_is_an_empty_account() {
 // The handshake callback returns tungstenite's error type, not ours.
 #[allow(clippy::result_large_err)]
 #[tokio::test]
-async fn live_events_report_the_connection_and_each_message() {
+async fn live_events_report_the_connection_and_each_change_but_not_keep_alives() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
@@ -763,6 +763,12 @@ async fn live_events_report_the_connection_and_each_message() {
         .await
         .unwrap();
         socket
+            .send(tokio_tungstenite::tungstenite::Message::Ping(
+                tokio_tungstenite::tungstenite::Bytes::new(),
+            ))
+            .await
+            .unwrap();
+        socket
             .send(tokio_tungstenite::tungstenite::Message::text(
                 r#"{"type":"sync_needed"}"#,
             ))
@@ -777,18 +783,17 @@ async fn live_events_report_the_connection_and_each_message() {
         Duration::from_secs(5),
         client
             .live_events(&format!("ws://{address}/ws"))
-            .take(4)
+            .take(3)
             .collect(),
     )
     .await
     .unwrap();
 
-    // The close frame is a message too, so it also reads as a change.
+    // The ping is a keep-alive and the close frame ends the connection.
     assert_eq!(
         messages,
         [
             LiveMessage::Connected,
-            LiveMessage::Changed,
             LiveMessage::Changed,
             LiveMessage::Disconnected
         ]

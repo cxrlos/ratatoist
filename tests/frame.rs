@@ -205,7 +205,7 @@ fn the_sync_indicator_is_muted_while_fine_and_accented_on_a_problem() {
         (tick(4), false),
         (offline, true),
         (failing, true),
-        (Event::Live(LiveMessage::Disconnected), true),
+        (Event::Live(LiveMessage::Disconnected), false),
         (tick(10 * 60), false),
     ];
 

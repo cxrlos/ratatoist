@@ -466,6 +466,14 @@ impl<C: TodoistClient> Outside<'_, C> {
                     }
                 });
             }
+            Effect::ScheduleLiveSync { after } => {
+                let answers = self.answers.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(after).await;
+                    // The loop has ended when the send fails; nothing to do.
+                    let _ = answers.send(Event::LiveSyncDue);
+                });
+            }
             Effect::SaveCache => {
                 if let Some(files) = &self.files {
                     // The writer outlives the loop, so this send cannot fail.
@@ -884,6 +892,31 @@ mod tests {
         assert!(screen(&app).contains("Cached errand"), "{}", screen(&app));
         assert_eq!(saved.sync_token, "resumed-token");
         assert!(saved.store.tasks.by_id("cached-task").is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_burst_of_live_changes_runs_one_sync_two_seconds_later() {
+        use crate::todoist::LiveMessage;
+
+        let quiet = account().with_live(vec![(Duration::ZERO, LiveMessage::Connected)]);
+        let mut burst = vec![(Duration::ZERO, LiveMessage::Connected)];
+        burst.extend((0..10).map(|_| (Duration::from_millis(100), LiveMessage::Changed)));
+        let busy = account().with_live(burst);
+        let held = account().with_live(vec![
+            (Duration::ZERO, LiveMessage::Connected),
+            (Duration::from_millis(3_500), LiveMessage::Changed),
+        ]);
+
+        run_for_a_while(initial_state(&Config::default(), None), &quiet, None).await;
+        run_for_a_while(initial_state(&Config::default(), None), &busy, None).await;
+        run_for_a_while(initial_state(&Config::default(), None), &held, None).await;
+
+        assert_eq!(busy.reads(), quiet.reads() + 1);
+        assert_eq!(
+            held.reads(),
+            quiet.reads(),
+            "the sync waits out the debounce"
+        );
     }
 
     #[tokio::test(start_paused = true)]

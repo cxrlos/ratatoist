@@ -23,6 +23,10 @@ pub enum Effect {
     OpenLive {
         url: String,
     },
+    /// Wait `after`, then answer with [`super::Event::LiveSyncDue`].
+    ScheduleLiveSync {
+        after: std::time::Duration,
+    },
     /// Write the store and the sync token to the cache, or delete it when
     /// there is nothing worth keeping. Nothing comes back.
     SaveCache,
