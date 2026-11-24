@@ -7,11 +7,13 @@ expression: app.backend()
 "│› ○ Call the plumber about the leaking tap  @phone  ✉1    today ▮▮▯ P2│┃Call the plumber about the leaking tap        ┃"
 "│  ○ Return the library books  @errand                    Nov 21 ▮▯▯ P3│┃                                              ┃"
 "│  ○ Renew the bike insurance  @computer                  Nov 28 ··· P4│┃State     ○ Open                              ┃"
-"│  ○ 買い物リストを作る  @quick                            today ··· P4│┃Priority  ▮▮▯ P2                              ┃" Hidden by multi-width symbols: [(6, "e"), (8, " "), (10, "h"), (12, "e"), (14, " "), (16, "u"), (18, "t"), (20, "s"), (22, "f")]
+"│  ○ 買い物リストを作る  @quick  ⚑ tomorrow                today ··· P4│┃Priority  ▮▮▯ P2                              ┃" Hidden by multi-width symbols: [(6, "e"), (8, " "), (10, "h"), (12, "e"), (14, " "), (16, "u"), (18, "t"), (20, "s"), (22, "f")]
 "│  ○ Réserver la crêperie pour l'anniversaire de Zoé  @p… Nov 26 ▮▮▯ P2│┃Due       > next monday                       ┃"
 "│  ○ Write down every idea from Sunday's walk before they fade:… ··· P4│┃          today, tomorrow, fri, Dec 3, every… ┃"
-"│  ○ 🎂 Order a cake for Saturday  @errand          Nov 27 12:00 ▮▮▮ P1│┃Labels    phone                               ┃" Hidden by multi-width symbols: [(6, "e")]
-"│  ○ Reply to Teo about the weekend  @waiting          yesterday ▮▯▯ P3│┃                                              ┃"
+"│  ○ 🎂 Order a cake for Saturday  @errand          Nov 27 12:00 ▮▮▮ P1│┃Duration  15 min                              ┃" Hidden by multi-width symbols: [(6, "e")]
+"│  ○ Reply to Teo about the weekend  @waiting          yesterday ▮▯▯ P3│┃Reminders today 14:00                         ┃"
+"│                                                                      │┃Labels    phone                               ┃"
+"│                                                                      │┃                                              ┃"
 "│                                                                      │┃The kitchen tap drips all night.              ┃"
 "│                                                                      │┃Ask whether Thursday morning works.           ┃"
 "│                                                                      │┃                                              ┃"
@@ -24,8 +26,6 @@ expression: app.backend()
 "│                                                                      │┃Section   None                                ┃"
 "│                                                                      │┃Parent    None                                ┃"
 "│                                                                      │┃Created   2026-10-24 08:00 (4 weeks ago)      ┃"
-"│                                                                      │┃                                              ┃"
-"│                                                                      │┃                                              ┃"
 "│                                                                      │┃                                              ┃"
 "│                                                                      │┃                                              ┃"
 "│                                                                      │┃                                              ┃"

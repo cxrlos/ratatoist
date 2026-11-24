@@ -6,7 +6,7 @@ expression: "screen_at('3', 80, 24).backend()"
 "┌Upcoming──────────────────────────────────────────────────────────────────────┐"
 "│Mon 23 Nov (11)                                                               │"
 "│› ○ Call the plumber about the leaking tap  @phon… today ▮▮▯ P2 Inbox         │"
-"│  ○ 買い物リストを作る  @quick                     today ··· P4 Inbox         │" Hidden by multi-width symbols: [(6, "s"), (8, " "), (10, "e"), (12, " "), (14, "o"), (16, " "), (18, "h"), (20, " "), (22, "u")]
+"│  ○ 買い物リストを作る  @quick  ⚑ tomorrow         today ··· P4 Inbox         │" Hidden by multi-width symbols: [(6, "s"), (8, " "), (10, "e"), (12, " "), (14, "o"), (16, " "), (18, "h"), (20, " "), (22, "u")]
 "│  ○ Take out the recycling  @15min  ↻              today ··· P4 Home          │"
 "│  ○ Finish «La casa del faro», chapter 7  @reading today ▮▯▯ P3 Reading       │"
 "│  ○ Read 20 pages  @reading @15min  ↻              today ··· P4 Reading       │"
