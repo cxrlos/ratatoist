@@ -23,7 +23,7 @@ use crate::app::{App, DEFAULT_IDLE_TIMEOUT_SECS, Effect, Event, State};
 use crate::browser;
 use crate::config::Config;
 use crate::keys::Keymap;
-use crate::release::ReleaseCheck;
+use crate::release::{Record, ReleaseCache, ReleaseCheck};
 use crate::sync_state::SyncState;
 use crate::todoist::TodoistClient;
 use crate::todoist::sync::SyncRequest;
@@ -276,6 +276,7 @@ fn from_terminal(event: TerminalEvent) -> Option<Event> {
 /// A file for the [`Writer`] to save.
 enum Save {
     SyncToken { dir: PathBuf, sync_token: String },
+    Release { cache: ReleaseCache, record: Record },
 }
 
 impl Save {
@@ -285,6 +286,11 @@ impl Save {
             Self::SyncToken { dir, sync_token } => {
                 if let Err(error) = (SyncState { sync_token }).save(&dir) {
                     warn!(error = %error, "failed to persist sync token");
+                }
+            }
+            Self::Release { cache, record } => {
+                if let Err(error) = cache.save(&record) {
+                    warn!("could not save the release cache: {error:#}");
                 }
             }
         }
@@ -329,7 +335,7 @@ struct Outside<'a, C> {
 
 impl<C: TodoistClient> Outside<'_, C> {
     /// Carries out `effect`. A request runs in its own task and comes back
-    /// as an event; a sync token goes to the writer.
+    /// as an event; a file to save goes to the writer.
     fn execute(&self, state: &State, effect: Effect) -> ControlFlow<()> {
         match effect {
             Effect::Quit => return ControlFlow::Break(()),
@@ -395,10 +401,11 @@ impl<C: TodoistClient> Outside<'_, C> {
                 });
             }
             Effect::SaveRelease(record) => {
-                if let Some(releases) = self.releases
-                    && let Err(error) = releases.cache.save(&record)
-                {
-                    warn!("could not save the release cache: {error:#}");
+                if let Some(releases) = self.releases {
+                    let _ = self.saves.send(Save::Release {
+                        cache: releases.cache.clone(),
+                        record,
+                    });
                 }
             }
             Effect::OpenUrl(url) => {
@@ -741,6 +748,71 @@ mod tests {
         let saved = SyncState::load(&dir).sync_token;
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(saved, "fake");
+    }
+
+    #[tokio::test]
+    async fn the_release_record_found_before_quit_is_on_disk_when_run_returns() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let github = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/latest"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "tag_name": "v99.0.0" })),
+            )
+            .mount(&github)
+            .await;
+        let dir = temp_dir("release");
+        let check = ReleaseCheck {
+            source: crate::release::ReleaseSource::new(format!("{}/latest", github.uri())).unwrap(),
+            cache: ReleaseCache::new(&dir),
+        };
+        let (started, first_started) = tokio::sync::oneshot::channel();
+        let started = std::sync::Mutex::new(Some(started));
+        let writer = Writer::start(move |save| {
+            if let Some(started) = started.lock().unwrap().take() {
+                let _ = started.send(());
+            }
+            std::thread::sleep(Duration::from_millis(100));
+            save.write();
+        });
+        let q = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('q'));
+        let input = futures_util::stream::once(async move {
+            first_started.await.unwrap();
+            Ok(TerminalEvent::Key(q))
+        })
+        .chain(futures_util::stream::pending());
+        let mut state = State::new(now());
+        state.release = crate::app::ReleaseState::new(
+            true,
+            crate::release::Channel::CargoBin,
+            Record::default(),
+        );
+        let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+
+        let client = FakeClient::new();
+        let shutdown = std::future::pending();
+        let releases = Some(&check);
+        run_writing(
+            &mut app,
+            &client,
+            Box::pin(input),
+            shutdown,
+            None,
+            releases,
+            writer,
+        )
+        .await
+        .unwrap();
+
+        let saved = check.cache.load();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(
+            saved.latest.map(|v| v.to_string()).as_deref(),
+            Some("99.0.0")
+        );
     }
 
     #[tokio::test]
