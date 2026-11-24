@@ -803,3 +803,73 @@ async fn live_events_report_the_connection_and_each_change_but_not_keep_alives()
         Some("https://app.todoist.com")
     );
 }
+
+/// A WebSocket server on loopback that hands each accepted socket to
+/// `serve`, and its `ws://` URL.
+async fn live_server<F, Fut>(serve: F) -> String
+where
+    F: Fn(tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            tokio::spawn(serve(socket));
+        }
+    });
+    format!("ws://{address}/ws")
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_socket_that_sends_nothing_for_75_seconds_is_disconnected() {
+    // The server holds the socket and never reads it, so no pong comes back.
+    let url = live_server(|socket| async move {
+        tokio::time::sleep(Duration::from_secs(3600)).await;
+        drop(socket);
+    })
+    .await;
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
+    let mut events = Box::pin(client.live_events(&url));
+
+    assert_eq!(events.next().await, Some(LiveMessage::Connected));
+    let connected = tokio::time::Instant::now();
+    let next = tokio::time::timeout(Duration::from_secs(300), events.next()).await;
+
+    assert_eq!(next, Ok(Some(LiveMessage::Disconnected)));
+    let waited = connected.elapsed();
+    assert!(
+        waited >= Duration::from_secs(75) && waited < Duration::from_secs(80),
+        "{waited:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_socket_that_answers_pings_stays_live() {
+    let (pings_tx, mut pings) = tokio::sync::mpsc::unbounded_channel();
+    let url = live_server(move |mut socket| {
+        let pings_tx = pings_tx.clone();
+        async move {
+            // Reading the socket answers each ping with a pong.
+            while let Some(Ok(message)) = socket.next().await {
+                if message.is_ping() {
+                    let _ = pings_tx.send(());
+                }
+            }
+        }
+    })
+    .await;
+    let client = client_with(tiny_config(UNREACHABLE.to_owned()));
+    let mut events = Box::pin(client.live_events(&url));
+
+    assert_eq!(events.next().await, Some(LiveMessage::Connected));
+    let next = tokio::time::timeout(Duration::from_secs(300), events.next()).await;
+
+    assert!(next.is_err(), "{next:?}");
+    let mut count = 0;
+    while pings.try_recv().is_ok() {
+        count += 1;
+    }
+    assert!(count >= 9, "{count} pings in 300 s");
+}
