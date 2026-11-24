@@ -1,0 +1,5 @@
+---
+source: tests/release.rs
+expression: "synced_tab_row(80, 24, true)"
+---
+ [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 4s ago

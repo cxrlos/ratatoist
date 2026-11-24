@@ -1,0 +1,6 @@
+---
+source: tests/bottom_bar.rs
+expression: bar(&picker(WIDE))
+---
+ Move │ Down/Up move
+ Do   │ Enter choose │ Esc close

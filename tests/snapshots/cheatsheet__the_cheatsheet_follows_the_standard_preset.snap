@@ -1,0 +1,39 @@
+---
+source: tests/cheatsheet.rs
+expression: text
+---
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago 
+┏Inbox━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐
+┃› ○ Buy oat milk  @errand                                Nov 20 ▮▮▮ P1┃│Buy oat milk                                  │
+┃  ○ Call the dentist  ✉2                                  today ▮▮▯ P2┃│                                              │
+┃  ○ Water the plants  ↻                                  Nov 24 ··· P4┃│State     ○ Open                              │
+┃  ▿ Plan the winter trip                                 Dec 12 ▮▯▯ P3┃│Priority  ▮▮▮ P1                              │
+┃    ○ Book the train                                            ··· P4┃│Due       Nov 20                              │
+┃  ○ Read the reading-group chapter  @deep-work                  ··· P4┃│Labels    errand                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│No description.                               │
+┃┌ Keys ──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐│
+┃│ Move                                 │ Edit the task                        │ App                                  ││
+┃│  Down/Up          down / up          │  C-x  complete / reopen              │  1/2/3/4/5  screens                  ││
+┃│  Home/End         top / bottom       │  C-a  add a task                     │  R          re-sync                  ││
+┃│  PageDown/PageUp  half page          │  p    priority                       │  ?          keys                     ││
+┃│  S-Tab/Tab        pane left / right  │  d    due date                       │  C-k        palette                  ││
+┃│  Enter            open the task      │  e/E  content / description          │  !          messages                 ││
+┃│  Esc              close or step back │  c    comment                        │  q,C-c      quit                     ││
+┃│                                      │                                      │                                      ││
+┃│ Task list                            │                                      │                                      ││
+┃│  Space  fold / unfold                │                                      │                                      ││
+┃│  zR/zM  unfold / fold all            │                                      │                                      ││
+┃│  f/vs   filter / sort                │                                      │                                      ││
+┃└ Esc close ─────────────────────────────────────────────────────────────────────────────────────────────────────────┘│
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────────────────────────┘
+ Move │ Down/Up move                                                                                                    
+ Do   │ Esc close

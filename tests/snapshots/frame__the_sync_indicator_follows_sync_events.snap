@@ -1,0 +1,10 @@
+---
+source: tests/frame.rs
+expression: "states.join(\"\\n\")"
+---
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 4s ago 
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                               offline 
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                          sync failing 
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                          reconnecting 
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago 
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                  idle, synced 10m ago

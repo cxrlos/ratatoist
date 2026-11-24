@@ -170,6 +170,8 @@ async fn r_shows_a_folder_renamed_elsewhere() {
     let before =
         Recording::new(FakeClient::new().with_full_sync(hypothetical_account("Marketing", "t1")));
     let mut app = started(&before).await;
+    let projects = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('4'));
+    app.handle(Event::Key(projects)).unwrap();
     assert!(format!("{}", app.backend()).contains("Marketing"));
     let after =
         Recording::new(FakeClient::new().with_full_sync(hypothetical_account("Growth", "t2")));

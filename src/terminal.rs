@@ -6,6 +6,7 @@ use std::panic;
 use std::sync::Once;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::{cursor, execute};
 use tokio::signal::unix::{SignalKind, signal};
@@ -28,11 +29,17 @@ impl Guard {
     }
 }
 
-/// Raw mode, the alternate screen and a hidden cursor.
+/// Raw mode, the alternate screen, a hidden cursor and bracketed paste, so
+/// pasted text arrives whole instead of as keys.
 fn take_over() -> io::Result<()> {
     terminal::enable_raw_mode()?;
     ACTIVE.store(true, Ordering::SeqCst);
-    execute!(io::stdout(), EnterAlternateScreen, cursor::Hide)
+    execute!(
+        io::stdout(),
+        EnterAlternateScreen,
+        cursor::Hide,
+        EnableBracketedPaste
+    )
 }
 
 impl Drop for Guard {
@@ -50,7 +57,12 @@ fn restore() {
     if let Err(error) = terminal::disable_raw_mode() {
         tracing::warn!(%error, "could not leave raw mode");
     }
-    if let Err(error) = execute!(io::stdout(), LeaveAlternateScreen, cursor::Show) {
+    if let Err(error) = execute!(
+        io::stdout(),
+        DisableBracketedPaste,
+        LeaveAlternateScreen,
+        cursor::Show
+    ) {
         tracing::warn!(%error, "could not leave the alternate screen");
     }
 }

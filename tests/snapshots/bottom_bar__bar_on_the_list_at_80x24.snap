@@ -1,0 +1,7 @@
+---
+source: tests/bottom_bar.rs
+expression: bar(&list(NARROW))
+---
+ Move │ j down  k up  gg top  G bottom  C-d/C-u page  h/l pane
+ Do   │ Enter open  Esc close  ? keys  : palette  q quit
+ View │ z fold  f filter  vs sort  x complete  a add  p priority  d due

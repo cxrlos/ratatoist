@@ -15,14 +15,17 @@ use ratatui::backend::Backend;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio::time::MissedTickBehavior;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::app::{App, DEFAULT_IDLE_TIMEOUT_SECS, Effect, Event, State};
+use crate::browser;
 use crate::config::Config;
+use crate::keys::Keymap;
+use crate::release::ReleaseCheck;
 use crate::sync_state::SyncState;
 use crate::todoist::sync::SyncRequest;
 use crate::todoist::{CompletedQuery, TodoistClient};
-use crate::ui::theme::Theme;
+use crate::ui::theme::{self, Theme};
 
 /// How often the clock moves on. Ticks redraw only when they change what
 /// shows (the idle state or the date).
@@ -30,7 +33,9 @@ const TICK: Duration = Duration::from_secs(1);
 
 const UI_SETTINGS: &str = "ui_settings.json";
 
-/// What the Settings pane saved last time, from `ui_settings.json`.
+/// What versions before 0.7.0 saved in `ui_settings.json`. ratatoist reads
+/// it once at startup, to carry its values into a session and say which
+/// `config.toml` lines replace it, and never writes or deletes it.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 pub struct UiSettings {
     pub theme: Option<String>,
@@ -54,53 +59,103 @@ impl UiSettings {
     }
 }
 
-/// The first state, with "now" read from the clock and the saved settings
-/// and sync token read from `files`. With `None` nothing is read: no saved
-/// settings and a full sync.
+/// The first state, with "now" read from the clock, `NO_COLOR` from the
+/// environment, and the old saved settings and the sync token read from
+/// `files`. With `None` nothing is read: no saved settings and a full sync.
 pub fn initial_state(config: &Config, files: Option<&Path>) -> State {
+    let no_color = theme::no_color_requested(std::env::var_os(theme::NO_COLOR_VAR).as_deref());
+    initial_state_read(config, files, no_color)
+}
+
+/// [`initial_state`] with `no_color` given instead of read.
+fn initial_state_read(config: &Config, files: Option<&Path>, no_color: bool) -> State {
     let ui = files.map(UiSettings::load).unwrap_or_default();
     let sync_token = files
         .map(|dir| SyncState::load(dir).sync_token)
         .unwrap_or_else(|| "*".to_owned());
-    initial_state_from(config, &ui, sync_token, clock())
+    initial_state_from(config, &ui, sync_token, clock(), no_color)
 }
 
 /// The first state from what was read. Where `config` and `ui` both set the
-/// theme or the idle timeout, `config` wins.
+/// theme or the idle timeout, `config` wins; a value only `ui` sets applies
+/// for this session, and the notice names the `config.toml` line that keeps
+/// it. With `no_color` the one theme is [`Theme::no_color`].
 pub fn initial_state_from(
     config: &Config,
     ui: &UiSettings,
     sync_token: String,
     now: DateTime<Local>,
+    no_color: bool,
 ) -> State {
     let mut state = State::new(now);
+    state.keymap = Keymap::new(config.keys.preset, &config.keys.overrides);
     state.sync_token = sync_token;
-    state.themes = Theme::builtin();
-    state.themes.extend(config.user_themes.iter().cloned());
-    let chosen = config
-        .theme
-        .as_deref()
-        .is_some_and(|name| state.select_theme_named(name));
-    if !chosen && let Some(name) = ui.theme.as_deref() {
-        state.select_theme_named(name);
+    state.icon_set = config.icons;
+    if let Some(columns) = config.wide_layout_columns {
+        state.wide_layout_columns = columns;
     }
-    state.idle_timeout_secs = config
-        .idle_timeout
-        .map(|timeout| timeout.as_secs())
-        .or(ui.idle_timeout())
-        .unwrap_or(DEFAULT_IDLE_TIMEOUT_SECS);
+    state.themes.extend(config.user_themes.iter().cloned());
+    let mut lines = Vec::new();
+    if let Some(name) = config.theme.as_deref() {
+        state.select_theme_named(name);
+    } else if let Some(name) = ui.theme.as_deref()
+        && state.select_theme_named(name)
+    {
+        lines.push(format!(
+            "[theme] name = \"{}\"",
+            theme::slug(&state.theme().name)
+        ));
+    }
+    state.idle_timeout_secs = match (config.idle_timeout, ui.idle_timeout()) {
+        (Some(timeout), _) => timeout.as_secs(),
+        (None, Some(secs)) => {
+            lines.push(format!("[sync] idle-timeout = {secs}"));
+            secs
+        }
+        (None, None) => DEFAULT_IDLE_TIMEOUT_SECS,
+    };
+    if !lines.is_empty() {
+        state.notice = Some(format!(
+            "{UI_SETTINGS} is read until config.toml sets these; to keep them, add to config.toml: {}",
+            lines.join(" and ")
+        ));
+    }
+    if no_color {
+        state.themes = vec![Theme::no_color()];
+        state.theme_idx = 0;
+    }
     state
 }
 
 /// Runs until the app asks to quit, `shutdown` resolves or terminal input
 /// ends, saving the sync token and settings in `files`, or nowhere when it
-/// is `None`.
+/// is `None`. It never asks for a newer release.
 pub async fn run<B, C, I, S>(
+    app: &mut App<B>,
+    client: &C,
+    input: I,
+    shutdown: S,
+    files: Option<&Path>,
+) -> anyhow::Result<()>
+where
+    B: Backend,
+    B::Error: Send + Sync + 'static,
+    C: TodoistClient,
+    I: Stream<Item = io::Result<TerminalEvent>> + Unpin,
+    S: Future<Output = ()>,
+{
+    run_checking(app, client, input, shutdown, files, None).await
+}
+
+/// [`run`], asking `releases` for a newer release when the app's release
+/// state says a check is due.
+pub async fn run_checking<B, C, I, S>(
     app: &mut App<B>,
     client: &C,
     mut input: I,
     shutdown: S,
     files: Option<&Path>,
+    releases: Option<&ReleaseCheck>,
 ) -> anyhow::Result<()>
 where
     B: Backend,
@@ -115,6 +170,7 @@ where
         client,
         answers: tx,
         files: files.map(Path::to_path_buf),
+        releases,
     };
     let mut ticks = tokio::time::interval(TICK);
     ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -140,6 +196,15 @@ where
     }
 }
 
+/// Whether `error`, from resolving the token, says there is none, so the
+/// app starts on its Not logged in screen instead of failing.
+pub fn is_missing_token(error: &anyhow::Error) -> bool {
+    matches!(
+        error.downcast_ref::<crate::auth::AuthError>(),
+        Some(crate::auth::AuthError::NoToken)
+    )
+}
+
 /// Today's date on the wall clock.
 pub fn today() -> NaiveDate {
     clock().date_naive()
@@ -155,16 +220,18 @@ fn from_terminal(event: TerminalEvent) -> Option<Event> {
     match event {
         TerminalEvent::Key(key) => Some(Event::Key(key)),
         TerminalEvent::Resize(width, height) => Some(Event::Resize { width, height }),
+        TerminalEvent::Paste(text) => Some(Event::Paste(text)),
         _ => None,
     }
 }
 
-/// What effects reach: the client, the way back for answers, and the folder
-/// files are saved in.
+/// What effects reach: the client, the way back for answers, the folder
+/// files are saved in, and GitHub's releases with their cache.
 struct Outside<'a, C> {
     client: &'a C,
     answers: mpsc::UnboundedSender<Event>,
     files: Option<PathBuf>,
+    releases: Option<&'a ReleaseCheck>,
 }
 
 impl<C: TodoistClient> Outside<'_, C> {
@@ -226,14 +293,23 @@ impl<C: TodoistClient> Outside<'_, C> {
                     warn!(error = %error, "failed to persist sync token");
                 }
             }
-            Effect::SaveUiSettings {
-                theme,
-                idle_timeout_secs,
-            } => {
-                if let Some(dir) = &self.files
-                    && let Err(error) = save_ui_settings(dir, &theme, idle_timeout_secs)
+            Effect::CheckRelease => {
+                let releases = self.releases.cloned();
+                let answers = self.answers.clone();
+                tokio::spawn(async move {
+                    let _ = answers.send(check_release(releases.as_ref()).await);
+                });
+            }
+            Effect::SaveRelease(record) => {
+                if let Some(releases) = self.releases
+                    && let Err(error) = releases.cache.save(&record)
                 {
-                    warn!(error = %error, "failed to save ui settings");
+                    warn!("could not save the release cache: {error:#}");
+                }
+            }
+            Effect::OpenUrl(url) => {
+                if let Err(error) = browser::open(&url) {
+                    warn!("{error:#}");
                 }
             }
         }
@@ -256,14 +332,22 @@ impl<C: TodoistClient> Outside<'_, C> {
     }
 }
 
-fn save_ui_settings(dir: &Path, theme: &str, idle_timeout_secs: u64) -> anyhow::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    let json = serde_json::json!({
-        "theme": theme,
-        "idle_timeout_secs": idle_timeout_secs,
-    });
-    std::fs::write(dir.join(UI_SETTINGS), serde_json::to_string_pretty(&json)?)?;
-    Ok(())
+/// The latest release, or `None`, logged, when it could not be read. A
+/// failed check is quiet: no notice and no entry in the messages log.
+async fn check_release(releases: Option<&ReleaseCheck>) -> Event {
+    let Some(releases) = releases else {
+        return Event::ReleaseChecked(None);
+    };
+    match releases.source.latest().await {
+        Ok(latest) => {
+            info!(%latest, "checked for a newer release");
+            Event::ReleaseChecked(Some(latest))
+        }
+        Err(error) => {
+            warn!("could not check for a newer release: {error:#}");
+            Event::ReleaseChecked(None)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -292,7 +376,7 @@ mod tests {
     }
 
     fn start(config: &Config, ui: &UiSettings) -> State {
-        initial_state_from(config, ui, "*".to_owned(), now())
+        initial_state_from(config, ui, "*".to_owned(), now(), false)
     }
 
     #[test]
@@ -316,6 +400,7 @@ mod tests {
             &ui("Dracula", 120),
             "saved-token".to_owned(),
             now(),
+            false,
         );
 
         assert_eq!(state.theme().name, "Dracula");
@@ -324,18 +409,101 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_config_theme_falls_back_to_ui_settings() {
+    fn ui_settings_values_come_with_a_notice_naming_the_config_lines() {
+        let state = start(&Config::default(), &ui("Rose Pine", 120));
+
+        assert_eq!(
+            state.notice.as_deref(),
+            Some(
+                "ui_settings.json is read until config.toml sets these; to keep them, add to \
+                 config.toml: [theme] name = \"rose-pine\" and [sync] idle-timeout = 120"
+            )
+        );
+    }
+
+    #[test]
+    fn the_notice_names_only_what_config_toml_leaves_out() {
         let config = Config {
-            theme: Some("No Such Theme".to_owned()),
+            theme: Some("Nord".to_owned()),
             ..Config::default()
         };
 
-        assert_eq!(start(&config, &ui("Dracula", 120)).theme().name, "Dracula");
+        let state = start(&config, &ui("Dracula", 120));
+
+        assert_eq!(state.theme().name, "Nord");
+        assert_eq!(
+            state.notice.as_deref(),
+            Some(
+                "ui_settings.json is read until config.toml sets these; to keep them, add to \
+                 config.toml: [sync] idle-timeout = 120"
+            )
+        );
+    }
+
+    #[test]
+    fn there_is_no_notice_when_config_toml_sets_both_or_there_is_no_file() {
+        let config = Config {
+            theme: Some("Nord".to_owned()),
+            idle_timeout: Some(Duration::from_secs(900)),
+            ..Config::default()
+        };
+
+        assert_eq!(start(&config, &ui("Dracula", 120)).notice, None);
+        assert_eq!(
+            start(&Config::default(), &UiSettings::default()).notice,
+            None
+        );
+    }
+
+    #[test]
+    fn a_saved_theme_that_no_longer_exists_is_left_out_of_the_notice() {
+        let state = start(&Config::default(), &ui("Paper", 60));
+
+        assert_eq!(state.theme(), &Theme::default());
+        assert_eq!(
+            state.notice.as_deref(),
+            Some(
+                "ui_settings.json is read until config.toml sets these; to keep them, add to \
+                 config.toml: [sync] idle-timeout = 60"
+            )
+        );
+    }
+
+    #[test]
+    fn ui_settings_json_is_read_from_the_folder_given_and_left_in_place() {
+        let dir =
+            std::env::temp_dir().join(format!("ratatoist-ui-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let json = r#"{"theme":"Nord","idle_timeout_secs":120}"#;
+        std::fs::write(dir.join(UI_SETTINGS), json).unwrap();
+
+        let state = initial_state_read(&Config::default(), Some(&dir), false);
+        let left = std::fs::read_to_string(dir.join(UI_SETTINGS)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(state.theme().name, "Nord");
+        assert_eq!(state.idle_timeout_secs, 120);
+        assert!(state.notice.is_some());
+        assert_eq!(left, json);
+    }
+
+    #[test]
+    fn no_color_draws_with_the_no_color_theme_whatever_the_config_picks() {
+        let config = Config {
+            theme: Some("Nord".to_owned()),
+            ..Config::default()
+        };
+
+        let state =
+            initial_state_from(&config, &UiSettings::default(), "*".to_owned(), now(), true);
+
+        assert_eq!(state.theme(), &Theme::no_color());
     }
 
     #[test]
     fn a_user_theme_from_config_can_be_chosen() {
-        let mut custom = Theme::builtin().remove(0);
+        let mut custom = Theme::built_in("nord").unwrap();
         custom.name = "Mine".to_owned();
         let config = Config {
             theme: Some("Mine".to_owned()),
@@ -370,7 +538,7 @@ mod tests {
             .unwrap();
 
         assert!(!app.state().loading);
-        assert!(app.state().error.is_none());
+        assert!(app.state().failures.is_empty());
     }
 
     #[tokio::test(start_paused = true)]
@@ -396,6 +564,48 @@ mod tests {
 
         assert_eq!(resumed, "fake");
         assert_eq!(without_files, "*");
+    }
+
+    #[test]
+    fn only_a_missing_token_starts_the_app_logged_out() {
+        use crate::auth::AuthError;
+
+        assert!(is_missing_token(&AuthError::NoToken.into()));
+        assert!(!is_missing_token(&AuthError::LoginRejected.into()));
+        assert!(!is_missing_token(&anyhow::anyhow!("no config folder")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_logged_out_start_asks_todoist_for_nothing() {
+        let mut state = start(&Config::default(), &UiSettings::default());
+        state.not_loaded(crate::app::LoadError::NoToken);
+        let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+        let client = FakeClient::new();
+
+        let shutdown = tokio::time::sleep(Duration::from_secs(5));
+        let no_input = futures_util::stream::pending();
+        run(&mut app, &client, no_input, shutdown, None)
+            .await
+            .unwrap();
+
+        assert!(client.commands().is_empty());
+        assert!(app.state().last_sync_at.is_none());
+    }
+
+    #[test]
+    fn pasted_text_reaches_the_app_whole() {
+        let pasted = from_terminal(TerminalEvent::Paste("two\nlines".to_owned()));
+
+        assert!(matches!(pasted, Some(Event::Paste(text)) if text == "two\nlines"));
+    }
+
+    #[test]
+    fn the_keymap_comes_from_the_config() {
+        let config = crate::config::parse("[keys]\npreset = \"standard\"\n", &[]);
+
+        let state = start(&config, &UiSettings::default());
+
+        assert_eq!(state.keymap.preset(), crate::keys::Preset::Standard);
     }
 
     #[tokio::test(start_paused = true)]

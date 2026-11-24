@@ -2,22 +2,46 @@
 //! [`Effect`]s out. [`App`] owns the state and the terminal and redraws only
 //! when an event changed the screen.
 
+mod action;
+mod browse;
+mod confirm;
 mod effect;
 mod event;
+mod failure;
 mod modal;
+mod palette;
+mod picker;
+mod prompt;
+mod release;
 mod state;
 mod sync;
+mod task_form;
+mod text_field;
 mod update;
 mod view;
 
+pub use action::{Action, Editable};
+pub use browse::{LabelRow, TreeItem, TreeRow};
+pub use confirm::{Confirm, Confirmed};
 pub use effect::Effect;
 pub use event::Event;
-pub use modal::{InputTarget, Modal, TaskForm};
-pub use state::{
-    AppError, DEFAULT_IDLE_TIMEOUT_SECS, DOCK_ITEMS, DockItem, InputMode, OverviewStats, Pane,
-    ProjectEntry, ProjectNavItem, SortMode, State, TaskFilter, UserRecord, VimState,
+pub use failure::{ERROR_LOG_CAP, ErrorKind, ErrorLog, Failure, LoadError};
+pub use modal::Modal;
+pub use palette::{
+    Palette, PaletteEntry, palette_can_step_down, palette_has_selection, palette_highlight,
+    palette_matches,
 };
-pub use update::{Update, update};
+pub use picker::{Choice, Entry, Picker, PickerKind, open_picker};
+pub use prompt::{Prompt, PromptField, open_prompt};
+pub use release::ReleaseState;
+pub use state::{
+    COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_WIDE_LAYOUT_COLUMNS, Indicator, ListFilter,
+    OverviewStats, Pane, Screen, Sort, State, SyncHealth, UserRecord,
+};
+pub use task_form::{FormField, TaskForm};
+pub use text_field::TextField;
+pub use update::{Update, perform, update};
+pub use view::{Group, GroupKind, ListRow};
 
 use ratatui::Terminal;
 use ratatui::backend::Backend;
@@ -36,8 +60,8 @@ impl<B: Backend> App<B> {
     /// starting size is read here.
     pub fn new(backend: B, mut state: State) -> Result<Self, B::Error> {
         let terminal = Terminal::new(backend)?;
-        if state.screen.is_none() {
-            state.screen = Some(terminal.size()?);
+        if state.viewport.is_none() {
+            state.viewport = Some(terminal.size()?);
         }
         let mut app = Self {
             state,

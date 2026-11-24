@@ -5,7 +5,8 @@
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use insta::assert_snapshot;
-use ratatoist::app::{App, DockItem, Event, OverviewStats, State, update};
+use ratatoist::app::{App, Event, ListFilter, OverviewStats, Screen, State, update};
+use ratatoist::todoist::model::Priority;
 use ratatoist::todoist::sync::SyncResponse;
 use ratatui::backend::TestBackend;
 
@@ -77,25 +78,28 @@ fn shows(app: &App<TestBackend>, text: &str) -> bool {
     screen(app).iter().any(|line| line.contains(text))
 }
 
-fn count(stats: &OverviewStats, item: DockItem) -> u32 {
-    match item {
-        DockItem::DueOverdue => stats.overdue,
-        DockItem::DueToday => stats.due_today,
-        DockItem::DueWeek => stats.due_week,
-        DockItem::Priority(p) => stats.by_priority[usize::from(p)],
+fn count(stats: &OverviewStats, filter: ListFilter) -> u32 {
+    match filter {
+        ListFilter::Overdue => stats.overdue,
+        ListFilter::DueToday => stats.due_today,
+        ListFilter::DueThisWeek => stats.due_week,
+        ListFilter::Priority(p) => stats.by_priority[usize::from(p.api())],
+        ListFilter::Open | ListFilter::Completed | ListFilter::All => 0,
     }
 }
 
-/// The dock's count for `item` and the ids of the rows its filter shows.
-fn count_and_rows(item: DockItem) -> (u32, Vec<String>) {
+/// The count for `item` and the ids of the rows its list filter
+/// shows in the inbox, which holds every task.
+fn count_and_rows(item: ListFilter) -> (u32, Vec<String>) {
     let mut state = synced();
     let shown = count(&state.overview_stats(), item);
-    state.dock_filter = Some(item);
+    state.screen = Screen::Inbox;
+    state.list_filter = item;
     let rows = state.visible_tasks().iter().map(|t| t.id.clone()).collect();
     (shown, rows)
 }
 
-fn assert_count_matches_rows(item: DockItem, expected: &[&str]) {
+fn assert_count_matches_rows(item: ListFilter, expected: &[&str]) {
     let (shown, mut rows) = count_and_rows(item);
     rows.sort();
     let mut expected: Vec<String> = expected.iter().map(|id| (*id).to_owned()).collect();
@@ -128,48 +132,55 @@ fn a_timed_task_due_earlier_today_shows_as_due_today() {
 
 #[test]
 fn the_overdue_count_matches_its_rows() {
-    assert_count_matches_rows(DockItem::DueOverdue, &["t-call", "t-bill", "t-flight"]);
+    assert_count_matches_rows(ListFilter::Overdue, &["t-call", "t-bill", "t-flight"]);
 }
 
 #[test]
 fn the_due_today_count_matches_its_rows() {
-    assert_count_matches_rows(DockItem::DueToday, &["t-standup"]);
+    assert_count_matches_rows(ListFilter::DueToday, &["t-standup"]);
 }
 
 #[test]
 fn the_due_this_week_count_matches_its_rows() {
-    assert_count_matches_rows(DockItem::DueWeek, &["t-standup", "t-review", "t-edge"]);
+    assert_count_matches_rows(
+        ListFilter::DueThisWeek,
+        &["t-standup", "t-review", "t-edge"],
+    );
 }
 
 #[test]
 fn the_p1_count_matches_its_rows() {
-    assert_count_matches_rows(DockItem::Priority(4), &["t-standup", "t-review"]);
+    assert_count_matches_rows(
+        ListFilter::Priority(Priority::P1),
+        &["t-standup", "t-review"],
+    );
 }
 
 #[test]
 fn the_p2_count_matches_its_rows() {
-    assert_count_matches_rows(DockItem::Priority(3), &["t-call"]);
+    assert_count_matches_rows(ListFilter::Priority(Priority::P2), &["t-call"]);
 }
 
 #[test]
 fn the_p3_count_matches_its_rows() {
-    assert_count_matches_rows(DockItem::Priority(2), &["t-bill"]);
+    assert_count_matches_rows(ListFilter::Priority(Priority::P3), &["t-bill"]);
 }
 
 #[test]
 fn the_p4_count_matches_its_rows() {
-    assert_count_matches_rows(DockItem::Priority(1), &["t-flight", "t-edge", "t-later"]);
+    assert_count_matches_rows(
+        ListFilter::Priority(Priority::P4),
+        &["t-flight", "t-edge", "t-later"],
+    );
 }
 
 #[test]
 fn the_today_counts_match_the_today_list() {
-    let mut state = synced();
-    state.today_view_active = true;
+    let state = synced();
 
     let app = App::new(TestBackend::new(120, 36), state).unwrap();
 
     let rows = app.state().visible_tasks().len();
     assert_eq!(rows, 4);
-    assert!(shows(&app, "⊙ Today  4"), "{:#?}", screen(&app));
-    assert!(shows(&app, "Overdue  (3)"), "{:#?}", screen(&app));
+    assert!(shows(&app, "Overdue (3)"));
 }

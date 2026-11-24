@@ -1,0 +1,27 @@
+---
+source: tests/cheatsheet.rs
+expression: "text(&on_the_list(\"\", 50, 24))"
+---
+ [1] Inbox │ [2] │ [3] │ [4] │ [5]  synced 0s ago 
+┌Inbox───────────────────────────────────────────┐
+│› ○ Bu┌ Keys ────────────────────────────┐▮▮▮ P1│
+│  ○ Ca│ Move                             │▮▮▯ P2│
+│  ○ Wa│  j,Down/k,Up  down / up          │··· P4│
+│  ▿ Pl│  gg/G         top / bottom       │▮▯▯ P3│
+│    ○ │  C-d/C-u      half page          │··· P4│
+│  ○ Re│  h/l          pane left / right  │··· P4│
+│      │  Enter        open the task      │      │
+│      │  Esc          close or step back │      │
+│      │                                  │      │
+│      │ Edit the task                    │      │
+│      │  x    complete / reopen          │      │
+│      │  a    add a task                 │      │
+│      │  p    priority                   │      │
+│      │  d    due date                   │      │
+│      │  e/E  content / description      │      │
+│      │  c    comment                    │      │
+│      │                                  │      │
+│      └ Esc close ───────────────────────┘      │
+└────────────────────────────────────────────────┘
+ Move │ j/k move                                  
+ Do   │ Esc close

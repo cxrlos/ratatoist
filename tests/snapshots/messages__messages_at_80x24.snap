@@ -1,0 +1,28 @@
+---
+source: tests/messages.rs
+expression: app.backend()
+---
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels  sync failing "
+"┌Today─────────────────────────────────────────────────────────────────────────┐"
+"│▲ Overdue (8)                                                                 │"
+"┌ Messages ────────────────────────────────────────────────────────────────────┐"
+"│ 09:00:00  offline · load the comments on "Fix the wobbly chair leg"          │"
+"│   Todoist could not be reached. Check the network; ratatoist syncs again     │"
+"│   when it is back.                                                           │"
+"│   cannot reach Todoist: connection refused                                   │"
+"│                                                                              │"
+"│ 09:00:00  rate limited · sync with Todoist                                   │"
+"│   Todoist's rate limit is used up until 09:01. Wait for it to lift, then     │"
+"│   try again.                                                                 │"
+"│   Todoist is rate limiting requests                                          │"
+"│                   o n                                                        │"
+"│ 09:00:00  validation · edit "Fix the wobbly chair leg"                       │"
+"│   Todoist refused the change. The message says why; change it and try        │"
+"│   again.                                                                     │"
+"│   Item not found                                                             │"
+"└ j/k scroll  Esc close ───────────────────────────────────────────────────────┘"
+"│  ○ Stretch for ten minutes  @health @15m… today 21:00 ··· P4 Fitness         │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Move │ j/k move                                                                "
+" Do   │ Esc close                                                               "
+"                                                                                "

@@ -84,6 +84,23 @@ fn every_section_is_read() {
 }
 
 #[test]
+fn the_wide_layout_width_is_read_from_ui() {
+    let config = config::parse("[ui]\nwide-layout-columns = 140\n", &[]);
+
+    assert_eq!(config.warnings, Vec::<String>::new());
+    assert_eq!(config.wide_layout_columns, Some(140));
+}
+
+#[test]
+fn a_bad_wide_layout_width_warns_and_keeps_the_default() {
+    let config = config::parse("[ui]\nwide-layout-columns = \"wide\"\n", &[]);
+
+    assert_eq!(config.wide_layout_columns, None);
+    assert_eq!(config.warnings.len(), 1);
+    assert!(config.warnings[0].contains("ui.wide-layout-columns"));
+}
+
+#[test]
 fn a_theme_is_found_by_its_slug_and_kept_by_its_name() {
     let dir = TempDir::with_config("slug", "[theme]\nname = \"rose-pine\"\n");
 
@@ -199,14 +216,14 @@ fn a_bad_idle_timeout_warns_and_keeps_the_default() {
 }
 
 #[test]
-fn ui_and_keys_take_no_settings_yet() {
-    let dir = TempDir::with_config("ui", "[ui]\nicons = \"nerd\"\n");
+fn an_unknown_key_in_ui_is_reported() {
+    let dir = TempDir::with_config("ui", "[ui]\ncolour = \"none\"\n");
 
     let config = load(&dir);
 
     assert_eq!(
         config.warnings,
-        vec!["config.toml:2:1: unknown key `icons` in [ui] is ignored".to_owned()]
+        vec!["config.toml:2:1: unknown key `colour` in [ui] is ignored".to_owned()]
     );
 }
 

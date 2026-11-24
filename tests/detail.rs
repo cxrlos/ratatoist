@@ -3,9 +3,9 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
-use ratatoist::app::{App, Effect, Event, Modal, Pane, State, update};
+use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
+use ratatoist::keys::{Keymap, Preset};
 use ratatoist::todoist::sync::SyncResponse;
-use ratatoist::ui::views::detail::DetailField;
 use ratatui::backend::TestBackend;
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
@@ -25,7 +25,13 @@ fn response(json: &str) -> Box<SyncResponse> {
 /// The app at `columns` x `rows` after the full sync, told its size as the
 /// runtime's first resize would.
 fn sized(columns: u16, rows: u16) -> App<TestBackend> {
-    let mut app = App::new(TestBackend::new(columns, rows), State::new(now())).unwrap();
+    sized_with(columns, rows, Preset::Vim)
+}
+
+fn sized_with(columns: u16, rows: u16, preset: Preset) -> App<TestBackend> {
+    let mut state = State::new(now());
+    state.keymap = Keymap::new(preset, &[]);
+    let mut app = App::new(TestBackend::new(columns, rows), state).unwrap();
     app.handle(Event::Synced(Ok(response(FULL_SYNC)))).unwrap();
     app.handle(Event::Resize {
         width: columns,
@@ -83,17 +89,23 @@ fn command_types(effects: &[Effect]) -> Vec<String> {
 
 /// Opens the detail of "Call the dentist", the second Inbox task.
 fn open_call_detail(app: &mut App<TestBackend>) {
-    send(app, [key('l'), key('j'), press(KeyCode::Enter)]);
+    send(app, [key('1'), key('j'), press(KeyCode::Enter)]);
     assert_eq!(app.state().active_pane, Pane::Detail);
 }
 
-fn switch_to_standard(app: &mut App<TestBackend>) {
-    send(app, [key(','), press(KeyCode::Enter), press(KeyCode::Esc)]);
-    assert!(shows(app, "STANDARD"));
+/// Opens the detail of "Call the dentist" in the standard preset.
+fn standard_call_detail(columns: u16, rows: u16) -> App<TestBackend> {
+    let mut app = sized_with(columns, rows, Preset::Standard);
+    send(
+        &mut app,
+        [key('1'), press(KeyCode::Down), press(KeyCode::Enter)],
+    );
+    assert_eq!(app.state().active_pane, Pane::Detail);
+    app
 }
 
 #[test]
-fn esc_in_vim_mode_cancels_a_comment_and_sends_nothing() {
+fn esc_cancels_a_comment_and_sends_nothing() {
     let mut app = sized(120, 36);
     open_call_detail(&mut app);
     send(&mut app, [key('c')]);
@@ -104,14 +116,13 @@ fn esc_in_vim_mode_cancels_a_comment_and_sends_nothing() {
     assert!(command_types(&effects).is_empty(), "{effects:?}");
     assert!(app.state().modals.is_empty());
     assert!(!shows(&app, "Never mind"));
-    assert!(shows(&app, "NORMAL"));
 }
 
 #[test]
-fn esc_in_vim_mode_cancels_a_field_edit_and_sends_nothing() {
+fn esc_cancels_a_field_edit_and_sends_nothing() {
     let mut app = sized(120, 36);
     open_call_detail(&mut app);
-    send(&mut app, [key('i')]);
+    send(&mut app, [key('e')]);
     send(&mut app, " soon".chars().map(key));
 
     let effects = send(&mut app, [press(KeyCode::Esc)]);
@@ -123,17 +134,13 @@ fn esc_in_vim_mode_cancels_a_field_edit_and_sends_nothing() {
 }
 
 #[test]
-fn esc_in_standard_mode_cancels_a_comment_and_a_field_edit() {
-    let mut app = sized(120, 36);
-    switch_to_standard(&mut app);
-    send(&mut app, [press(KeyCode::Tab), press(KeyCode::Down)]);
-    send(&mut app, [press(KeyCode::Enter)]);
-    assert_eq!(app.state().active_pane, Pane::Detail);
+fn esc_in_the_standard_preset_cancels_a_comment_and_a_field_edit() {
+    let mut app = standard_call_detail(120, 36);
 
     send(&mut app, [key('c')]);
     send(&mut app, "Never mind".chars().map(key));
     let comment = send(&mut app, [press(KeyCode::Esc)]);
-    send(&mut app, [press(KeyCode::Enter)]);
+    send(&mut app, [key('e')]);
     send(&mut app, " soon".chars().map(key));
     let field = send(&mut app, [press(KeyCode::Esc)]);
 
@@ -146,7 +153,7 @@ fn esc_in_standard_mode_cancels_a_comment_and_a_field_edit() {
 fn enter_submits_a_field_edit_as_one_item_update() {
     let mut app = sized(120, 36);
     open_call_detail(&mut app);
-    send(&mut app, [key('i')]);
+    send(&mut app, [key('e')]);
     send(&mut app, " soon".chars().map(key));
 
     let effects = send(&mut app, [press(KeyCode::Enter)]);
@@ -155,43 +162,139 @@ fn enter_submits_a_field_edit_as_one_item_update() {
     assert!(shows(&app, "Call the dentist soon"));
 }
 
-/// Opens the detail, moves the field cursor down `steps` and starts the
-/// edit.
-fn edit_field(steps: usize) -> App<TestBackend> {
-    let mut app = sized(120, 36);
+#[test]
+fn the_due_row_shows_a_sent_due_date_with_an_ellipsis_until_todoist_answers() {
+    let mut app = sized(80, 24);
     open_call_detail(&mut app);
-    send(&mut app, (0..steps).map(|_| key('j')));
-    send(&mut app, [key('i')]);
+    send(&mut app, [key('d'), ctrl('u')]);
+    send(&mut app, "next friday".chars().map(key));
+
+    send(&mut app, [press(KeyCode::Enter)]);
+
+    let rows = screen(&app);
+    let due = rows.iter().find(|row| row.contains("Due ")).unwrap();
+    assert!(due.contains("next friday…"));
+}
+
+/// Presses `edit`, one of the edit keys, on "Call the dentist" in the
+/// Inbox list at 80x24, where its detail does not show.
+fn edit_from_the_narrow_list(edit: char) -> App<TestBackend> {
+    let mut app = sized(80, 24);
+    send(&mut app, [key('1'), key('j'), key(edit)]);
+    app
+}
+
+/// Opens the detail and presses `edit`, one of the edit keys.
+fn edit_in_the_detail(columns: u16, rows: u16, edit: char) -> App<TestBackend> {
+    let mut app = sized(columns, rows);
+    open_call_detail(&mut app);
+    send(&mut app, [key(edit)]);
     app
 }
 
 #[test]
-fn editing_the_content_says_so_in_the_title() {
-    let app = edit_field(0);
-    assert_eq!(app.state().detail_field, DetailField::Content);
-    assert!(shows(&app, " Edit Content "), "{:#?}", screen(&app));
+fn editing_the_content_from_the_narrow_list_says_so_in_the_title() {
+    let app = edit_from_the_narrow_list('e');
+    assert!(shows(&app, " Content of Call the dentist "));
 }
 
 #[test]
 fn editing_the_priority_opens_the_priority_picker() {
-    let app = edit_field(1);
+    let app = edit_in_the_detail(120, 36, 'p');
     assert!(matches!(
         app.state().top_modal(),
-        Some(Modal::PriorityPicker { .. })
+        Some(Modal::Picker(picker)) if picker.kind == PickerKind::Priority
     ));
     assert!(shows(&app, " Priority "), "{:#?}", screen(&app));
 }
 
 #[test]
-fn editing_the_due_date_says_so_in_the_title() {
-    let app = edit_field(2);
-    assert!(shows(&app, " Edit Due Date "), "{:#?}", screen(&app));
+fn editing_the_due_date_from_the_narrow_list_says_so_in_the_title() {
+    let app = edit_from_the_narrow_list('d');
+    assert!(shows(&app, " Due date of Call the dentist "));
 }
 
 #[test]
-fn editing_the_description_says_so_in_the_title() {
-    let app = edit_field(3);
-    assert!(shows(&app, " Edit Description "), "{:#?}", screen(&app));
+fn editing_the_description_from_the_narrow_list_says_so_in_the_title() {
+    let app = edit_from_the_narrow_list('E');
+    assert!(shows(&app, " Description of Call the dentist "));
+}
+
+#[test]
+fn each_edit_in_the_shown_detail_draws_in_place_without_a_popup_title() {
+    for (columns, rows) in [(120, 36), (80, 24)] {
+        for (edit, title) in [
+            ('e', " Content of Call the dentist "),
+            ('E', " Description of Call the dentist "),
+            ('d', " Due date of Call the dentist "),
+            ('c', " Comment on Call the dentist "),
+        ] {
+            let mut app = edit_in_the_detail(columns, rows, edit);
+            send(&mut app, "zq".chars().map(key));
+
+            assert!(!shows(&app, title));
+            assert!(shows(&app, "zq"));
+        }
+    }
+}
+
+#[test]
+fn a_prompt_never_draws_in_place_while_the_lists_load_or_cannot() {
+    let app = edit_in_the_detail(120, 36, 'e');
+    let editing = app.state().clone();
+    assert!(ratatoist::ui::list::prompt_in_place(&editing, 120).is_some());
+
+    let mut loading = editing.clone();
+    loading.loading = true;
+    let mut failed = editing;
+    failed.load_error = Some(ratatoist::app::LoadError::NoToken);
+
+    for state in [loading, failed] {
+        assert!(ratatoist::ui::list::prompt_in_place(&state, 120).is_none());
+    }
+}
+
+#[test]
+fn a_comment_in_place_goes_under_new_comment_at_the_end_of_the_thread() {
+    let mut app = edit_in_the_detail(120, 36, 'c');
+    send(&mut app, "zq".chars().map(key));
+
+    let lines = screen(&app);
+    let heading = lines.iter().position(|line| line.contains("New comment"));
+    let input = lines.iter().position(|line| line.contains("zq"));
+    let last_comment = lines
+        .iter()
+        .position(|line| line.contains("Thanks, I will call after ten."));
+    assert!(heading.is_some());
+    assert!(last_comment < heading);
+    assert!(heading < input);
+}
+
+#[test]
+fn the_detail_takes_the_focus_while_it_edits_in_place() {
+    let mut app = sized(120, 36);
+    send(&mut app, [key('1'), key('j'), key('e')]);
+
+    let lines = screen(&app);
+    assert!(!shows(&app, " Content of Call the dentist "));
+    // The list loses the thick border to the detail.
+    assert!(lines[1].starts_with('┌'));
+    assert!(lines[1].contains('┏'));
+}
+
+#[test]
+fn an_in_place_edit_of_the_content_at_120x36() {
+    let mut app = sized(120, 36);
+    send(&mut app, [key('1'), key('j'), key('e')]);
+    send(&mut app, " soon".chars().map(key));
+    assert_snapshot!(app.backend());
+}
+
+#[test]
+fn an_in_place_comment_at_80x24() {
+    let mut app = edit_in_the_detail(80, 24, 'c');
+    send(&mut app, "Booked".chars().map(key));
+    assert_snapshot!(app.backend());
 }
 
 /// "Call the dentist" with a description of 60 numbered lines.
@@ -230,7 +333,7 @@ fn ctrl_d_scrolls_a_long_description_half_a_page() {
     send(&mut app, [ctrl('d')]);
 
     assert_ne!(screen(&app), before);
-    assert!(shows(&app, "Line 20 of the notes"), "{:#?}", screen(&app));
+    assert!(shows(&app, "Line 18 of the notes"), "{:#?}", screen(&app));
     assert_snapshot!(app.backend());
 }
 
@@ -247,7 +350,6 @@ fn scrolling_stops_at_the_end_of_the_detail() {
     assert_eq!(app.state().detail_scroll, scroll);
     assert!(shows(&app, "Line 60 of the notes"));
     assert!(shows(&app, "Thanks, I will call after ten."));
-    assert!(shows(&app, "i edit  c comment"), "the last row is in view");
     assert_snapshot!(app.backend());
 }
 
@@ -277,14 +379,15 @@ fn ctrl_e_and_ctrl_y_scroll_one_line() {
 }
 
 #[test]
-fn the_scroll_keys_work_in_standard_mode() {
-    let mut app = sized(80, 24);
+fn the_scroll_keys_work_in_the_standard_preset() {
+    let mut app = sized_with(80, 24, Preset::Standard);
     app.handle(Event::Synced(Ok(long_description()))).unwrap();
-    switch_to_standard(&mut app);
-    send(&mut app, [press(KeyCode::Tab), press(KeyCode::Down)]);
-    send(&mut app, [press(KeyCode::Enter)]);
+    send(
+        &mut app,
+        [key('1'), press(KeyCode::Down), press(KeyCode::Enter)],
+    );
 
-    send(&mut app, [ctrl('d')]);
+    send(&mut app, [press(KeyCode::PageDown)]);
     let half = app.state().detail_scroll;
     send(&mut app, [ctrl('e')]);
 
@@ -307,7 +410,7 @@ fn a_taller_screen_lowers_the_scroll_limit() {
     let mut state = State::new(now());
     update(&mut state, Event::Synced(Ok(response(FULL_SYNC))));
     update(&mut state, Event::Synced(Ok(long_description())));
-    for event in [key('l'), key('j'), press(KeyCode::Enter)] {
+    for event in [key('1'), key('j'), press(KeyCode::Enter)] {
         update(&mut state, event);
     }
     let scroll_to_end = |state: &mut State| {
@@ -355,7 +458,7 @@ fn a_screen_smaller_than_80x24_scrolls_to_the_end_without_a_resize() {
 
     send(&mut app, (0..40).map(|_| ctrl('d')));
 
-    assert!(shows(&app, "i edit  c comment"), "{:#?}", screen(&app));
+    assert!(shows(&app, "after ten."), "{:#?}", screen(&app));
 }
 
 #[test]
@@ -396,7 +499,7 @@ fn a_shorter_description_under_a_scrolled_detail_leaves_no_blank_tail() {
         .unwrap();
 
     assert!(shows(&app, "Line 30 of the notes"), "{:#?}", screen(&app));
-    assert!(shows(&app, "i edit  c comment"), "{:#?}", screen(&app));
+    assert!(shows(&app, "after ten."), "{:#?}", screen(&app));
     assert!(!shows(&app, "Line 31 of the notes"));
 }
 
@@ -405,8 +508,7 @@ fn the_hint_bar_names_the_scroll_keys() {
     let mut app = sized(80, 24);
     open_call_detail(&mut app);
 
-    assert!(shows(&app, "Ctrl-d/u scroll"), "{:#?}", screen(&app));
-    assert!(!shows(&app, "j/k scroll"));
+    assert!(shows(&app, "C-d/C-u page"), "{:#?}", screen(&app));
 }
 
 #[test]
@@ -416,6 +518,46 @@ fn the_cheatsheet_names_the_scroll_keys() {
 
     send(&mut app, [key('?')]);
 
-    assert!(shows(&app, "Ctrl-d / Ctrl-u"), "{:#?}", screen(&app));
-    assert!(shows(&app, "Ctrl-e / Ctrl-y"), "{:#?}", screen(&app));
+    assert!(shows(&app, "C-d/C-u"), "{:#?}", screen(&app));
+    assert!(shows(&app, "C-e/C-y"), "{:#?}", screen(&app));
+}
+
+/// Every character the screen shows, without whitespace or box-drawing
+/// borders.
+fn screen_text(app: &App<TestBackend>) -> String {
+    screen(app)
+        .concat()
+        .chars()
+        .filter(|c| !c.is_whitespace() && !('\u{2500}'..='\u{257f}').contains(c))
+        .collect()
+}
+
+#[test]
+fn a_run_without_spaces_wider_than_the_detail_breaks_across_rows() {
+    let sentence = "これはとても長い説明文で、スペースがまったく含まれていないので、折り返しが正しく動くか確認するためのものです。最後の言葉はおわり。";
+    let url = "https://example.invalid/a/very/long/path/that/does/not/fit/in/the/detail/pane/at/eighty/columns/end";
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "fixture-token-2",
+        "items": [{
+            "id": "t-call",
+            "content": "Call the dentist",
+            "description": format!("{sentence}\n{url}"),
+            "checked": false,
+            "child_order": 2,
+            "priority": 3,
+            "project_id": "p-inbox",
+            "due": { "date": "2026-11-22", "is_recurring": false, "string": "today" },
+            "added_at": "2026-11-19T08:30:00Z"
+        }]
+    });
+    let mut app = sized(80, 24);
+    app.handle(Event::Synced(Ok(response(&delta.to_string()))))
+        .unwrap();
+    open_call_detail(&mut app);
+
+    let text = screen_text(&app);
+
+    assert!(text.contains(sentence));
+    assert!(text.contains(url));
 }

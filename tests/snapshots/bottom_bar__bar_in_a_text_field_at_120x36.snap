@@ -1,0 +1,6 @@
+---
+source: tests/bottom_bar.rs
+expression: bar(&text_field(WIDE))
+---
+
+ Do   │ Enter send │ Esc close

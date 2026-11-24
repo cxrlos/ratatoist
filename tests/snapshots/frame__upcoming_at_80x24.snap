@@ -1,0 +1,28 @@
+---
+source: tests/frame.rs
+expression: "screen_at('3', 80, 24).backend()"
+---
+" [1] │ [2] │ [3] Upcoming │ [4] │ [5]                             synced 4s ago "
+"┌Upcoming──────────────────────────────────────────────────────────────────────┐"
+"│Mon 23 Nov (11)                                                               │"
+"│› ○ Call the plumber about the leaking tap  @phon… today ▮▮▯ P2 Inbox         │"
+"│  ○ 買い物リストを作る  @quick                     today ··· P4 Inbox         │" Hidden by multi-width symbols: [(6, "s"), (8, " "), (10, "e"), (12, " "), (14, "o"), (16, " "), (18, "h"), (20, " "), (22, "u")]
+"│  ○ Take out the recycling  @15min  ↻              today ··· P4 Home          │"
+"│  ○ Finish «La casa del faro», chapter 7  @reading today ▮▯▯ P3 Reading       │"
+"│  ○ Read 20 pages  @reading @15min  ↻              today ··· P4 Reading       │"
+"│  ○ Water the seedlings  @quick  ↻                 today ··· P4 Garden        │"
+"│  ○ Fix the crash when the ferry timetable is emp… today ▮▮▮ P1 Harbor app    │"
+"│  ○ 🏃 Run 5 km along the river  @health @ou… today 7:30 ▮▮▯ P2 Fitness       │" Hidden by multi-width symbols: [(6, "e")]
+"│  ○ Draft the new navigation  @deep-work @c… today 14:00 ▮▮▮ P1 Atlas redesign│"
+"│  ○ Pay the electricity bill  @computer  ↻   today 17:00 ▮▮▮ P1 Home          │"
+"│  ○ Stretch for ten minutes  @health @15min… today 21:00 ··· P4 Fitness       │"
+"│Tue 24 Nov (2)                                                                │"
+"│  ○ Vacuum the living room  ↻                   tomorrow ··· P4 Home          │"
+"│  ○ 🌱 Repot the monstera  @outdoors            tomorrow ▮▯▯ P3 Garden        │" Hidden by multi-width symbols: [(6, "i")]
+"│Wed 25 Nov (2)                                                                │"
+"│  ○ Change the bedsheets  ↻                       Nov 25 ··· P4 Home          │"
+"│  ○ Release notes for 2.4                         Nov 25 ▮▯▯ P3 Harbor app    │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Move │ j down  k up  gg top  G bottom  C-d/C-u page  h/l pane                  "
+" Do   │ Enter open  Esc close  ? keys  : palette  q quit                        "
+" View │ z fold  f filter  vs sort  x complete  a add  p priority  d due         "

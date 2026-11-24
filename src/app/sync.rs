@@ -6,10 +6,11 @@ use std::collections::HashSet;
 use tracing::error;
 
 use super::Effect;
-use super::state::{AppError, State, UserRecord};
+use super::failure::{ErrorKind, Failure, LoadError};
+use super::state::{Pane, State, SyncHealth, UserRecord};
 use crate::todoist::ClientError;
-use crate::todoist::model::{Folder, Project};
-use crate::todoist::sync::{SyncCommand, SyncRequest, SyncResponse};
+use crate::todoist::model::{Folder, Project, Task};
+use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
 
 /// What local state looked like before an optimistic write, so it can be
 /// rolled back if Todoist rejects the command or it never arrives.
@@ -90,13 +91,19 @@ impl State {
     /// Records `op` under the command's uuid and asks the runtime to send the
     /// command, alone. One command per flush: the rollback snapshots are
     /// absolute `before` values that do not compose when two edits of the
-    /// same task share a flush.
+    /// same task share a flush. A new write to a task clears its failed
+    /// mark.
     pub(crate) fn send_command(
         &mut self,
         command: SyncCommand,
         op: Option<OptimisticOp>,
         effects: &mut Vec<Effect>,
     ) {
+        let action = self.describe(&command, op.as_ref());
+        if let Some(task_id) = command_task(&command) {
+            self.rolled_back.remove(task_id);
+        }
+        self.pending_actions.insert(command.uuid.clone(), action);
         if let Some(op) = op {
             self.temp_id_pending.insert(command.uuid.clone(), op);
         }
@@ -123,6 +130,11 @@ impl State {
         effects: &mut Vec<Effect>,
     ) {
         let first = std::mem::replace(&mut self.loading, false);
+        self.sync_health = match &result {
+            Ok(_) => SyncHealth::Fine,
+            Err(ClientError::Network(_)) => SyncHealth::Offline,
+            Err(_) => SyncHealth::Failing,
+        };
         match result {
             Ok(resp) => {
                 self.apply_sync_delta(*resp, effects);
@@ -134,12 +146,17 @@ impl State {
                     effects.push(Effect::OpenLive { url });
                 }
             }
-            Err(e) if first => self.set_error(&e, "Initial sync"),
-            Err(e) => error!(error = %e, "incremental sync failed"),
+            Err(e) if first && ErrorKind::of(&e, self.now) == ErrorKind::TokenRejected => {
+                error!("todoist rejected the token");
+                self.not_loaded(LoadError::TokenRejected);
+            }
+            Err(e) if first => self.report(Failure::from_client("load your tasks", &e, self.now)),
+            Err(e) => self.log_failure(Failure::from_client("sync with Todoist", &e, self.now)),
         }
     }
 
     pub(crate) fn apply_sync_delta(&mut self, resp: SyncResponse, effects: &mut Vec<Effect>) {
+        let focused = self.selected_task().map(|task| task.id.clone());
         if resp.full_sync {
             if let Some(projects) = resp.projects {
                 self.projects = projects
@@ -149,7 +166,11 @@ impl State {
                 self.sort_projects();
             }
             if let Some(items) = resp.items {
+                let before = std::mem::take(&mut self.tasks);
                 self.tasks = items.into_iter().filter(|t| !t.is_deleted).collect();
+                self.keep_marks_of_unchanged_tasks(&before);
+                // A full sync carries every due date as Todoist parsed it.
+                self.pending_due.clear();
             }
             if let Some(labels) = resp.labels {
                 self.labels = labels
@@ -192,9 +213,6 @@ impl State {
             if let Some(user) = resp.user {
                 self.current_user_id = Some(user.id.clone());
                 self.websocket_url = user.websocket_url;
-                if let Some(name) = &user.full_name {
-                    self.current_user_name = Some(name.clone());
-                }
                 self.user_names
                     .entry(user.id.clone())
                     .or_insert_with(|| UserRecord::new(user.id, user.full_name, user.email));
@@ -219,6 +237,8 @@ impl State {
                     if self.task_has_pending_op(&item.id) {
                         continue;
                     }
+                    self.rolled_back.remove(&item.id);
+                    self.pending_due.remove(&item.id);
                     if item.is_deleted {
                         self.tasks.retain(|t| t.id != item.id);
                     } else if let Some(e) = self.tasks.iter_mut().find(|t| t.id == item.id) {
@@ -251,7 +271,7 @@ impl State {
                 }
             }
             if let Some(notes) = resp.notes {
-                let open_task_id = self.selected_task().map(|t| t.id.clone());
+                let open_task_id = focused.clone();
                 let mut affected_task: Option<String> = None;
                 for note in notes {
                     let tid = note
@@ -286,7 +306,34 @@ impl State {
 
         self.take_sync_token(resp.sync_token, effects);
         self.last_sync_at = Some(self.now);
-        self.clamp_selected_task();
+        self.keep_focus_on(focused, effects);
+    }
+
+    /// Focuses the task `focused` again when it is still visible, else the
+    /// nearest row. When the detail shows and now shows another task, its
+    /// comments load as opening it would.
+    fn keep_focus_on(&mut self, focused: Option<String>, effects: &mut Vec<Effect>) {
+        let position = focused
+            .as_ref()
+            .and_then(|id| self.visible_tasks().iter().position(|task| &task.id == id));
+        match position {
+            Some(position) => self.selected_task = position,
+            None => self.clamp_selected_task(),
+        }
+        let detail_shows = self.shows_panes() || self.active_pane == Pane::Detail;
+        let now = self.selected_task().map(|task| task.id.clone());
+        if !detail_shows || focused.is_none() || now == focused {
+            return;
+        }
+        let Some(task_id) = now else {
+            return;
+        };
+        self.detail_scroll = 0;
+        match self.comments_by_task.get(&task_id) {
+            Some(cached) => self.comments = cached.clone(),
+            None => self.comments.clear(),
+        }
+        self.fetch_comments(task_id, effects);
     }
 
     fn take_sync_token(&mut self, token: String, effects: &mut Vec<Effect>) {
@@ -313,39 +360,35 @@ impl State {
     ) {
         match result {
             Ok(resp) => self.command_results(*resp, effects),
-            Err(e) => {
-                error!(error = %e, "command flush failed");
-                self.command_failed(uuids);
-            }
+            Err(e) => self.command_failed(uuids, &e),
         }
     }
 
     fn command_results(&mut self, resp: SyncResponse, effects: &mut Vec<Effect>) {
         let mut refresh_comments_for: Option<String> = None;
+        let mut rejected = Vec::new();
         for (uuid, status) in &resp.sync_status {
-            if status.is_err() {
-                if let Some(op) = self.temp_id_pending.remove(uuid) {
-                    self.revert_optimistic(op);
+            let action = self.pending_actions.remove(uuid);
+            match status {
+                SyncCommandResult::Err(error) => {
+                    let action = action.unwrap_or_else(|| "send a change".to_owned());
+                    rejected.push((uuid.clone(), Failure::from_command(action, error, self.now)));
                 }
-                let msg = status
-                    .error_message()
-                    .unwrap_or("unknown error")
-                    .to_string();
-                error!(uuid, error = %msg, "command rejected by server");
-                self.error = Some(AppError {
-                    title: "Command failed".to_string(),
-                    message: msg,
-                    suggestion: None,
-                    recoverable: true,
-                });
-            } else if let Some(op) = self.temp_id_pending.remove(uuid)
-                && let OptimisticOp::CommentAdded { task_id, .. } = &op
-            {
-                let current = self.selected_task().map(|t| t.id.clone());
-                if current.as_deref() == Some(task_id.as_str()) {
-                    refresh_comments_for = Some(task_id.clone());
+                SyncCommandResult::Ok(_) => {
+                    if let Some(op) = self.temp_id_pending.remove(uuid)
+                        && let OptimisticOp::CommentAdded { task_id, .. } = &op
+                    {
+                        let current = self.selected_task().map(|t| t.id.clone());
+                        if current.as_deref() == Some(task_id.as_str()) {
+                            refresh_comments_for = Some(task_id.clone());
+                        }
+                    }
                 }
             }
+        }
+        for (uuid, failure) in rejected {
+            self.roll_back(&uuid, &failure);
+            self.report(failure);
         }
         for (temp_id, real_id) in &resp.temp_id_mapping {
             self.apply_temp_id_mapping(temp_id, real_id);
@@ -356,21 +399,82 @@ impl State {
         }
     }
 
-    fn command_failed(&mut self, uuids: &[String]) {
-        let mut reverted = false;
+    /// The flush carrying `uuids` failed with `error`: each of its writes
+    /// rolls back and becomes the notice and a log entry.
+    fn command_failed(&mut self, uuids: &[String], error: &ClientError) {
+        let mut failures = Vec::new();
         for uuid in uuids {
-            if let Some(op) = self.temp_id_pending.remove(uuid) {
-                self.revert_optimistic(op);
-                reverted = true;
-            }
+            let action = self
+                .pending_actions
+                .remove(uuid)
+                .unwrap_or_else(|| "send a change".to_owned());
+            let failure = Failure::from_client(action, error, self.now);
+            self.roll_back(uuid, &failure);
+            failures.push(failure);
         }
-        if reverted {
-            self.error = Some(AppError {
-                title: "Sync failed".to_string(),
-                message: "Couldn't reach Todoist: your change was reverted.".to_string(),
-                suggestion: Some("Check your connection and try again.".to_string()),
-                recoverable: true,
-            });
+        if failures.is_empty() {
+            failures.push(Failure::from_client("send a change", error, self.now));
+        }
+        for failure in failures {
+            self.report(failure);
+        }
+    }
+
+    /// Restores what the write with `uuid` changed, and marks its task or
+    /// project with `failure`.
+    fn roll_back(&mut self, uuid: &str, failure: &Failure) {
+        let Some(op) = self.temp_id_pending.remove(uuid) else {
+            return;
+        };
+        if let OptimisticOp::ProjectUpdated { project_id, .. } = &op {
+            self.rolled_back_projects
+                .insert(project_id.clone(), failure.clone());
+        }
+        if let Some(task_id) = self.revert_optimistic(op) {
+            self.pending_due.remove(&task_id);
+            self.rolled_back.insert(task_id, failure.clone());
+        }
+    }
+
+    /// The command as the log names it, such as `complete "Buy oat milk"`,
+    /// from the task or project as it was before `op` changed it.
+    fn describe(&self, command: &SyncCommand, op: Option<&OptimisticOp>) -> String {
+        let quoted = |name: &str| format!("\"{name}\"");
+        if command.r#type == "item_add" {
+            let content = command.args["content"].as_str().unwrap_or_default();
+            return format!("add {}", quoted(content));
+        }
+        if command.r#type == "project_update" {
+            let name = match op {
+                Some(OptimisticOp::ProjectUpdated { before, .. }) => Some(before.name.clone()),
+                _ => command.args["id"]
+                    .as_str()
+                    .and_then(|id| self.projects.iter().find(|p| p.id == id))
+                    .map(|p| p.name.clone()),
+            };
+            return name.map_or_else(
+                || "edit a project".to_owned(),
+                |name| format!("edit project {}", quoted(&name)),
+            );
+        }
+        let verb = match command.r#type.as_str() {
+            "item_close" | "item_complete" => "complete",
+            "item_reopen" | "item_uncomplete" => "reopen",
+            "item_update" => "edit",
+            "item_delete" => "delete",
+            "item_move" => "move",
+            "note_add" => "comment on",
+            other => return other.replace('_', " "),
+        };
+        let content = match op {
+            Some(OptimisticOp::TaskUpdated { before, .. }) => Some(before.content.clone()),
+            _ => command_task(command)
+                .and_then(|id| self.tasks.iter().find(|t| t.id == id))
+                .map(|t| t.content.clone()),
+        };
+        match content {
+            Some(content) => format!("{verb} {}", quoted(&content)),
+            None => format!("{verb} a task"),
         }
     }
 
@@ -388,29 +492,50 @@ impl State {
         }
     }
 
-    fn revert_optimistic(&mut self, op: OptimisticOp) {
+    /// Undoes `op`; the task whose row it changed, if it still has one.
+    fn revert_optimistic(&mut self, op: OptimisticOp) -> Option<String> {
         match op {
             OptimisticOp::TaskAdded { temp_id } => {
                 self.tasks.retain(|t| t.id != temp_id);
+                None
             }
             OptimisticOp::TaskUpdated { task_id, before } => {
                 if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
                     *t = *before;
                 }
+                Some(task_id)
             }
             OptimisticOp::CommentAdded { temp_id, task_id } => {
                 let current = self.selected_task().map(|t| t.id.clone());
                 if current.as_deref() == Some(&task_id) {
                     self.comments.retain(|c| c.id != temp_id);
                 }
+                Some(task_id)
             }
             OptimisticOp::ProjectUpdated { project_id, before } => {
                 if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
                     *p = *before;
                 }
                 self.sort_projects();
+                None
             }
         }
+    }
+
+    /// Drops the failed mark of every task a full sync changed or removed,
+    /// comparing each task with its copy in `before`.
+    fn keep_marks_of_unchanged_tasks(&mut self, before: &[Task]) {
+        let tasks = &self.tasks;
+        self.rolled_back.retain(|id, _| {
+            let old = before.iter().find(|t| &t.id == id);
+            let new = tasks.iter().find(|t| &t.id == id);
+            match (old, new) {
+                (Some(old), Some(new)) => {
+                    serde_json::to_value(old).ok() == serde_json::to_value(new).ok()
+                }
+                _ => false,
+            }
+        });
     }
 
     /// Recovery path for a suspected desync: abandon any in-flight optimistic
@@ -419,6 +544,7 @@ impl State {
     /// task list wholesale, so a late command result must not revert against it.
     pub(crate) fn force_full_resync(&mut self, effects: &mut Vec<Effect>) {
         self.temp_id_pending.clear();
+        self.pending_actions.clear();
         let request = full_sync_request();
         self.sync_token = request.sync_token.clone();
         effects.push(Effect::PersistSyncToken(self.sync_token.clone()));
@@ -452,7 +578,13 @@ impl State {
                     self.comments = c;
                 }
             }
-            Err(e) => self.set_error(&e, "Load comments"),
+            Err(e) => {
+                let action = match self.tasks.iter().find(|t| t.id == task_id) {
+                    Some(task) => format!("load the comments on \"{}\"", task.content),
+                    None => "load comments".to_owned(),
+                };
+                self.log_failure(Failure::from_client(action, &e, self.now));
+            }
         }
     }
 
@@ -466,14 +598,10 @@ impl State {
                 self.completed_cache
                     .insert(project_id.unwrap_or_default(), r);
             }
-            Err(e) => self.set_error(&e, "Load completed tasks"),
+            Err(e) => {
+                self.log_failure(Failure::from_client("load completed tasks", &e, self.now));
+            }
         }
-    }
-
-    pub(crate) fn set_error(&mut self, err: &ClientError, context: &str) {
-        let app_err = AppError::from_client(err, context);
-        error!(context, error = %app_err.message, "app error");
-        self.error = Some(app_err);
     }
 
     pub(crate) fn sort_projects(&mut self) {
@@ -539,6 +667,14 @@ impl State {
             self.selected_project = pos;
         }
     }
+}
+
+/// The task `command` writes to, if it names one.
+fn command_task(command: &SyncCommand) -> Option<&str> {
+    let args = &command.args;
+    args.get("item_id")
+        .or_else(|| args.get("id"))
+        .and_then(serde_json::Value::as_str)
 }
 
 fn collect_project_subtree(parent_id: Option<&str>, all: &[Project], out: &mut Vec<Project>) {

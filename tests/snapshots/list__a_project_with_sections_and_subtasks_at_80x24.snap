@@ -1,0 +1,28 @@
+---
+source: tests/list.rs
+expression: app.backend()
+---
+" [1] │ [2] │ [3] │ [4] Projects │ [5]                             synced 0s ago "
+"┌Atlas redesign────────────────────────────────────────────────────────────────┐"
+"│Research (2)                                                                  │"
+"│› ○ Interview five café owners about online ordering  @review    Nov 26 ▮▮▯ P2│"
+"│  ○ Summarise the interview notes  @deep-work                     Dec 1 ▮▯▯ P3│"
+"│Design (2)                                                                    │"
+"│  ▿ Draft the new navigation  @deep-work @computer  ✉3      today 14:00 ▮▮▮ P1│"
+"│    ▿ Mobile layout                                                     ▮▮▯ P2│"
+"│      ○ Check the contrast of the accent colour  @quick @review         ··· P4│"
+"│  ○ Review the logo options from Inés  @review @waiting       yesterday ▮▮▯ P2│"
+"│Build (3)                                                                     │"
+"│  ○ Set up the staging site  @computer                            Dec 5 ▮▯▯ P3│"
+"│  ○ Migrate the menu data  @computer                             Dec 23 ··· P4│"
+"│  ○ Write the long-form retrospective for the redesign, covering… Jan 2 ··· P4│"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Move │ j down  k up  gg top  G bottom  C-d/C-u page  h/l pane                  "
+" Do   │ Enter open  Esc close  ? keys  : palette  q quit                        "
+" View │ z fold  f filter  vs sort  x complete  a add  p priority  d due         "

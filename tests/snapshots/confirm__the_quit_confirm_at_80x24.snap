@@ -1,0 +1,28 @@
+---
+source: tests/confirm.rs
+expression: app.backend()
+---
+" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
+"┌Harbor app────────────────────────────────────────────────────────────────────┐"
+"│Ask Teo for the push-notification certificate                                 │"
+"│                                                                              │"
+"│State     ○ Open                                                              │"
+"│Priority  ▮▮▯ P2                                                              │"
+"│Due       Nov 19                                                              │"
+"│Labels    waiting                                                             │"
+"│                ┌ Quit with unsent changes? ─────────────────┐                │"
+"│No description. │ Todoist has not answered every change yet. │                │"
+"│                │                                            │                │"
+"│Comments (0)    │ 1 change is not sent yet.                  │                │"
+"│No comments.    └ Enter/y quit  Esc/n cancel ────────────────┘                │"
+"│                                                                              │"
+"│Details                                                                       │"
+"│Project   Harbor app                                                          │"
+"│Section   None                                                                │"
+"│Parent    None                                                                │"
+"│Created   2026-10-24 08:00 (4 weeks ago)                                      │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"                                                                                "
+" Do   │ Enter choose │ Esc close                                                "
+"                                                                                "

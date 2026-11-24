@@ -1,0 +1,40 @@
+---
+source: tests/icons.rs
+expression: "screen(&task_list(IconSet::Unicode))"
+---
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago 
+┏Today━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Home › Repairs────────────────────────────────┐
+┃▲ Overdue (8)                                                         ┃│Fix the wobbly chair leg                      │
+┃› ○ Fix the wobbly chair leg  ✉1        Nov 18 ▮▯▯ P3 Home            ┃│                                              │
+┃  ○ Ask Teo for the push-notification…  Nov 19 ▮▮▯ P2 Harbor app      ┃│State     ○ Open                              │
+┃  ○ Get three quotes for the plumbing…  Nov 20 ▮▮▮ P1 Kitchen renovat…┃│Priority  ▮▯▯ P3                              │
+┃  ○ Return the library books  @errand   Nov 21 ▮▯▯ P3 Inbox           ┃│Due       Nov 18                              │
+┃  ○ Plant the tulip bulbs  @outdoors    Nov 21 ▮▮▯ P2 Garden          ┃│Labels    None                                │
+┃  ○ Reply to Teo about the weekend…  yesterday ▮▯▯ P3 Inbox           ┃│                                              │
+┃  ○ Book the physio appointment  @p… yesterday ▮▮▯ P2 Fitness         ┃│No description.                               │
+┃  ○ Review the logo options from In… yesterday ▮▮▯ P2 Atlas redesign  ┃│                                              │
+┃◆ Today (11)                                                          ┃│Comments (1)                                  │
+┃  ○ Call the plumber about the leaking…  today ▮▮▯ P2 Inbox           ┃│Inés Halloran · 5 days ago                    │
+┃  ○ 買 い 物 リ ス ト を 作 る   @quick           today ··· P4 Inbox           ┃│  Wood glue is in the second drawer.          │
+┃  ○ Take out the recycling  @15min  ↻    today ··· P4 Home            ┃│                                              │
+┃  ○ Pay the electricity bill  @co… today 17:00 ▮▮▮ P1 Home            ┃│Details                                       │
+┃  ○ Finish «La casa del faro», chapter…  today ▮▯▯ P3 Reading         ┃│Project   Home                                │
+┃  ○ Read 20 pages  @reading @15min  ↻    today ··· P4 Reading         ┃│Section   Repairs                             │
+┃  ○ 🏃  Run 5 km along the river  @… today 7:30 ▮▮▯ P2 Fitness         ┃│Parent    None                                │
+┃  ○ Stretch for ten minutes  @hea… today 21:00 ··· P4 Fitness         ┃│Created   2026-10-24 08:00 (4 weeks ago)      │
+┃  ○ Water the seedlings  @quick  ↻       today ··· P4 Garden          ┃│                                              │
+┃  ○ Draft the new navigation  @de… today 14:00 ▮▮▮ P1 Atlas redesign  ┃│                                              │
+┃  ○ Fix the crash when the ferry timeta… today ▮▮▮ P1 Harbor app      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────────────────────────┘
+ Move │ j down     │ k up      │ gg top  │ G bottom   │ C-d/C-u page │ h/l pane                                         
+ Do   │ Enter open │ Esc close │ ? keys  │ : palette  │ q quit                                                          
+ View │ z fold     │ f filter  │ vs sort │ x complete │ a add        │ p priority │ d due │ e/E edit │ c comment

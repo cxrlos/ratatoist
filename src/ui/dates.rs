@@ -53,19 +53,37 @@ pub fn format_due(due: &Due, today: NaiveDate, theme: &Theme) -> FormattedDue {
     }
 }
 
+/// The day `due` falls on, relative to today where that is near, and its
+/// time when it has one: `today`, `tomorrow 9:30`, `Nov 28`. Never the due
+/// string the user typed: that names the day relative to when it was typed
+/// ("tomorrow" goes stale the next day) and, for a recurring task, the rule
+/// rather than the next date. The detail shows the rule beside the date.
 fn display_label(due: &Due, days_away: Option<i64>) -> String {
-    if let Some(s) = &due.string
-        && !s.is_empty()
-    {
-        return s.clone();
-    }
-
-    match days_away {
+    let day = match days_away {
         Some(0) => "today".to_string(),
         Some(1) => "tomorrow".to_string(),
         Some(-1) => "yesterday".to_string(),
         _ => format_short_date(date_part(&due.date)),
+    };
+    match time_part(due) {
+        Some(time) => format!("{day} {time}"),
+        None => day,
     }
+}
+
+/// The time of a timed due, as `9:30`, or `None` for an all-day due. A
+/// time in UTC (ending in `Z`, a due with a fixed timezone) is left out
+/// rather than shown as if it were local.
+fn time_part(due: &Due) -> Option<String> {
+    let stamp = due.datetime.as_deref().unwrap_or(&due.date);
+    let (_, time) = stamp.split_once('T')?;
+    if time.ends_with('Z') {
+        return None;
+    }
+    let parsed = chrono::NaiveTime::parse_from_str(time, "%H:%M:%S")
+        .or_else(|_| chrono::NaiveTime::parse_from_str(time, "%H:%M"))
+        .ok()?;
+    Some(parsed.format("%-H:%M").to_string())
 }
 
 /// The calendar-date portion of a Todoist due date, which may be a bare
@@ -101,18 +119,41 @@ mod tests {
     }
 
     #[test]
+    fn a_due_string_typed_on_an_earlier_day_never_shows() {
+        let theme = &Theme::built_in("nord").unwrap();
+        let stale = Due {
+            string: Some("tomorrow".to_owned()),
+            ..due("2026-11-22")
+        };
+
+        assert_eq!(format_due(&stale, sunday(), theme).text, "today");
+    }
+
+    #[test]
+    fn a_recurring_due_shows_its_next_date_not_its_rule() {
+        let theme = &Theme::built_in("nord").unwrap();
+        let recurring = Due {
+            string: Some("every month at 17:00".to_owned()),
+            is_recurring: true,
+            ..due("2026-11-28T17:00:00")
+        };
+
+        assert_eq!(format_due(&recurring, sunday(), theme).text, "Nov 28 17:00");
+    }
+
+    #[test]
     fn a_timed_due_earlier_today_reads_and_looks_like_today() {
-        let theme = &Theme::builtin()[0];
+        let theme = &Theme::built_in("nord").unwrap();
 
         let formatted = format_due(&due("2026-11-22T09:00:00"), sunday(), theme);
 
-        assert_eq!(formatted.text, "today");
+        assert_eq!(formatted.text, "today 9:00");
         assert_eq!(formatted.style, theme.due_today());
     }
 
     #[test]
     fn a_timed_due_yesterday_looks_overdue() {
-        let theme = &Theme::builtin()[0];
+        let theme = &Theme::built_in("nord").unwrap();
 
         let formatted = format_due(&due("2026-11-21T18:30:00Z"), sunday(), theme);
 
@@ -183,9 +224,9 @@ mod tests {
 
     #[test]
     fn a_due_without_a_string_reads_as_a_short_date() {
-        let theme = &Theme::builtin()[0];
+        let theme = &Theme::built_in("nord").unwrap();
         let formatted = format_due(&due("2026-12-12T18:00:00"), sunday(), theme);
-        assert_eq!(formatted.text, "Dec 12");
+        assert_eq!(formatted.text, "Dec 12 18:00");
         assert_eq!(formatted.style, theme.due_future());
     }
 }

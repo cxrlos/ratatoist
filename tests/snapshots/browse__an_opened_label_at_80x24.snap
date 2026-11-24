@@ -1,0 +1,28 @@
+---
+source: tests/browse.rs
+expression: app.backend()
+---
+" [1] │ [2] │ [3] │ [4] │ [5] Labels                               synced 0s ago "
+"┌@errand───────────────────────────────────────────────────────────────────────┐"
+"│Inbox (2)                                                                     │"
+"│› ○ Return the library books  @errand                            Nov 21 ▮▯▯ P3│"
+"│  ○ 🎂 Order a cake for Saturday  @errand                  Nov 27 12:00 ▮▮▮ P1│" Hidden by multi-width symbols: [(6, "o")]
+"│Home (1)                                                                      │"
+"│  ○ Replace the hallway bulb  @quick @errand                            ··· P4│"
+"│Kitchen renovation (1)                                                        │"
+"│  ○ Compare grout colours with the samples  @errand                     ··· P4│"
+"│Reading (1)                                                                   │"
+"│  ○ Lend the travel book to Inés  @errand                               ··· P4│"
+"│Fitness (1)                                                                   │"
+"│  ○ Buy new running socks  @errand                                      ··· P4│"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+" Move │ j down  k up  gg top  G bottom  C-d/C-u page  h/l pane                  "
+" Do   │ Enter open  Esc close  ? keys  : palette  q quit                        "
+" View │ z fold  f filter  vs sort  x complete  a add  p priority  d due         "

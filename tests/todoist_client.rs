@@ -520,11 +520,16 @@ fn every_fixture_parses_into_the_model() {
                 serde_json::from_value::<CompletedTasksResponse>(value).map(drop)
             }
             "HYPOTHETICAL_user.json" => serde_json::from_value::<UserInfo>(value).map(drop),
+            "HYPOTHETICAL_rate_limited.json" | "HYPOTHETICAL_server_error.json" => {
+                serde_json::from_value::<SyncCommandError>(value).map(drop)
+            }
             other => panic!("{other} has no model type in this test"),
         };
         assert!(parsed.is_ok(), "{name}: {parsed:?}");
     }
-    assert_eq!(names.len(), 7, "{names:?}");
+    assert_eq!(names.len(), 9, "{names:?}");
+    let limited = fixture("HYPOTHETICAL_rate_limited.json");
+    assert_eq!(limited["error_extra"]["retry_after"].as_u64(), Some(30));
 
     let full: SyncResponse =
         serde_json::from_value(fixture("HYPOTHETICAL_full_sync.json")).unwrap();

@@ -1,0 +1,39 @@
+---
+source: tests/palette.rs
+expression: text(&app)
+---
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago 
+┏Inbox━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐
+┃› ○ Buy oat milk  @er┌ Palette ─────────────────────────────────────────────────────────────────┐                     │
+┃  ○ Call the dentist │ : prio                                                                   │                     │
+┃  ○ Water the plants │──────────────────────────────────────────────────────────────────────────│                     │
+┃  ▿ Plan the winter t│ Change the priority                                                    p │                     │
+┃    ○ Book the train │ Focus the pane on the right                                            l │                     │
+┃  ○ Read the reading-│ Complete the task, or reopen it                                        x │                     │
+┃                     │ Edit the description                                                   E │                     │
+┃                     │                                                                          │                     │
+┃                     │                                                                          │                     │
+┃                     │                                                                          │                     │
+┃                     │                                                                          │                     │
+┃                     │                                                                          │                     │
+┃                     │                                                                          │                     │
+┃                     │                                                                          │                     │
+┃                     │                                                                          │                     │
+┃                     └ Esc close ───────────────────────────────────────────────────────────────┘                     │
+┃                                                                      ┃│Created   2026-11-18 10:00 (3 days ago)       │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────────────────────────┘
+ Move │ Down/Up move                                                                                                    
+ Do   │ Enter choose │ Esc close

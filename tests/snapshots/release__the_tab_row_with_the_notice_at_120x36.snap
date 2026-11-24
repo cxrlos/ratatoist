@@ -1,0 +1,5 @@
+---
+source: tests/release.rs
+expression: "synced_tab_row(120, 36, true)"
+---
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                      v99.0.0 available  synced 4s ago

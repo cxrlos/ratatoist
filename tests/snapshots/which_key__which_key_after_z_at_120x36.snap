@@ -1,0 +1,40 @@
+---
+source: tests/which_key.rs
+expression: text(&app)
+---
+ [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels                                         synced 0s ago 
+┏Inbox━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓┌Inbox─────────────────────────────────────────┐
+┃› ○ Buy oat milk  @errand                                Nov 20 ▮▮▮ P1┃│Buy oat milk                                  │
+┃  ○ Call the dentist  ✉2                                  today ▮▮▯ P2┃│                                              │
+┃  ○ Water the plants  ↻                                  Nov 24 ··· P4┃│State     ○ Open                              │
+┃  ▿ Plan the winter trip                                 Dec 12 ▮▯▯ P3┃│Priority  ▮▮▮ P1                              │
+┃    ○ Book the train                                            ··· P4┃│Due       Nov 20                              │
+┃  ○ Read the reading-group chapter  @deep-work                  ··· P4┃│Labels    errand                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│No description.                               │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│Comments (0)                                  │
+┃                                                                      ┃│No comments.                                  │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│Details                                       │
+┃                                                                      ┃│Project   Inbox                               │
+┃                                                                      ┃│Section   None                                │
+┃                                                                      ┃│Parent    None                                │
+┃                                                                      ┃│Created   2026-11-18 10:00 (3 days ago)       │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│                                              │
+┃                                                                      ┃│         ┌ z ────────────────────────────────┐│
+┃                                                                      ┃│         │ a  Fold or unfold the focused row ││
+┃                                                                      ┃│         │ R  Unfold every row               ││
+┃                                                                      ┃│         │ M  Fold every row                 ││
+┃                                                                      ┃│         └ Esc close ────────────────────────┘│
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛└──────────────────────────────────────────────┘
+ Move │ j down     │ k up      │ gg top  │ G bottom   │ C-d/C-u page │ h/l pane                                         
+ Do   │ Enter open │ Esc close │ ? keys  │ : palette  │ q quit                                                          
+ View │ z fold     │ f filter  │ vs sort │ x complete │ a add        │ p priority │ d due │ e/E edit │ c comment

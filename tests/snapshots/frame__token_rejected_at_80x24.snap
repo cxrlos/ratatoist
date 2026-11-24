@@ -1,0 +1,28 @@
+---
+source: tests/frame.rs
+expression: app.backend()
+---
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels               "
+"┌Today─────────────────────────────────────────────────────────────────────────┐"
+"│                                                                              │"
+"│ Token rejected                                                               │"
+"│                                                                              │"
+"│ Todoist rejected the token from the OS keyring (service ratatoist): it is    │"
+"│ wrong or revoked. Copy the API token from                                    │"
+"│ https://app.todoist.com/app/settings/integrations/developer, then run        │"
+"│ "ratatoist auth login".                                                      │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"                                                                                "
+" Do   │ ? keys │ : palette │ q quit                                             "
+"                                                                                "

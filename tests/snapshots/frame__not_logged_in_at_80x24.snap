@@ -1,0 +1,28 @@
+---
+source: tests/frame.rs
+expression: app.backend()
+---
+" [1] Inbox │ [2] Today │ [3] Upcoming │ [4] Projects │ [5] Labels               "
+"┌Today─────────────────────────────────────────────────────────────────────────┐"
+"│                                                                              │"
+"│ Not logged in                                                                │"
+"│                                                                              │"
+"│ No Todoist token: run "ratatoist auth login", or set TODOIST_API_TOKEN.      │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"│                                                                              │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"                                                                                "
+" Do   │ ? keys │ : palette │ q quit                                             "
+"                                                                                "

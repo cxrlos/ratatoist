@@ -68,6 +68,10 @@ _Avoid_: tag, context
 A saved Todoist query (for example `today | overdue`) that selects tasks across projects.
 _Avoid_: view, smart list, search
 
+**List filter**:
+What `f` narrows the task list on screen to: open, completed or all tasks, a due bucket (overdue, today, this week) or a priority. It exists only in ratatoist; a saved Filter is Todoist's.
+_Avoid_: filter on its own where a saved Filter could be meant, view, done (say completed)
+
 **Workspace**:
 A Todoist team space whose projects belong to the team rather than to one user. Projects outside any workspace are the user's personal projects.
 _Avoid_: team, organization, org

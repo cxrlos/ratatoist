@@ -1,0 +1,28 @@
+---
+source: tests/confirm.rs
+expression: app.backend()
+---
+" [1] │ [2] Today │ [3] │ [4] │ [5]                                synced 0s ago "
+"┌Kitchen renovation────────────────────────────────────────────────────────────┐"
+"│Get three quotes for the plumbing                                             │"
+"│                                                                              │"
+"│State     ○ Open                                                              │"
+"│Priority  ▮▮▮ P1                                                              │"
+"│Due       Nov 20                                                              │"
+"│Labels    phone, waiting                                                      │"
+"│             ┌ Re-sync everything? ─────────────────────────────┐             │"
+"│No descriptio│ Every project and task loads again from Todoist. │             │"
+"│             │                                                  │             │"
+"│Comments (2) │ 2 changes are not sent yet and will be dropped.  │             │"
+"│Mara Quill (y└ Enter/y re-sync  Esc/n cancel ───────────────────┘             │"
+"│  Two quotes in, waiting on the third.                                        │"
+"│                                                                              │"
+"│Teo Varga · 3 days ago                                                        │"
+"│  Our old plumber is quick, I'll send you the number.                         │"
+"│                                                                              │"
+"│Details                                                                       │"
+"│Project   Kitchen renovation                                                  │"
+"└──────────────────────────────────────────────────────────────────────────────┘"
+"                                                                                "
+" Do   │ Enter choose │ Esc close                                                "
+"                                                                                "

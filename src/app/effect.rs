@@ -1,3 +1,4 @@
+use crate::release::Record;
 use crate::todoist::CompletedQuery;
 use crate::todoist::sync::{SyncCommand, SyncRequest};
 
@@ -24,11 +25,13 @@ pub enum Effect {
     },
     /// Save the sync token to disk. Nothing comes back.
     PersistSyncToken(String),
-    /// Save the theme and idle timeout chosen in Settings to
-    /// `ui_settings.json`. Nothing comes back.
-    SaveUiSettings {
-        theme: String,
-        idle_timeout_secs: u64,
-    },
+    /// Ask GitHub for the latest release. Answered by
+    /// [`super::Event::ReleaseChecked`].
+    CheckRelease,
+    /// Write what the release checks found to the release cache. Nothing
+    /// comes back.
+    SaveRelease(Record),
+    /// Open this page in the user's browser. Nothing comes back.
+    OpenUrl(String),
     Quit,
 }

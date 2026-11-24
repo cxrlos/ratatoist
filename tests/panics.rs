@@ -11,7 +11,7 @@ use ratatoist::app::{App, Effect, Event, State};
 use ratatoist::config;
 use ratatoist::todoist::model::Comment;
 use ratatoist::todoist::sync::SyncResponse;
-use ratatoist::ui::theme::{Base16Scheme, Theme};
+use ratatoist::ui::theme::Theme;
 use ratatui::backend::TestBackend;
 use ratatui::style::Color;
 
@@ -29,40 +29,39 @@ fn scheme_json(name: &str, key: &str, value: &str) -> String {
 }
 
 fn theme(key: &str, value: &str) -> Result<Theme, String> {
-    let scheme: Base16Scheme = serde_json::from_str(&scheme_json("Test", key, value)).unwrap();
-    Theme::from_scheme(&scheme)
+    Theme::from_base16_json(&scheme_json("Test", key, value)).map_err(|error| error.to_string())
 }
 
 #[test]
 fn a_three_digit_colour_doubles_each_digit() {
-    let white = theme("base07", "#fff").unwrap();
+    let white = theme("base05", "#fff").unwrap();
     let teal = theme("base0C", "#0a8").unwrap();
 
-    assert_eq!(white.fg_alt, Color::Rgb(255, 255, 255));
-    assert_eq!(teal.cyan, Color::Rgb(0x00, 0xaa, 0x88));
+    assert_eq!(white.text, Color::Rgb(255, 255, 255));
+    assert_eq!(teal.accent, Color::Rgb(0x00, 0xaa, 0x88));
 }
 
 #[test]
 fn the_hash_is_optional_as_in_base16_files() {
     assert_eq!(
-        theme("base08", "eb6f92").unwrap().red,
+        theme("base08", "eb6f92").unwrap().error,
         Color::Rgb(0xeb, 0x6f, 0x92)
     );
     assert_eq!(
-        theme("base07", "fff").unwrap().fg_alt,
+        theme("base05", "fff").unwrap().text,
         Color::Rgb(255, 255, 255)
     );
 }
 
 #[test]
 fn every_built_in_theme_loads() {
-    assert_eq!(Theme::builtin().len(), 10);
+    assert_eq!(Theme::built_ins().len(), 11);
 }
 
 #[test]
 fn a_six_digit_colour_parses_in_either_case() {
     assert_eq!(
-        theme("base08", "#EB6f92").unwrap().red,
+        theme("base08", "#EB6f92").unwrap().error,
         Color::Rgb(0xeb, 0x6f, 0x92)
     );
 }
@@ -113,7 +112,7 @@ impl Drop for TempDir {
 fn theme_files_with_bad_colours_load_without_panicking() {
     let dir = TempDir::new("colours");
     fs::write(dir.0.join("config.toml"), "[theme]\nname = \"Two\"\n").unwrap();
-    dir.theme("short.json", &scheme_json("Short", "base07", "#fff"));
+    dir.theme("short.json", &scheme_json("Short", "base05", "#fff"));
     dir.theme("two.json", &scheme_json("Two", "base08", "#ff"));
     dir.theme("accent.json", &scheme_json("Accent", "base0A", "#ffé000"));
     dir.theme("word.json", &scheme_json("Word", "base0D", "red"));
@@ -122,7 +121,7 @@ fn theme_files_with_bad_colours_load_without_panicking() {
 
     let names: Vec<&str> = config.user_themes.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["Short"]);
-    assert_eq!(config.user_themes[0].fg_alt, Color::Rgb(255, 255, 255));
+    assert_eq!(config.user_themes[0].text, Color::Rgb(255, 255, 255));
     for (file, key) in [
         ("themes/two.json", "base08"),
         ("themes/accent.json", "base0A"),
@@ -175,7 +174,7 @@ fn detail_with_comments(comments: Vec<Comment>) -> App<TestBackend> {
     let sync: Box<SyncResponse> = Box::new(serde_json::from_str(FULL_SYNC).unwrap());
     app.handle(Event::Synced(Ok(sync))).unwrap();
     let effects: Vec<Effect> = [
-        key(KeyCode::Char('l')),
+        key(KeyCode::Char('1')),
         key(KeyCode::Char('j')),
         key(KeyCode::Enter),
     ]
@@ -232,13 +231,12 @@ fn multi_byte_author_ids_urls_and_timestamps_render_without_panicking() {
     let app = detail_with_comments(comments);
 
     let screen = screen(&app);
-    assert!(screen.contains("abcdefgé"), "{screen}");
-    assert!(!screen.contains("abcdefgé-"), "{screen}");
+    assert!(screen.contains("abcdefgé-uid"), "{screen}");
+    assert!(screen.contains("[+]"), "{screen}");
     assert!(
-        screen.contains(&url.chars().take(50).collect::<String>()),
+        screen.contains("https://files.example.invalid/"),
         "{screen}"
     );
-    assert!(!screen.contains("notes.pdf"), "{screen}");
 }
 
 #[test]
@@ -249,7 +247,12 @@ fn comment_times_are_formatted_from_the_parsed_time() {
         comment("c3", "u2", "not a time"),
     ]);
 
+    // The age depends on the local time zone, so only its shape is checked.
     let screen = screen(&app);
-    assert!(screen.contains("2026-11-21 10:05"), "{screen}");
-    assert!(screen.contains("not a time"), "{screen}");
+    let aged = screen
+        .lines()
+        .filter(|line| line.contains(" · ") && (line.contains(" ago") || line.contains("just now")))
+        .count();
+    assert_eq!(aged, 2, "{screen}");
+    assert!(screen.contains("comment c3"), "{screen}");
 }
