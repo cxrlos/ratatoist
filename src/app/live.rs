@@ -7,7 +7,6 @@ use std::time::Duration;
 use jiff::SignedDuration;
 
 use super::failure::{ErrorKind, Failure};
-use super::sync::incremental_sync_request;
 use super::{Effect, State};
 use crate::todoist::LiveMessage;
 
@@ -80,7 +79,7 @@ pub(super) fn sync_due(state: &mut State, effects: &mut Vec<Effect>) {
     if state.is_idle() || !state.account_loaded() {
         return;
     }
-    effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
+    effects.push(Effect::Sync(state.background_sync_request()));
 }
 
 /// Polls on a tick, once `state.now` is the tick's time: a sync every
@@ -97,7 +96,7 @@ pub(super) fn tick(state: &mut State, effects: &mut Vec<Effect>) {
     match state.poll_due {
         Some(due) if now < due => {}
         Some(_) => {
-            effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
+            effects.push(Effect::Sync(state.background_sync_request()));
             state.poll_due = now.checked_add(POLL_INTERVAL).ok();
         }
         None => state.poll_due = now.checked_add(POLL_INTERVAL).ok(),
@@ -109,6 +108,6 @@ pub(super) fn tick(state: &mut State, effects: &mut Vec<Effect>) {
 pub(super) fn back_from_idle(state: &mut State, effects: &mut Vec<Effect>) {
     state.poll_due = None;
     if state.account_loaded() {
-        effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
+        effects.push(Effect::Sync(state.background_sync_request()));
     }
 }

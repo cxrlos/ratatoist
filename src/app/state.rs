@@ -137,9 +137,12 @@ pub struct State {
     pub(crate) comments_fetch_seq: u64,
     pub(crate) websocket_url: Option<String>,
     pub(crate) live_opened: bool,
-    /// The user the cache painted from belongs to, until the first sync
-    /// answers and confirms it.
+    /// The user the cache painted from belongs to, until a sync succeeds
+    /// and confirms it.
     pub(crate) cache_user_id: Option<String>,
+    /// Whether any sync has answered, even with an error: only the first
+    /// answer's failure is the notice.
+    pub(crate) sync_answered: bool,
     /// The cached user to check against the user asked for, when the first
     /// sync from the cache came back without one.
     pub(crate) user_to_confirm: Option<String>,
@@ -218,6 +221,7 @@ impl State {
             websocket_url: None,
             live_opened: false,
             cache_user_id: None,
+            sync_answered: false,
             user_to_confirm: None,
             cache_dirty_since: None,
             temp_id_pending: HashMap::new(),

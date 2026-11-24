@@ -193,8 +193,9 @@ impl State {
         result: Result<Box<SyncResponse>, ClientError>,
         effects: &mut Vec<Effect>,
     ) {
-        let cached_user = self.cache_user_id.take();
-        let first = std::mem::replace(&mut self.loading, false) || cached_user.is_some();
+        let loading = std::mem::replace(&mut self.loading, false);
+        let first_answer = !std::mem::replace(&mut self.sync_answered, true) || loading;
+        let never_synced = self.last_sync_at.is_none();
         self.sync_health = match &result {
             Ok(_) => SyncHealth::Fine,
             Err(ClientError::Network(_)) => SyncHealth::Offline,
@@ -202,7 +203,7 @@ impl State {
         };
         match result {
             Ok(resp) => {
-                if let Some(cached) = cached_user {
+                if let Some(cached) = self.cache_user_id.take() {
                     match &resp.user {
                         Some(user) if user.id != cached => {
                             info!("the cache belongs to another user; full sync starting");
@@ -221,28 +222,44 @@ impl State {
                 // A big account's full sync may carry data generated a while
                 // before; one incremental sync catches up.
                 let dated = resp.full_sync && resp.full_sync_date_utc.is_some();
-                let first_success = self.last_sync_at.is_none();
                 self.apply_sync_delta(*resp, effects);
                 if dated {
                     effects.push(Effect::Sync(incremental_sync_request(&self.sync_token)));
                 }
-                if first_success {
+                if never_synced {
                     effects.push(Effect::ForgetOldSyncState);
                 }
-                if first
-                    && !self.live_opened
-                    && let Some(url) = self.websocket_url.clone()
-                {
-                    self.live_opened = true;
-                    effects.push(Effect::OpenLive { url });
-                }
+                self.open_live(effects);
             }
-            Err(e) if first && ErrorKind::of(&e, &self.now) == ErrorKind::TokenRejected => {
+            Err(e) if never_synced && ErrorKind::of(&e, &self.now) == ErrorKind::TokenRejected => {
                 error!("todoist rejected the token");
                 self.not_loaded(LoadError::TokenRejected);
             }
-            Err(e) if first => self.report(Failure::from_client("load your tasks", &e, &self.now)),
+            Err(e) if first_answer => {
+                self.report(Failure::from_client("load your tasks", &e, &self.now));
+            }
             Err(e) => self.log_failure(Failure::from_client("sync with Todoist", &e, &self.now)),
+        }
+    }
+
+    /// Opens the live connection once its URL is known, the first time.
+    fn open_live(&mut self, effects: &mut Vec<Effect>) {
+        if !self.live_opened
+            && let Some(url) = self.websocket_url.clone()
+        {
+            self.live_opened = true;
+            effects.push(Effect::OpenLive { url });
+        }
+    }
+
+    /// The sync a poll, a live change or the end of idle asks for: what
+    /// changed since the token, or everything the startup sync reads while
+    /// no sync has brought the account and its user.
+    pub(crate) fn background_sync_request(&self) -> SyncRequest {
+        if self.sync_token == "*" || self.store.current_user_id.is_none() {
+            startup_sync_request(&self.sync_token)
+        } else {
+            incremental_sync_request(&self.sync_token)
         }
     }
 
@@ -425,10 +442,11 @@ impl State {
             .then_some(Effect::SaveCache)
     }
 
-    /// The answer to [`Effect::FetchUser`], asked when the first sync from
-    /// the cache came back without the user: the same check as that answer
-    /// would have had, then the live connection from its URL. A failure is
-    /// only logged, and the cached data and syncing carry on.
+    /// The answer to [`Effect::FetchUser`], asked when the first sync that
+    /// succeeded from the cache came back without the user: the same check
+    /// as that answer would have had, then the live connection from its
+    /// URL. A failure is only logged, and the cached data and syncing carry
+    /// on; the next sync that succeeds asks again.
     pub(crate) fn user_fetched(
         &mut self,
         result: Result<UserInfo, ClientError>,
@@ -443,6 +461,10 @@ impl State {
                     &e,
                     &self.now,
                 ));
+                // The next sync that succeeds asks again.
+                if self.cache_user_id.is_none() {
+                    self.cache_user_id = cached;
+                }
                 return;
             }
         };
@@ -452,12 +474,7 @@ impl State {
             return;
         }
         self.websocket_url = user.websocket_url;
-        if !self.live_opened
-            && let Some(url) = self.websocket_url.clone()
-        {
-            self.live_opened = true;
-            effects.push(Effect::OpenLive { url });
-        }
+        self.open_live(effects);
     }
 
     pub(crate) fn clamp_selected_task(&mut self) {

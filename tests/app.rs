@@ -1231,7 +1231,7 @@ fn another_user_from_the_fetch_discards_the_cache() {
 }
 
 #[test]
-fn a_failed_fetch_of_the_user_is_logged_and_keeps_the_cached_tasks() {
+fn a_failed_fetch_of_the_user_is_logged_keeps_the_cached_tasks_and_asks_again() {
     let mut app = from_cache("u-1");
     send(&mut app, [empty_delta("t2")]);
 
@@ -1246,6 +1246,62 @@ fn a_failed_fetch_of_the_user_is_logged_and_keeps_the_cached_tasks() {
     assert_eq!(app.state().failures.len(), 1);
     assert!(!app.state().store.tasks.is_empty());
     let later = send(&mut app, [empty_delta("t3")]);
-    assert_eq!(fetches_of_the_user(&later), 0);
+    assert_eq!(fetches_of_the_user(&later), 1, "the check is asked again");
     assert_eq!(app.state().sync_token, "t3");
+}
+
+fn offline() -> Event {
+    Event::Synced(Err(ClientError::Network("offline".to_owned())))
+}
+
+#[test]
+fn after_a_failed_first_sync_a_poll_reads_everything_and_opens_live() {
+    let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
+    send(&mut app, [offline(), tick(1)]);
+
+    let polled = send(&mut app, [tick(61)]);
+    let answered = send(&mut app, [Event::Synced(Ok(full_sync()))]);
+
+    let requests: Vec<_> = polled
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Sync(request) => Some(request),
+            _ => None,
+        })
+        .collect();
+    let [request] = requests.as_slice() else {
+        panic!("{polled:?}");
+    };
+    assert_eq!(request.sync_token, "*");
+    assert!(request.resource_types.contains(&"workspaces".to_owned()));
+    assert!(request.resource_types.contains(&"user".to_owned()));
+    assert!(answered.contains(&Effect::OpenLive {
+        url: "wss://live.example.invalid/ws".to_owned()
+    }));
+}
+
+#[test]
+fn after_a_failed_first_sync_from_the_cache_the_next_answer_checks_the_user() {
+    let mut app = from_cache("someone-else");
+    send(&mut app, [offline()]);
+
+    let effects = app
+        .handle(Event::Synced(Ok(delta(
+            r#"{"full_sync": false, "sync_token": "t2", "user": {"id": "u-1"}}"#,
+        ))))
+        .unwrap();
+
+    assert!(app.state().store.tasks.is_empty());
+    assert_eq!(syncs(&effects), ["*"]);
+}
+
+#[test]
+fn a_later_failed_sync_before_any_success_is_only_logged() {
+    let mut app = from_cache("u-1");
+    send(&mut app, [offline(), key('j')]);
+
+    send(&mut app, [offline()]);
+
+    assert_eq!(app.state().failures.len(), 2);
+    assert!(!shows(&app, "Could not load your tasks"));
 }
