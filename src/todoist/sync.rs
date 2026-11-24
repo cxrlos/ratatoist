@@ -21,6 +21,9 @@ pub struct SyncCommand {
 #[derive(Debug, Default, Deserialize)]
 pub struct SyncResponse {
     pub full_sync: bool,
+    /// When a full sync's data was generated, which on a big account may be
+    /// a while before the answer.
+    pub full_sync_date_utc: Option<String>,
     pub sync_token: String,
     pub items: Option<Vec<super::model::Task>>,
     pub projects: Option<Vec<super::model::Project>>,

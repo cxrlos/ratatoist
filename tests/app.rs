@@ -129,15 +129,16 @@ fn shows_the_loading_line_until_the_first_sync_answers() {
 }
 
 #[test]
-fn the_first_sync_opens_the_live_connection_and_saves_the_token() {
+fn the_first_sync_opens_the_live_connection_and_forgets_the_old_sync_token() {
     let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
 
     let effects = app.handle(Event::Synced(Ok(full_sync()))).unwrap();
 
+    assert_eq!(app.state().sync_token, "fixture-token-1");
     assert_eq!(
         effects,
         [
-            Effect::PersistSyncToken("fixture-token-1".to_owned()),
+            Effect::ForgetOldSyncState,
             Effect::OpenLive {
                 url: "wss://live.example.invalid/ws".to_owned()
             },
@@ -521,7 +522,7 @@ fn force_resync_drops_pending_writes_and_reads_everything() {
     let effects = send(&mut app, [key('R'), key('y')]);
 
     assert!(!app.state().is_pending(&command.uuid));
-    assert!(effects.contains(&Effect::PersistSyncToken("*".to_owned())));
+    assert_eq!(app.state().sync_token, "*");
     assert!(
         effects
             .iter()
@@ -689,4 +690,124 @@ fn load_older_completed_walks_back_one_window_at_a_time() {
         next.as_slice(),
         [Effect::FetchCompletedTasks(query)] if query.window == older.window.before()
     ));
+}
+
+fn tick(after_secs: i64) -> Event {
+    Event::Tick {
+        now: now() + SignedDuration::from_secs(after_secs),
+    }
+}
+
+fn cache_saves(effects: &[Effect]) -> usize {
+    effects.iter().filter(|e| **e == Effect::SaveCache).count()
+}
+
+fn empty_delta(token: &str) -> Event {
+    Event::Synced(Ok(delta(&format!(
+        r#"{{"full_sync": false, "sync_token": "{token}"}}"#
+    ))))
+}
+
+/// The sync tokens of the syncs among `effects`.
+fn syncs(effects: &[Effect]) -> Vec<&str> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Sync(request) => Some(request.sync_token.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_burst_of_merges_writes_the_cache_once_after_the_debounce() {
+    let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
+    let mut effects = send(
+        &mut app,
+        [
+            Event::Synced(Ok(full_sync())),
+            empty_delta("t2"),
+            empty_delta("t3"),
+        ],
+    );
+    assert_eq!(cache_saves(&effects), 0, "nothing is written at once");
+    assert_eq!(cache_saves(&send(&mut app, [tick(1)])), 0, "nor within 2 s");
+
+    effects.extend(send(&mut app, [tick(2), tick(3), tick(10)]));
+
+    assert_eq!(cache_saves(&effects), 1);
+}
+
+#[test]
+fn the_cache_waits_for_unanswered_commands() {
+    let mut app = app();
+    send(&mut app, [tick(3)]);
+    send(&mut app, [key('1'), key('x'), empty_delta("t2")]);
+
+    let effects = send(&mut app, [tick(10)]);
+
+    assert_eq!(cache_saves(&effects), 0);
+    assert_eq!(app.state().unsaved_cache(), None);
+}
+
+#[test]
+fn a_dated_full_sync_is_followed_by_one_incremental_sync() {
+    let mut dated: serde_json::Value = serde_json::from_str(FULL_SYNC).unwrap();
+    dated["full_sync_date_utc"] = "2026-11-20T09:00:00Z".into();
+    let dated: Box<SyncResponse> = Box::new(serde_json::from_value(dated).unwrap());
+
+    let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
+    let after_dated = app.handle(Event::Synced(Ok(dated))).unwrap();
+    let mut app = App::new(TestBackend::new(80, 24), State::new(now())).unwrap();
+    let after_undated = app.handle(Event::Synced(Ok(full_sync()))).unwrap();
+
+    assert_eq!(syncs(&after_dated), ["fixture-token-1"]);
+    assert!(syncs(&after_undated).is_empty());
+}
+
+#[test]
+fn a_start_from_the_cache_shows_its_tasks_and_asks_for_what_changed() {
+    let cached = sized(80, 24).state().store.clone();
+    let mut state = State::new(now());
+    state.paint_from_cache(cached, "cached-token".to_owned(), "u-1".to_owned());
+    let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
+    assert!(!shows(&app, "Loading your tasks"));
+
+    let effects = app.handle(Event::Start).unwrap();
+
+    let [Effect::Sync(request)] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    assert_eq!(request.sync_token, "cached-token");
+    assert!(request.resource_types.contains(&"user".to_owned()));
+}
+
+#[test]
+fn a_first_answer_from_another_user_discards_the_cache() {
+    let cached = sized(80, 24).state().store.clone();
+    let mut state = State::new(now());
+    state.paint_from_cache(cached, "cached-token".to_owned(), "someone-else".to_owned());
+    let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
+
+    let effects = app
+        .handle(Event::Synced(Ok(delta(
+            r#"{"full_sync": false, "sync_token": "t2", "user": {"id": "u-1"}}"#,
+        ))))
+        .unwrap();
+
+    assert!(app.state().store.tasks.is_empty());
+    assert!(shows(&app, "Loading your tasks"));
+    assert_eq!(syncs(&effects), ["*"]);
+}
+
+#[test]
+fn r_asks_for_the_cache_to_be_rewritten() {
+    let mut app = app();
+    send(&mut app, [tick(3)]);
+
+    send(&mut app, [key('R')]);
+    let effects = send(&mut app, [tick(10)]);
+
+    assert_eq!(app.state().sync_token, "*");
+    assert_eq!(cache_saves(&effects), 1);
 }

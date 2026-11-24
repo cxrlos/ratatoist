@@ -12,7 +12,7 @@ use super::picker::{self, Choice, PickerKind, open_picker};
 use super::prompt::{PromptField, open_prompt};
 use super::release;
 use super::state::{ListFilter, Pane, Screen};
-use super::sync::{OptimisticOp, full_sync_request, incremental_sync_request, new_uuid};
+use super::sync::{OptimisticOp, incremental_sync_request, new_uuid, startup_sync_request};
 use super::task_form::{FormField, TODAY, TaskForm};
 use super::text_field::TextField;
 use super::{Action, Editable, Effect, Event, State};
@@ -52,10 +52,13 @@ pub fn update(state: &mut State, event: Event) -> Update {
     match event {
         Event::Start if state.load_error.is_some() => Update::default(),
         Event::Start => {
-            info!("full sync starting");
+            info!(
+                from_cache = state.cache_user_id.is_some(),
+                "first sync starting"
+            );
             Update {
                 redraw: false,
-                effects: vec![Effect::Sync(full_sync_request())],
+                effects: vec![Effect::Sync(startup_sync_request(&state.sync_token))],
             }
         }
         Event::Key(key) => on_key(state, key),
@@ -72,6 +75,7 @@ pub fn update(state: &mut State, event: Event) -> Update {
         }
         Event::Tick { now } => {
             effects.extend(release::tick(state, now.timestamp()));
+            effects.extend(state.cache_save_due(now.timestamp()));
             let before = (state.today, state.indicator());
             state.today = now.date();
             state.now = now;

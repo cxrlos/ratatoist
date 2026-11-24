@@ -3,12 +3,12 @@
 
 use std::collections::HashSet;
 
-use tracing::error;
+use tracing::{error, info};
 
 use super::Effect;
 use super::failure::{ErrorKind, Failure, LoadError};
 use super::state::{Pane, State, SyncHealth};
-use super::store::Table;
+use super::store::{Store, Table};
 use super::view::{cycles, parents};
 use crate::todoist::model::{Folder, Project, Task};
 use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
@@ -70,10 +70,20 @@ const INCREMENTAL_SYNC_RESOURCES: [&str; 6] = [
     "reminders",
 ];
 
+/// How long after a merge the cache is written, so a burst of merges
+/// writes it once.
+pub const CACHE_DEBOUNCE: jiff::SignedDuration = jiff::SignedDuration::from_secs(2);
+
 /// Everything, from sync token `*`.
 pub(crate) fn full_sync_request() -> SyncRequest {
+    startup_sync_request("*")
+}
+
+/// What the first sync reads: everything a full sync does, since
+/// `sync_token`, which is `*` unless the cache painted the screen.
+pub(crate) fn startup_sync_request(sync_token: &str) -> SyncRequest {
     SyncRequest {
-        sync_token: "*".to_string(),
+        sync_token: sync_token.to_owned(),
         resource_types: FULL_SYNC_RESOURCES.map(String::from).to_vec(),
         commands: vec![],
     }
@@ -141,7 +151,8 @@ impl State {
         result: Result<Box<SyncResponse>, ClientError>,
         effects: &mut Vec<Effect>,
     ) {
-        let first = std::mem::replace(&mut self.loading, false);
+        let cached_user = self.cache_user_id.take();
+        let first = std::mem::replace(&mut self.loading, false) || cached_user.is_some();
         self.sync_health = match &result {
             Ok(_) => SyncHealth::Fine,
             Err(ClientError::Network(_)) => SyncHealth::Offline,
@@ -149,7 +160,24 @@ impl State {
         };
         match result {
             Ok(resp) => {
+                if let Some(cached) = cached_user
+                    && resp.user.as_ref().is_some_and(|user| user.id != cached)
+                {
+                    info!("the cache belongs to another user; full sync starting");
+                    self.discard_cache(effects);
+                    return;
+                }
+                // A big account's full sync may carry data generated a while
+                // before; one incremental sync catches up.
+                let dated = resp.full_sync && resp.full_sync_date_utc.is_some();
+                let first_success = self.last_sync_at.is_none();
                 self.apply_sync_delta(*resp, effects);
+                if dated {
+                    effects.push(Effect::Sync(incremental_sync_request(&self.sync_token)));
+                }
+                if first_success {
+                    effects.push(Effect::ForgetOldSyncState);
+                }
                 if first
                     && !self.live_opened
                     && let Some(url) = self.websocket_url.clone()
@@ -197,7 +225,7 @@ impl State {
         }
         self.report_cycles();
 
-        self.take_sync_token(token, effects);
+        self.take_sync_token(token);
         self.last_sync_at = Some(self.now.clone());
         self.keep_focus_on(focused, effects);
     }
@@ -277,11 +305,66 @@ impl State {
         self.fetch_comments(task_id, effects);
     }
 
-    fn take_sync_token(&mut self, token: String, effects: &mut Vec<Effect>) {
+    fn take_sync_token(&mut self, token: String) {
         if !token.is_empty() {
-            self.sync_token = token.clone();
-            effects.push(Effect::PersistSyncToken(token));
+            self.sync_token = token;
         }
+        self.mark_cache_dirty();
+    }
+
+    fn mark_cache_dirty(&mut self) {
+        self.cache_dirty_since
+            .get_or_insert_with(|| self.now.timestamp());
+    }
+
+    /// Shows what the cache holds at once, before the first sync answers;
+    /// that sync then asks only for what changed since `sync_token`, and
+    /// is checked against `user_id`.
+    pub fn paint_from_cache(&mut self, store: Store, sync_token: String, user_id: String) {
+        self.store = store;
+        self.sync_token = sync_token;
+        self.cache_user_id = Some(user_id);
+        self.loading = false;
+    }
+
+    /// Drops what the cache painted, which belongs to another user, and
+    /// reads everything again behind the loading screen.
+    fn discard_cache(&mut self, effects: &mut Vec<Effect>) {
+        self.store = Store::default();
+        self.comments.clear();
+        self.completed_cache.clear();
+        self.oldest_completed.clear();
+        self.rolled_back.clear();
+        self.pending_due.clear();
+        self.loading = true;
+        self.selected_task = 0;
+        let request = full_sync_request();
+        self.sync_token = request.sync_token.clone();
+        self.mark_cache_dirty();
+        effects.push(Effect::Sync(request));
+    }
+
+    /// The cache write due by `now`: once [`CACHE_DEBOUNCE`] has passed
+    /// since a merge changed the store, and never while a command is
+    /// unanswered, since the store then holds a write Todoist may still
+    /// reject.
+    pub(crate) fn cache_save_due(&mut self, now: jiff::Timestamp) -> Option<Effect> {
+        let since = self.cache_dirty_since?;
+        if now.duration_since(since) < CACHE_DEBOUNCE {
+            return None;
+        }
+        let save = self.unsaved_cache();
+        if save.is_some() {
+            self.cache_dirty_since = None;
+        }
+        save
+    }
+
+    /// The cache write the store still needs, whatever the debounce says:
+    /// the runtime asks when the app stops.
+    pub fn unsaved_cache(&self) -> Option<Effect> {
+        (self.cache_dirty_since.is_some() && self.temp_id_pending.is_empty())
+            .then_some(Effect::SaveCache)
     }
 
     pub(crate) fn clamp_selected_task(&mut self) {
@@ -337,7 +420,7 @@ impl State {
         for (temp_id, real_id) in &resp.temp_id_mapping {
             self.apply_temp_id_mapping(temp_id, real_id);
         }
-        self.take_sync_token(resp.sync_token, effects);
+        self.take_sync_token(resp.sync_token);
         if let Some(tid) = refresh_comments_for {
             self.fetch_comments(tid, effects);
         }
@@ -491,7 +574,9 @@ impl State {
         self.pending_actions.clear();
         let request = full_sync_request();
         self.sync_token = request.sync_token.clone();
-        effects.push(Effect::PersistSyncToken(self.sync_token.clone()));
+        // Written with token `*`, the cache is deleted: what it holds may be
+        // what `R` was pressed to get rid of.
+        self.mark_cache_dirty();
         effects.push(Effect::Sync(request));
     }
 

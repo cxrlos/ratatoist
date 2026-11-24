@@ -1,6 +1,7 @@
 pub mod app;
 pub mod auth;
 pub mod browser;
+pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod keys;
@@ -8,7 +9,6 @@ pub mod logging;
 pub mod paths;
 pub mod release;
 pub mod runtime;
-pub mod sync_state;
 pub mod terminal;
 pub mod todoist;
 pub mod ui;

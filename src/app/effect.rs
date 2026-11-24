@@ -23,8 +23,12 @@ pub enum Effect {
     OpenLive {
         url: String,
     },
-    /// Save the sync token to disk. Nothing comes back.
-    PersistSyncToken(String),
+    /// Write the store and the sync token to the cache, or delete it when
+    /// there is nothing worth keeping. Nothing comes back.
+    SaveCache,
+    /// Delete the sync token versions before 0.8.0 kept, which the cache
+    /// supersedes. Nothing comes back.
+    ForgetOldSyncState,
     /// Ask GitHub for the latest release. Answered by
     /// [`super::Event::ReleaseChecked`].
     CheckRelease,

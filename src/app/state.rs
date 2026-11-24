@@ -130,6 +130,12 @@ pub struct State {
     pub(crate) comments_fetch_seq: u64,
     pub(crate) websocket_url: Option<String>,
     pub(crate) live_opened: bool,
+    /// The user the cache painted from belongs to, until the first sync
+    /// answers and confirms it.
+    pub(crate) cache_user_id: Option<String>,
+    /// When a merge first changed the store since the cache was last
+    /// written.
+    pub(crate) cache_dirty_since: Option<jiff::Timestamp>,
     /// Revert snapshots of optimistic writes, keyed by command uuid.
     pub(crate) temp_id_pending: HashMap<String, OptimisticOp>,
     /// What each command still waiting for Todoist does, as `complete "Buy
@@ -195,6 +201,8 @@ impl State {
             comments_fetch_seq: 0,
             websocket_url: None,
             live_opened: false,
+            cache_user_id: None,
+            cache_dirty_since: None,
             temp_id_pending: HashMap::new(),
             pending_actions: HashMap::new(),
             next_temp_id: 0,

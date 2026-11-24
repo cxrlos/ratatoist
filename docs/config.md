@@ -64,6 +64,8 @@ When the `NO_COLOR` environment variable is set to anything but an empty string,
 | --- | --- | --- | --- |
 | `idle-timeout` | Whole seconds, 0 to 86400. 0 turns idle detection off. | 300 | How long without a key press before the session counts as idle. |
 
+ratatoist keeps what it last synced in `cache.json` in `$XDG_CACHE_HOME/ratatoist/` (`~/.cache/ratatoist/` by default), readable by my user alone. It holds my tasks, projects, labels and comments, the Todoist user they belong to and the sync token, never the API token. A start paints my tasks from it at once and then asks Todoist only for what changed. ratatoist writes it about two seconds after a sync changes something, and on quit. A file it cannot read, from an older version or of another Todoist user is thrown away for a full sync, so deleting it is always safe. `R` starts over from a full sync and replaces the file too. `--demo` and the Not logged in screen neither read nor write it. Versions before 0.8.0 kept only the sync token, in `sync_state.json` in the config folder; ratatoist deletes that file after its first sync.
+
 ## `[updates]`
 
 | Key | Values | Default | Effect |

@@ -36,6 +36,7 @@ struct Shared {
     completed_tasks: Option<Value>,
     failures: Vec<(CommandMatch, SyncCommandError)>,
     commands: Vec<SyncCommand>,
+    syncs_held: bool,
 }
 
 impl FakeClient {
@@ -71,6 +72,12 @@ impl FakeClient {
     /// query.
     pub fn with_completed_tasks(self, body: Value) -> Self {
         self.shared().completed_tasks = Some(body);
+        self
+    }
+
+    /// Syncs never answer, as when Todoist is slow to.
+    pub fn hold_syncs(self) -> Self {
+        self.shared().syncs_held = true;
         self
     }
 
@@ -111,6 +118,10 @@ fn decode<T: DeserializeOwned>(body: Value) -> Result<T, ClientError> {
 
 impl TodoistClient for FakeClient {
     async fn sync(&self, request: SyncRequest) -> Result<SyncResponse, ClientError> {
+        let held = self.shared().syncs_held;
+        if held {
+            std::future::pending::<()>().await;
+        }
         let mut shared = self.shared();
         // Recorded before the body is decoded, so a malformed fixture still
         // leaves the record of what was sent.

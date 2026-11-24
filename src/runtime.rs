@@ -21,10 +21,10 @@ use tracing::{info, warn};
 
 use crate::app::{App, DEFAULT_IDLE_TIMEOUT_SECS, Effect, Event, State};
 use crate::browser;
+use crate::cache::{self, Cache};
 use crate::config::Config;
 use crate::keys::Keymap;
 use crate::release::{Record, ReleaseCache, ReleaseCheck};
-use crate::sync_state::SyncState;
 use crate::todoist::TodoistClient;
 use crate::todoist::sync::SyncRequest;
 use crate::ui::theme::{self, Theme};
@@ -61,21 +61,39 @@ impl UiSettings {
     }
 }
 
+/// The folders a run on a real account reads and writes: the config folder
+/// (the old settings, the old sync token) and the cache folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Files {
+    pub config: PathBuf,
+    pub cache: PathBuf,
+}
+
 /// The first state, with "now" read from the clock, `NO_COLOR` from the
-/// environment, and the old saved settings and the sync token read from
-/// `files`. With `None` nothing is read: no saved settings and a full sync.
-pub fn initial_state(config: &Config, files: Option<&Path>) -> State {
+/// environment, and the old saved settings read from `config_dir`. With
+/// `None` nothing is read.
+pub fn initial_state(config: &Config, config_dir: Option<&Path>) -> State {
     let no_color = theme::no_color_requested(std::env::var_os(theme::NO_COLOR_VAR).as_deref());
-    initial_state_read(config, files, no_color)
+    initial_state_read(config, config_dir, no_color)
 }
 
 /// [`initial_state`] with `no_color` given instead of read.
-fn initial_state_read(config: &Config, files: Option<&Path>, no_color: bool) -> State {
-    let ui = files.map(UiSettings::load).unwrap_or_default();
-    let sync_token = files
-        .map(|dir| SyncState::load(dir).sync_token)
-        .unwrap_or_else(|| "*".to_owned());
-    initial_state_from(config, &ui, sync_token, clock(), no_color)
+fn initial_state_read(config: &Config, config_dir: Option<&Path>, no_color: bool) -> State {
+    let ui = config_dir.map(UiSettings::load).unwrap_or_default();
+    initial_state_from(config, &ui, "*".to_owned(), clock(), no_color)
+}
+
+/// Paints `state` from the cache in `cache_dir`, so the first sync asks only
+/// for what changed. A cache that is missing, unreadable or from another
+/// schema version leaves `state` as it was, to start with a full sync.
+pub fn paint_from_cache(state: &mut State, cache_dir: &Path) {
+    match Cache::load(cache_dir) {
+        Some(cache) => {
+            info!(tasks = cache.store.tasks.len(), "painting from the cache");
+            state.paint_from_cache(cache.store, cache.sync_token, cache.user_id);
+        }
+        None => info!("no usable cache"),
+    }
 }
 
 /// The first state from what was read. Where `config` and `ui` both set the
@@ -130,14 +148,13 @@ pub fn initial_state_from(
 }
 
 /// Runs until the app asks to quit, `shutdown` resolves or terminal input
-/// ends, saving the sync token and settings in `files`, or nowhere when it
-/// is `None`. It never asks for a newer release.
+/// ends, saving the cache in `files`, or nowhere when it is `None`. It never asks for a newer release.
 pub async fn run<B, C, I, S>(
     app: &mut App<B>,
     client: &C,
     input: I,
     shutdown: S,
-    files: Option<&Path>,
+    files: Option<&Files>,
 ) -> anyhow::Result<()>
 where
     B: Backend,
@@ -156,7 +173,7 @@ pub async fn run_checking<B, C, I, S>(
     client: &C,
     input: I,
     shutdown: S,
-    files: Option<&Path>,
+    files: Option<&Files>,
     releases: Option<&ReleaseCheck>,
 ) -> anyhow::Result<()>
 where
@@ -171,13 +188,13 @@ where
 }
 
 /// [`run_checking`] with files saved by `writer`. It returns once the writer
-/// has saved everything it was sent, so the last sync token is on disk.
+/// has saved everything it was sent, so the last cache is on disk.
 async fn run_writing<B, C, I, S>(
     app: &mut App<B>,
     client: &C,
     input: I,
     shutdown: S,
-    files: Option<&Path>,
+    files: Option<&Files>,
     releases: Option<&ReleaseCheck>,
     writer: Writer,
 ) -> anyhow::Result<()>
@@ -198,9 +215,9 @@ where
 async fn run_loop<B, C, I, S>(
     app: &mut App<B>,
     client: &C,
-    mut input: I,
+    input: I,
     shutdown: S,
-    files: Option<&Path>,
+    files: Option<&Files>,
     releases: Option<&ReleaseCheck>,
     saves: mpsc::UnboundedSender<Save>,
 ) -> anyhow::Result<()>
@@ -211,15 +228,40 @@ where
     I: Stream<Item = io::Result<TerminalEvent>> + Unpin,
     S: Future<Output = ()>,
 {
-    let mut shutdown = std::pin::pin!(shutdown);
-    let (tx, mut answers) = mpsc::unbounded_channel();
+    let (tx, answers) = mpsc::unbounded_channel();
     let outside = Outside {
         client,
         answers: tx,
-        files: files.map(Path::to_path_buf),
+        files: files.cloned(),
         saves,
         releases,
     };
+    let result = drive(app, &outside, answers, input, shutdown).await;
+    // However the loop ended, what the store gained since the last write
+    // goes to the writer, which `run` waits for.
+    if let Some(effect) = app.state().unsaved_cache() {
+        let _ = outside.execute(app.state(), effect);
+    }
+    result
+}
+
+/// Feeds events to the app and carries out its effects until it quits,
+/// `shutdown` resolves or terminal input ends.
+async fn drive<B, C, I, S>(
+    app: &mut App<B>,
+    outside: &Outside<'_, C>,
+    mut answers: mpsc::UnboundedReceiver<Event>,
+    mut input: I,
+    shutdown: S,
+) -> anyhow::Result<()>
+where
+    B: Backend,
+    B::Error: Send + Sync + 'static,
+    C: TodoistClient,
+    I: Stream<Item = io::Result<TerminalEvent>> + Unpin,
+    S: Future<Output = ()>,
+{
+    let mut shutdown = std::pin::pin!(shutdown);
     let mut ticks = tokio::time::interval(TICK);
     ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -268,19 +310,43 @@ fn from_terminal(event: TerminalEvent) -> Option<Event> {
     }
 }
 
-/// A file for the [`Writer`] to save.
+/// A file for the [`Writer`] to save or delete.
 enum Save {
-    SyncToken { dir: PathBuf, sync_token: String },
-    Release { cache: ReleaseCache, record: Record },
+    /// The cache to write in `dir`, or `None` to delete it.
+    Cache {
+        dir: PathBuf,
+        cache: Option<Box<Cache>>,
+    },
+    /// The sync token versions before 0.8.0 kept in the config folder `dir`.
+    ForgetOldSyncState {
+        dir: PathBuf,
+    },
+    Release {
+        cache: ReleaseCache,
+        record: Record,
+    },
 }
 
 impl Save {
     /// Writes the file. A failure is logged and never reaches the screen.
     fn write(self) {
         match self {
-            Self::SyncToken { dir, sync_token } => {
-                if let Err(error) = (SyncState { sync_token }).save(&dir) {
-                    warn!(error = %error, "failed to persist sync token");
+            Self::Cache {
+                dir,
+                cache: Some(cache),
+            } => {
+                if let Err(error) = cache.save(&dir) {
+                    warn!("could not save the cache: {error:#}");
+                }
+            }
+            Self::Cache { dir, cache: None } => {
+                if let Err(error) = Cache::remove(&dir) {
+                    warn!("could not delete the cache: {error}");
+                }
+            }
+            Self::ForgetOldSyncState { dir } => {
+                if let Err(error) = cache::remove_old_sync_state(&dir) {
+                    warn!("could not delete the old sync token: {error}");
                 }
             }
             Self::Release { cache, record } => {
@@ -323,7 +389,7 @@ impl Writer {
 struct Outside<'a, C> {
     client: &'a C,
     answers: mpsc::UnboundedSender<Event>,
-    files: Option<PathBuf>,
+    files: Option<Files>,
     saves: mpsc::UnboundedSender<Save>,
     releases: Option<&'a ReleaseCheck>,
 }
@@ -379,12 +445,19 @@ impl<C: TodoistClient> Outside<'_, C> {
                     }
                 });
             }
-            Effect::PersistSyncToken(sync_token) => {
-                if let Some(dir) = &self.files {
+            Effect::SaveCache => {
+                if let Some(files) = &self.files {
                     // The writer outlives the loop, so this send cannot fail.
-                    let _ = self.saves.send(Save::SyncToken {
-                        dir: dir.clone(),
-                        sync_token,
+                    let _ = self.saves.send(Save::Cache {
+                        dir: files.cache.clone(),
+                        cache: Cache::of(state).map(Box::new),
+                    });
+                }
+            }
+            Effect::ForgetOldSyncState => {
+                if let Some(files) = &self.files {
+                    let _ = self.saves.send(Save::ForgetOldSyncState {
+                        dir: files.config.clone(),
                     });
                 }
             }
@@ -638,29 +711,193 @@ mod tests {
         assert!(app.state().failures.is_empty());
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn the_sync_token_is_saved_only_in_the_folder_given() {
-        let dir = std::env::temp_dir().join(format!("ratatoist-runtime-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        for files in [None, Some(dir.as_path())] {
-            let state = initial_state(&Config::default(), files);
-            assert_eq!(state.sync_token, "*");
-            let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
-            let shutdown = tokio::time::sleep(Duration::from_secs(5));
-            let no_input = futures_util::stream::pending();
-            run(&mut app, &FakeClient::new(), no_input, shutdown, files)
-                .await
-                .unwrap();
-            assert_eq!(SyncState::path(&dir).exists(), files.is_some());
+    const FULL_SYNC: &str = include_str!("../tests/fixtures/todoist/HYPOTHETICAL_full_sync.json");
+
+    /// A client serving the fixture account, whose full sync is dated, so
+    /// one incremental sync follows it.
+    fn account() -> FakeClient {
+        FakeClient::new()
+            .with_full_sync(serde_json::from_str(FULL_SYNC).unwrap())
+            .with_incremental_sync(serde_json::json!({
+                "full_sync": false,
+                "sync_token": "incremental-token",
+            }))
+    }
+
+    /// Config and cache in one empty folder for one test.
+    fn files(test: &str) -> Files {
+        let dir = temp_dir(test);
+        Files {
+            config: dir.join("config"),
+            cache: dir.join("cache"),
         }
+    }
 
-        let resumed = initial_state(&Config::default(), Some(&dir)).sync_token;
-        let without_files = initial_state(&Config::default(), None).sync_token;
-        std::fs::remove_dir_all(&dir).unwrap();
+    fn remove(files: &Files) {
+        if let Some(dir) = files.cache.parent() {
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
 
-        assert_eq!(resumed, "fake");
-        assert_eq!(without_files, "*");
+    /// The state `main` builds for a real account with `files`.
+    fn started_with(files: &Files) -> State {
+        let mut state = initial_state(&Config::default(), Some(&files.config));
+        paint_from_cache(&mut state, &files.cache);
+        state
+    }
+
+    /// A cache in `files` for user `user_id` holding one task.
+    fn cached(files: &Files, user_id: &str, content: &str) {
+        let mut store = crate::app::Store::default();
+        store.projects.upsert(crate::todoist::model::Project {
+            id: "inbox".to_owned(),
+            name: "Inbox".to_owned(),
+            inbox_project: Some(true),
+            ..crate::todoist::model::Project::default()
+        });
+        store.tasks.upsert(crate::todoist::model::Task {
+            id: "cached-task".to_owned(),
+            project_id: "inbox".to_owned(),
+            content: content.to_owned(),
+            // Overdue, so it shows on Today, the first screen, whatever day
+            // the test runs.
+            due: Some(crate::todoist::model::Due {
+                date: "2020-01-01".to_owned(),
+                ..crate::todoist::model::Due::default()
+            }),
+            ..crate::todoist::model::Task::default()
+        });
+        store.current_user_id = Some(user_id.to_owned());
+        Cache {
+            version: cache::SCHEMA_VERSION,
+            user_id: user_id.to_owned(),
+            sync_token: "cached-token".to_owned(),
+            store,
+        }
+        .save(&files.cache)
+        .unwrap();
+    }
+
+    /// Runs the app from `state` against `client` until five seconds have
+    /// passed on the paused clock.
+    async fn run_for_a_while(
+        state: State,
+        client: &FakeClient,
+        files: Option<&Files>,
+    ) -> App<TestBackend> {
+        let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+        let shutdown = tokio::time::sleep(Duration::from_secs(5));
+        let no_input = futures_util::stream::pending();
+        run(&mut app, client, no_input, shutdown, files)
+            .await
+            .unwrap();
+        app
+    }
+
+    fn screen(app: &App<TestBackend>) -> String {
+        let buffer = app.backend().buffer();
+        buffer.content().iter().map(|cell| cell.symbol()).collect()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_cache_is_written_only_in_the_folders_given() {
+        let files = files("written");
+        std::fs::create_dir_all(&files.config).unwrap();
+        let old = cache::old_sync_state_path(&files.config);
+        std::fs::write(&old, r#"{"sync_token":"old"}"#).unwrap();
+
+        run_for_a_while(started_with(&files), &account(), None).await;
+        let without_files = (Cache::path(&files.cache).exists(), old.exists());
+        run_for_a_while(started_with(&files), &account(), Some(&files)).await;
+        let saved = Cache::load(&files.cache);
+        let old_left = old.exists();
+        remove(&files);
+
+        assert_eq!(without_files, (false, true));
+        let saved = saved.unwrap();
+        assert_eq!(saved.user_id, "1000001");
+        assert_eq!(saved.sync_token, "incremental-token");
+        assert!(saved.store.tasks.iter().any(|t| t.content == "Buy compost"));
+        assert!(!old_left, "the old sync token is deleted");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_cache_paints_the_tasks_before_the_first_sync_answers() {
+        let files = files("paint");
+        cached(&files, "1000001", "Cached errand");
+        let state = started_with(&files);
+        assert!(!state.loading);
+        assert_eq!(state.sync_token, "cached-token");
+
+        let app = run_for_a_while(state, &account().hold_syncs(), Some(&files)).await;
+        remove(&files);
+
+        assert!(app.state().last_sync_at.is_none(), "no sync answered");
+        assert!(screen(&app).contains("Cached errand"), "{}", screen(&app));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_start_from_the_cache_asks_only_for_what_changed() {
+        let files = files("resume");
+        cached(&files, "1000001", "Cached errand");
+        let client = FakeClient::new().with_incremental_sync(serde_json::json!({
+            "full_sync": false,
+            "sync_token": "resumed-token",
+            "user": { "id": "1000001" },
+        }));
+
+        let app = run_for_a_while(started_with(&files), &client, Some(&files)).await;
+        let saved = Cache::load(&files.cache).unwrap();
+        remove(&files);
+
+        assert_eq!(app.state().sync_token, "resumed-token");
+        assert!(screen(&app).contains("Cached errand"), "{}", screen(&app));
+        assert_eq!(saved.sync_token, "resumed-token");
+        assert!(saved.store.tasks.by_id("cached-task").is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_corrupt_cache_falls_back_to_a_full_sync() {
+        let files = files("corrupt");
+        std::fs::create_dir_all(&files.cache).unwrap();
+        std::fs::write(Cache::path(&files.cache), "{ not json").unwrap();
+        let state = started_with(&files);
+        assert!(state.loading);
+        assert_eq!(state.sync_token, "*");
+
+        let app = run_for_a_while(state, &account(), Some(&files)).await;
+        let saved = Cache::load(&files.cache);
+        remove(&files);
+
+        assert!(
+            app.state()
+                .store
+                .tasks
+                .iter()
+                .any(|t| t.content == "Buy compost")
+        );
+        assert!(saved.is_some(), "the corrupt file is replaced");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_cache_of_another_user_is_discarded_for_a_full_sync() {
+        let files = files("other-user");
+        cached(&files, "someone-else", "Their errand");
+        let client = account().with_incremental_sync(serde_json::json!({
+            "full_sync": false,
+            "sync_token": "incremental-token",
+            "user": { "id": "1000001" },
+        }));
+
+        let app = run_for_a_while(started_with(&files), &client, Some(&files)).await;
+        let saved = Cache::load(&files.cache).unwrap();
+        remove(&files);
+
+        let tasks = &app.state().store.tasks;
+        assert!(tasks.by_id("cached-task").is_none());
+        assert!(tasks.iter().any(|t| t.content == "Buy compost"));
+        assert_eq!(saved.user_id, "1000001");
+        assert!(saved.store.tasks.by_id("cached-task").is_none());
     }
 
     /// An empty folder for one test.
@@ -673,12 +910,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn two_sync_tokens_in_a_row_leave_the_second_on_disk() {
-        let dir = temp_dir("order");
+    async fn two_cache_saves_in_a_row_leave_the_second_on_disk() {
+        let files = files("order");
         let client = FakeClient::new();
         let writer = Writer::start(|save| {
             // Were saves run side by side, the first would land last.
-            if matches!(&save, Save::SyncToken { sync_token, .. } if sync_token == "first") {
+            if matches!(&save, Save::Cache { cache: Some(c), .. } if c.sync_token == "first") {
                 std::thread::sleep(Duration::from_millis(50));
             }
             save.write();
@@ -687,27 +924,29 @@ mod tests {
         let outside = Outside {
             client: &client,
             answers,
-            files: Some(dir.clone()),
+            files: Some(files.clone()),
             saves: writer.saves,
             releases: None,
         };
-        let state = State::new(now());
+        let mut state = State::new(now());
+        state.store.current_user_id = Some("1000001".to_owned());
 
         for sync_token in ["first", "second"] {
-            let flow = outside.execute(&state, Effect::PersistSyncToken(sync_token.to_owned()));
+            state.sync_token = sync_token.to_owned();
+            let flow = outside.execute(&state, Effect::SaveCache);
             assert!(flow.is_continue());
         }
         drop(outside);
         writer.done.await.unwrap();
 
-        let saved = SyncState::load(&dir).sync_token;
-        std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(saved, "second");
+        let saved = Cache::load(&files.cache).map(|c| c.sync_token);
+        remove(&files);
+        assert_eq!(saved.as_deref(), Some("second"));
     }
 
     #[tokio::test]
-    async fn the_sync_token_sent_before_quit_is_on_disk_when_run_returns() {
-        let dir = temp_dir("quit");
+    async fn the_cache_is_on_disk_when_run_returns_after_a_quit() {
+        let files = files("quit");
         let (started, first_started) = tokio::sync::oneshot::channel();
         let started = std::sync::Mutex::new(Some(started));
         let writer = Writer::start(move |save| {
@@ -717,33 +956,33 @@ mod tests {
             std::thread::sleep(Duration::from_millis(100));
             save.write();
         });
+        // The first save is the old sync token's deletion, after the first
+        // sync; the quit comes long before the cache's debounce would.
         let q = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('q'));
         let input = futures_util::stream::once(async move {
             first_started.await.unwrap();
             Ok(TerminalEvent::Key(q))
         })
         .chain(futures_util::stream::pending());
-        let state = initial_state(&Config::default(), Some(&dir));
-        let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+        let mut app = App::new(TestBackend::new(80, 24), started_with(&files)).unwrap();
 
-        let files = Some(dir.as_path());
-        let client = FakeClient::new();
+        let client = account();
         let shutdown = std::future::pending();
         run_writing(
             &mut app,
             &client,
             Box::pin(input),
             shutdown,
-            files,
+            Some(&files),
             None,
             writer,
         )
         .await
         .unwrap();
 
-        let saved = SyncState::load(&dir).sync_token;
-        std::fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(saved, "fake");
+        let saved = Cache::load(&files.cache).map(|c| c.user_id);
+        remove(&files);
+        assert_eq!(saved.as_deref(), Some("1000001"));
     }
 
     #[tokio::test]
@@ -813,7 +1052,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_held_up_save_does_not_stop_keys_or_redraws() {
-        let dir = temp_dir("held");
+        let files = files("held");
+        std::fs::create_dir_all(&files.config).unwrap();
+        let old = cache::old_sync_state_path(&files.config);
+        std::fs::write(&old, r#"{"sync_token":"old"}"#).unwrap();
         let (started, first_started) = tokio::sync::oneshot::channel();
         let started = std::sync::Mutex::new(Some(started));
         let (open, gate) = std::sync::mpsc::channel::<()>();
@@ -826,7 +1068,7 @@ mod tests {
             save.write();
         });
         let help = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('?'));
-        let saved = SyncState::path(&dir);
+        let still_there = old.clone();
         let key_while_held = futures_util::stream::once(async move {
             first_started.await.unwrap();
             Ok(TerminalEvent::Key(help))
@@ -834,29 +1076,37 @@ mod tests {
         // The loop asks for the next input only once it has handled and
         // drawn the key, so the save must still be held here.
         let then_open_the_gate = futures_util::stream::once(async move {
-            assert!(!saved.exists(), "the save finished before the key");
+            assert!(still_there.exists(), "the save finished before the key");
             open.send(()).unwrap();
         })
         .filter_map(|()| std::future::ready(None::<io::Result<TerminalEvent>>));
         let input = Box::pin(key_while_held.chain(then_open_the_gate));
-        let state = initial_state(&Config::default(), Some(&dir));
-        let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+        let mut app = App::new(TestBackend::new(80, 24), started_with(&files)).unwrap();
 
-        let files = Some(dir.as_path());
-        let client = FakeClient::new();
+        let client = account();
         let shutdown = std::future::pending();
-        run_writing(&mut app, &client, input, shutdown, files, None, writer)
-            .await
-            .unwrap();
+        run_writing(
+            &mut app,
+            &client,
+            input,
+            shutdown,
+            Some(&files),
+            None,
+            writer,
+        )
+        .await
+        .unwrap();
 
-        let token = SyncState::load(&dir).sync_token;
-        std::fs::remove_dir_all(&dir).unwrap();
+        let old_left = old.exists();
+        let saved = Cache::load(&files.cache).is_some();
+        remove(&files);
         assert!(matches!(
             app.state().top_modal(),
             Some(crate::app::Modal::Cheatsheet { .. })
         ));
         assert!(app.frames_drawn() > 1);
-        assert_eq!(token, "fake");
+        assert!(!old_left);
+        assert!(saved);
     }
 
     #[test]
