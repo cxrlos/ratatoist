@@ -10,10 +10,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use chrono::{DateTime, Local, TimeDelta, TimeZone, Utc};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures_util::stream;
 use insta::assert_snapshot;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp, Zoned};
 use ratatoist::app::{App, Effect, Event, ReleaseState, State};
 use ratatoist::release::{
     self, Channel, Record, ReleaseCache, ReleaseCheck, ReleaseSource, release_url,
@@ -42,12 +43,12 @@ fn newer() -> Version {
     version("99.0.0")
 }
 
-fn now() -> DateTime<Local> {
-    Local.from_local_datetime(&demo::NOW).earliest().unwrap()
+fn now() -> Zoned {
+    demo::NOW.to_zoned(TimeZone::UTC).unwrap()
 }
 
-fn hours_ago(hours: i64) -> DateTime<Utc> {
-    (now() - TimeDelta::hours(hours)).with_timezone(&Utc)
+fn hours_ago(hours: i64) -> Timestamp {
+    now().timestamp() - SignedDuration::from_hours(hours)
 }
 
 fn tick() -> Event {
@@ -63,7 +64,7 @@ fn with_latest(latest: Version) -> Record {
 }
 
 fn demo_sync() -> Box<SyncResponse> {
-    Box::new(serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap())
+    Box::new(serde_json::from_value(demo::account(&now()).sync).unwrap())
 }
 
 /// The demo account, synced at [`now`], checking for releases through
@@ -159,7 +160,7 @@ fn a_long_session_checks_again_once_the_day_has_passed() {
         .unwrap();
 
     let later = |hours| Event::Tick {
-        now: now() + TimeDelta::hours(hours),
+        now: now() + SignedDuration::from_hours(hours),
     };
     let before = app.handle(later(23)).unwrap();
     let after = app.handle(later(24)).unwrap();
@@ -197,7 +198,7 @@ fn a_newer_release_shows_the_notice_and_is_saved() {
     assert_eq!(
         effects,
         vec![Effect::SaveRelease(Record {
-            checked_at: Some(now().with_timezone(&Utc)),
+            checked_at: Some(now().timestamp()),
             latest: Some(newer()),
             skipped: None,
         })]
@@ -254,7 +255,7 @@ fn a_failed_check_adds_no_notice_and_no_error() {
     assert_eq!(
         effects,
         vec![Effect::SaveRelease(Record {
-            checked_at: Some(now().with_timezone(&Utc)),
+            checked_at: Some(now().timestamp()),
             ..Record::default()
         })]
     );
@@ -279,7 +280,7 @@ fn synced_tab_row(columns: u16, rows: u16, notice: bool) -> String {
     };
     let mut app = app_at(columns, rows, state(false, Channel::CargoBin, record));
     app.handle(Event::Tick {
-        now: now() + TimeDelta::seconds(4),
+        now: now() + SignedDuration::from_secs(4),
     })
     .unwrap();
     tab_row(&app)
@@ -580,15 +581,12 @@ async fn run_checking(base: &str, record: &Record) -> (App<TestBackend>, Scratch
     (app, cache)
 }
 
-/// Midnight today on the runtime's clock: a check under a day old for a
-/// session running now.
-fn earlier_today() -> DateTime<Utc> {
-    let midnight = runtime::today().and_hms_opt(0, 0, 0).unwrap();
-    Local
-        .from_local_datetime(&midnight)
-        .earliest()
-        .unwrap()
-        .with_timezone(&Utc)
+/// Midnight today on the clock the runtime reads: a check under a day old
+/// for a session running now.
+fn earlier_today() -> Timestamp {
+    #[allow(clippy::disallowed_methods)]
+    let now = Zoned::now();
+    now.start_of_day().unwrap().timestamp()
 }
 
 #[tokio::test]
@@ -634,7 +632,8 @@ async fn a_fresh_cache_asks_github_nothing() {
 async fn a_stale_cache_asks_github_again() {
     let server = github(tagged("v99.0.0"), 1).await;
     let record = Record {
-        checked_at: Some(Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap()),
+        checked_at: Some("2020-01-01T00:00:00Z".parse().unwrap()),
+
         latest: Some(release::running()),
         skipped: None,
     };

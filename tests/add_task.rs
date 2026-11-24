@@ -4,9 +4,9 @@
 //! date preset; Enter adds from a text row and chooses on the others; Esc
 //! sends nothing; the new row shows at once and goes when Todoist refuses.
 
-use chrono::{Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, FormField, Modal, State, TaskForm};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
@@ -16,9 +16,11 @@ use ratatui::backend::TestBackend;
 
 /// The demo account at `columns` x `rows`, on the Inbox's task list.
 fn demo_at(columns: u16, rows: u16) -> App<TestBackend> {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let mut app = App::new(TestBackend::new(columns, rows), State::new(now)).unwrap();
-    let sync: SyncResponse = serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap();
+    let sync: SyncResponse =
+        serde_json::from_value(demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync)
+            .unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     send(&mut app, [key('1')]);
     app

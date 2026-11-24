@@ -4,9 +4,11 @@
 
 #![cfg(test)]
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::Zoned;
+use jiff::civil::date;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Event, Modal};
 use ratatoist::keys::{self, ACTIONS, Context, Group};
 use ratatoist::runtime::{UiSettings, initial_state_from};
@@ -20,11 +22,11 @@ const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json")
 const STANDARD_PRESET: &str = "[keys]\npreset = \"standard\"\n";
 
 /// 2026-11-22 09:00 local time, a Sunday.
-fn now() -> DateTime<Local> {
-    let naive = NaiveDate::from_ymd_opt(2026, 11, 22)
-        .and_then(|day| day.and_hms_opt(9, 0, 0))
-        .unwrap();
-    Local.from_local_datetime(&naive).earliest().unwrap()
+fn now() -> Zoned {
+    date(2026, 11, 22)
+        .at(9, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
 }
 
 /// The app at `columns` x `rows` with `config` as `config.toml`, after the

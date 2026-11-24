@@ -3,7 +3,8 @@
 //! wrapped to the pane, so scrolling counts real rows. A prompt editing the
 //! task draws in place of the field it edits.
 
-use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use jiff::tz::TimeZone;
+use jiff::{Timestamp, Zoned, civil};
 use ratatui::Frame;
 use ratatui::layout::{Rect, Size};
 use ratatui::style::{Modifier, Style};
@@ -238,14 +239,14 @@ fn due_pieces(state: &State, task: &Task) -> Pieces {
     let Some(due) = &task.due else {
         return vec![("None".to_owned(), muted)];
     };
-    let formatted = dates::format_due(due, state.today, &state.now.timezone(), state.theme());
+    let formatted = dates::format_due(due, state.today, state.now.time_zone(), state.theme());
     let spelled_out = state
         .due_day(task)
-        .map(|day| (day.format("%b %-d").to_string(), day))
+        .map(|day| (day.strftime("%b %-d").to_string(), day))
         .filter(|(short, _)| !formatted.text.contains(short.as_str()));
     let mut pieces = vec![(formatted.text, formatted.style)];
     if let Some((_, day)) = spelled_out {
-        pieces.push((format!(" ({})", day.format("%a %b %-d")), muted));
+        pieces.push((format!(" ({})", day.strftime("%a %b %-d")), muted));
     }
     if due.is_recurring {
         let rule = due.string.as_deref().filter(|rule| !rule.is_empty());
@@ -324,7 +325,7 @@ fn comment_lines(state: &State, comment: &Comment, width: u16) -> Vec<Line<'stat
         header.push((" (you)".to_owned(), muted));
     }
     if let Some(posted) = comment.posted_at.as_deref().and_then(parse_time) {
-        header.push((format!(" · {}", ago(posted, state.now)), muted));
+        header.push((format!(" · {}", ago(posted, &state.now)), muted));
     }
     let mut lines = wrap(&header, width, &[], &[]);
     let indent = [(BODY_INDENT.to_owned(), Style::new())];
@@ -368,9 +369,9 @@ fn details(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
         |at| {
             plain(format!(
                 "{} ({})",
-                at.with_timezone(&state.now.timezone())
-                    .format("%Y-%m-%d %H:%M"),
-                ago(at, state.now)
+                at.to_zoned(state.now.time_zone().clone())
+                    .strftime("%Y-%m-%d %H:%M"),
+                ago(at, &state.now)
             ))
         },
     );
@@ -402,22 +403,24 @@ fn field(state: &State, name: &str, value: Pieces, width: u16) -> Vec<Line<'stat
 
 /// A time Todoist sent: RFC 3339, or an ISO time without an offset, read
 /// as UTC.
-fn parse_time(at: &str) -> Option<DateTime<Utc>> {
-    if let Ok(time) = DateTime::parse_from_rfc3339(at) {
-        return Some(time.with_timezone(&Utc));
+fn parse_time(at: &str) -> Option<Timestamp> {
+    if let Ok(time) = at.parse::<Timestamp>() {
+        return Some(time);
     }
-    NaiveDateTime::parse_from_str(at, "%Y-%m-%dT%H:%M:%S%.f")
+    at.parse::<civil::DateTime>()
+        .ok()?
+        .to_zoned(TimeZone::UTC)
         .ok()
-        .map(|time| time.and_utc())
+        .map(|time| time.timestamp())
 }
 
 /// How long before `now` `then` was, in the largest whole unit, as
 /// `2 days ago`.
-fn ago(then: DateTime<Utc>, now: DateTime<Local>) -> String {
+fn ago(then: Timestamp, now: &Zoned) -> String {
     const MINUTE: i64 = 60;
     const HOUR: i64 = 60 * MINUTE;
     const DAY: i64 = 24 * HOUR;
-    let seconds = (now.with_timezone(&Utc) - then).num_seconds();
+    let seconds = now.timestamp().duration_since(then).as_secs();
     let (count, unit) = match seconds {
         _ if seconds < MINUTE => return "just now".to_owned(),
         _ if seconds < HOUR => (seconds / MINUTE, "minute"),
@@ -602,9 +605,9 @@ mod tests {
 
     #[test]
     fn ago_names_the_largest_whole_unit() {
-        let now = DateTime::parse_from_rfc3339("2026-11-23T09:00:00Z")
+        let now = &parse_time("2026-11-23T09:00:00Z")
             .unwrap()
-            .with_timezone(&Local);
+            .to_zoned(TimeZone::UTC);
         let then = |at: &str| parse_time(at).unwrap();
 
         assert_eq!(ago(then("2026-11-23T08:59:30Z"), now), "just now");

@@ -11,8 +11,8 @@ pub mod sync;
 use std::future::Future;
 use std::time::Duration;
 
-use chrono::{Days, NaiveDate};
 use futures_util::Stream;
+use jiff::civil::Date;
 
 pub use fake::FakeClient;
 pub use http::{ClientConfig, HttpClient};
@@ -61,18 +61,20 @@ pub struct CompletedQuery {
 /// most three months, so history loads one window at a time, newest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompletedWindow {
-    pub since: NaiveDate,
-    pub until: NaiveDate,
+    pub since: Date,
+    pub until: Date,
 }
 
 impl CompletedWindow {
     /// Twelve weeks: shorter than any three calendar months.
-    const DAYS: u64 = 84;
+    const DAYS: i32 = 84;
 
     /// The newest window for a user whose day is `today`. It ends two days
     /// later, so a task completed late today counts in any time zone.
-    pub fn latest(today: NaiveDate) -> Self {
-        let until = today.checked_add_days(Days::new(2)).unwrap_or(today);
+    pub fn latest(today: Date) -> Self {
+        let until = today
+            .checked_add(jiff::Span::new().days(2))
+            .unwrap_or(today);
         Self::ending(until)
     }
 
@@ -81,21 +83,21 @@ impl CompletedWindow {
         Self::ending(self.since)
     }
 
-    fn ending(until: NaiveDate) -> Self {
+    fn ending(until: Date) -> Self {
         let since = until
-            .checked_sub_days(Days::new(Self::DAYS))
-            .unwrap_or(NaiveDate::MIN);
+            .checked_sub(jiff::Span::new().days(Self::DAYS))
+            .unwrap_or(Date::MIN);
         Self { since, until }
     }
 
     /// Whether a task completed on `day` (UTC) falls in it.
-    pub fn contains(self, day: NaiveDate) -> bool {
+    pub fn contains(self, day: Date) -> bool {
         self.since <= day && day < self.until
     }
 
     /// `since` and `until` as the RFC 3339 times Todoist takes.
     pub fn bounds(self) -> (String, String) {
-        let stamp = |day: NaiveDate| format!("{}T00:00:00Z", day.format("%Y-%m-%d"));
+        let stamp = |day: Date| format!("{day}T00:00:00Z");
         (stamp(self.since), stamp(self.until))
     }
 }

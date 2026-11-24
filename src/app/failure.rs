@@ -4,7 +4,7 @@
 use std::collections::VecDeque;
 use std::fmt;
 
-use chrono::{DateTime, Local};
+use jiff::{SignedDuration, Zoned};
 
 use crate::todoist::ClientError;
 use crate::todoist::sync::SyncCommandError;
@@ -24,14 +24,14 @@ pub const ERROR_LOG_CAP: usize = 100;
 
 /// What kind of failure it was, which decides its summary and the fix the
 /// notice and the log suggest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorKind {
     /// Todoist could not be reached: no network, a timeout, a dropped
     /// connection.
     Offline,
     /// Todoist asked ratatoist to slow down, until this time when it said.
     RateLimited {
-        until: Option<DateTime<Local>>,
+        until: Option<Zoned>,
     },
     /// Todoist refused the API token (401 or 403).
     TokenRejected,
@@ -45,13 +45,13 @@ pub enum ErrorKind {
 impl ErrorKind {
     /// The kind of `error`, which happened at `at`: a rate limit's wait
     /// becomes the time it lifts.
-    pub fn of(error: &ClientError, at: DateTime<Local>) -> Self {
+    pub fn of(error: &ClientError, at: &Zoned) -> Self {
         match error {
             ClientError::Unauthorized => Self::TokenRejected,
             ClientError::RateLimited { retry_after } => Self::RateLimited {
                 until: retry_after
-                    .and_then(|wait| chrono::Duration::from_std(wait).ok())
-                    .and_then(|wait| at.checked_add_signed(wait)),
+                    .and_then(|wait| SignedDuration::try_from(wait).ok())
+                    .and_then(|wait| at.checked_add(wait).ok()),
             },
             ClientError::Http { status, .. } => match status {
                 401 | 403 => Self::TokenRejected,
@@ -83,7 +83,7 @@ impl ErrorKind {
             Self::Offline => "Todoist could not be reached".to_owned(),
             Self::RateLimited { until: Some(until) } => format!(
                 "Todoist's rate limit is used up until {}",
-                until.format("%H:%M")
+                until.strftime("%H:%M")
             ),
             Self::RateLimited { until: None } => "Todoist's rate limit is used up".to_owned(),
             Self::TokenRejected => "Todoist rejected the API token".to_owned(),
@@ -113,7 +113,7 @@ pub struct Failure {
     /// What ratatoist was doing, as `complete "Renew passport photos"`.
     pub action: String,
     /// When it failed.
-    pub at: DateTime<Local>,
+    pub at: Zoned,
     /// The raw message, as Todoist or the client gave it.
     pub message: String,
 }
@@ -123,32 +123,24 @@ impl Failure {
         kind: ErrorKind,
         action: impl Into<String>,
         message: impl Into<String>,
-        at: DateTime<Local>,
+        at: &Zoned,
     ) -> Self {
         Self {
             kind,
             action: action.into(),
-            at,
+            at: at.clone(),
             message: message.into(),
         }
     }
 
     /// `error`, which ended `action` at `at`.
-    pub fn from_client(
-        action: impl Into<String>,
-        error: &ClientError,
-        at: DateTime<Local>,
-    ) -> Self {
+    pub fn from_client(action: impl Into<String>, error: &ClientError, at: &Zoned) -> Self {
         Self::new(ErrorKind::of(error, at), action, error.to_string(), at)
     }
 
     /// A command Todoist refused in its `sync_status`, with Todoist's
     /// message.
-    pub fn from_command(
-        action: impl Into<String>,
-        error: &SyncCommandError,
-        at: DateTime<Local>,
-    ) -> Self {
+    pub fn from_command(action: impl Into<String>, error: &SyncCommandError, at: &Zoned) -> Self {
         Self::new(ErrorKind::Validation, action, error.error.clone(), at)
     }
 
@@ -211,16 +203,18 @@ impl ErrorLog {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
+    use jiff::civil::date;
+    use jiff::tz::TimeZone;
 
     use super::*;
 
     #[test]
     fn the_log_keeps_only_the_newest_failures() {
-        let at = Local
-            .with_ymd_and_hms(2026, 11, 23, 9, 0, 0)
-            .earliest()
+        let at = &date(2026, 11, 23)
+            .at(9, 0, 0, 0)
+            .to_zoned(TimeZone::UTC)
             .unwrap();
+
         let mut log = ErrorLog::default();
         for n in 0..ERROR_LOG_CAP + 5 {
             log.record(Failure::new(ErrorKind::Other, "count", n.to_string(), at));

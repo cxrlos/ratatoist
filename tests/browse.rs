@@ -4,9 +4,10 @@
 
 #![cfg(test)]
 
-use chrono::{DateTime, Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::Zoned;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, Pane, Screen, State, TreeItem};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::demo::NOW;
@@ -15,12 +16,12 @@ use ratatoist::todoist::sync::{SyncCommandError, SyncRequest, SyncResponse};
 use ratatoist::todoist::{FakeClient, TodoistClient};
 use ratatui::backend::TestBackend;
 
-fn now() -> DateTime<Local> {
-    Local.from_local_datetime(&NOW).earliest().unwrap()
+fn now() -> Zoned {
+    NOW.to_zoned(TimeZone::UTC).unwrap()
 }
 
 fn demo_sync() -> Box<SyncResponse> {
-    Box::new(serde_json::from_value(demo::account(NOW.date()).sync).unwrap())
+    Box::new(serde_json::from_value(demo::account(&now()).sync).unwrap())
 }
 
 fn sized(columns: u16, rows: u16) -> App<TestBackend> {
@@ -97,7 +98,7 @@ fn focus_row(app: &mut App<TestBackend>, name: &str) {
 /// What a [`FakeClient`] that rejects every `project_update` answers to
 /// the commands `effects` send.
 async fn rejected(effects: &[Effect]) -> Event {
-    let client = FakeClient::new().with_full_sync(demo::account(NOW.date()).sync);
+    let client = FakeClient::new().with_full_sync(demo::account(&now()).sync);
     client.fail_command(
         CommandMatch::Type("project_update".to_owned()),
         SyncCommandError {

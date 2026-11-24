@@ -146,12 +146,12 @@ impl State {
                     effects.push(Effect::OpenLive { url });
                 }
             }
-            Err(e) if first && ErrorKind::of(&e, self.now) == ErrorKind::TokenRejected => {
+            Err(e) if first && ErrorKind::of(&e, &self.now) == ErrorKind::TokenRejected => {
                 error!("todoist rejected the token");
                 self.not_loaded(LoadError::TokenRejected);
             }
-            Err(e) if first => self.report(Failure::from_client("load your tasks", &e, self.now)),
-            Err(e) => self.log_failure(Failure::from_client("sync with Todoist", &e, self.now)),
+            Err(e) if first => self.report(Failure::from_client("load your tasks", &e, &self.now)),
+            Err(e) => self.log_failure(Failure::from_client("sync with Todoist", &e, &self.now)),
         }
     }
 
@@ -305,7 +305,7 @@ impl State {
         }
 
         self.take_sync_token(resp.sync_token, effects);
-        self.last_sync_at = Some(self.now);
+        self.last_sync_at = Some(self.now.clone());
         self.keep_focus_on(focused, effects);
     }
 
@@ -372,7 +372,10 @@ impl State {
             match status {
                 SyncCommandResult::Err(error) => {
                     let action = action.unwrap_or_else(|| "send a change".to_owned());
-                    rejected.push((uuid.clone(), Failure::from_command(action, error, self.now)));
+                    rejected.push((
+                        uuid.clone(),
+                        Failure::from_command(action, error, &self.now),
+                    ));
                 }
                 SyncCommandResult::Ok(_) => {
                     if let Some(op) = self.temp_id_pending.remove(uuid)
@@ -408,12 +411,12 @@ impl State {
                 .pending_actions
                 .remove(uuid)
                 .unwrap_or_else(|| "send a change".to_owned());
-            let failure = Failure::from_client(action, error, self.now);
+            let failure = Failure::from_client(action, error, &self.now);
             self.roll_back(uuid, &failure);
             failures.push(failure);
         }
         if failures.is_empty() {
-            failures.push(Failure::from_client("send a change", error, self.now));
+            failures.push(Failure::from_client("send a change", error, &self.now));
         }
         for failure in failures {
             self.report(failure);
@@ -583,7 +586,7 @@ impl State {
                     Some(task) => format!("load the comments on \"{}\"", task.content),
                     None => "load comments".to_owned(),
                 };
-                self.log_failure(Failure::from_client(action, &e, self.now));
+                self.log_failure(Failure::from_client(action, &e, &self.now));
             }
         }
     }
@@ -614,7 +617,7 @@ impl State {
                 }
             }
             Err(e) => {
-                self.log_failure(Failure::from_client("load completed tasks", &e, self.now));
+                self.log_failure(Failure::from_client("load completed tasks", &e, &self.now));
             }
         }
     }

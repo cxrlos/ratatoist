@@ -8,9 +8,9 @@
 use std::collections::HashSet;
 use std::fs;
 
-use chrono::{Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Event, Screen, State};
 use ratatoist::config::{self, Config};
 use ratatoist::runtime::{UiSettings, initial_state_from};
@@ -22,14 +22,16 @@ use ratatui::backend::TestBackend;
 
 /// The demo account at 120x36 with `icons`, on the Today list.
 fn task_list(icons: IconSet) -> App<TestBackend> {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let config = Config {
         icons,
         ..Config::default()
     };
     let state = initial_state_from(&config, &UiSettings::default(), "*".to_owned(), now, false);
     let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
-    let sync = serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap();
+    let sync =
+        serde_json::from_value(demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync)
+            .unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     app
 }
@@ -175,7 +177,7 @@ fn a_task_list_in_the_nerd_set() {
 /// The Inbox of the app fixture, its "Plan the winter trip" parent given
 /// three comments so one row carries both a fold and a comment glyph.
 fn trip_with_comments() -> State {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let mut app = App::new(TestBackend::new(120, 36), State::new(now)).unwrap();
     let sync =
         serde_json::from_str(include_str!("fixtures/app/HYPOTHETICAL_full_sync.json")).unwrap();

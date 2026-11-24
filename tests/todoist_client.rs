@@ -7,8 +7,8 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use chrono::NaiveDate;
 use futures_util::{SinkExt, StreamExt};
+use jiff::civil::date;
 use ratatoist::auth::ApiToken;
 use ratatoist::todoist::fake::CommandMatch;
 use ratatoist::todoist::model::{CompletedTasksResponse, Paginated, UserInfo};
@@ -196,7 +196,7 @@ async fn paging_stops_after_fifty_pages() {
 }
 
 fn window() -> CompletedWindow {
-    CompletedWindow::latest(NaiveDate::from_ymd_opt(2026, 11, 23).unwrap())
+    CompletedWindow::latest(date(2026, 11, 23))
 }
 
 fn query(project_id: Option<&str>) -> CompletedQuery {

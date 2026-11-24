@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 
 use super::state::{COUNTED_FILTERS, ListFilter, OverviewStats, Pane, Screen, Sort, State};
 use crate::todoist::model::{Priority, Project, Task};
@@ -12,7 +12,7 @@ use crate::ui::dates::{self, DueBucket};
 impl State {
     /// Where `task`'s due date falls today.
     pub fn due_bucket(&self, task: &Task) -> DueBucket {
-        dates::due_bucket(task.due.as_ref(), self.today, &self.now.timezone())
+        dates::due_bucket(task.due.as_ref(), self.today, self.now.time_zone())
     }
 
     /// Unchecked, not deleted, and unassigned or assigned to the user: the
@@ -252,8 +252,8 @@ impl State {
 
     /// The day `task` is due in the user's zone, when it has a due date
     /// that parses.
-    pub fn due_day(&self, task: &Task) -> Option<NaiveDate> {
-        dates::due_day(task.due.as_ref()?, &self.now.timezone())
+    pub fn due_day(&self, task: &Task) -> Option<Date> {
+        dates::due_day(task.due.as_ref()?, self.now.time_zone())
     }
 
     /// Today: the Overdue group, which folds, then the tasks due today.
@@ -605,7 +605,7 @@ pub enum GroupKind {
     Overdue,
     Today,
     /// One day of Upcoming.
-    Day(Option<NaiveDate>),
+    Day(Option<Date>),
     /// The tasks of one project, by its name.
     Project(String),
 }

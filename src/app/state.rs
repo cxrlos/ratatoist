@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use chrono::{DateTime, Local, NaiveDate};
+use jiff::civil::Date;
+use jiff::{SignedDuration, Zoned};
 use ratatui::layout::Size;
 
 use super::browse::TreeItem;
@@ -29,8 +30,8 @@ pub const DEFAULT_WIDE_LAYOUT_COLUMNS: u16 = 120;
 #[derive(Debug, Clone)]
 pub struct State {
     /// Set by the runtime from the clock; fixed in tests.
-    pub today: NaiveDate,
-    pub now: DateTime<Local>,
+    pub today: Date,
+    pub now: Zoned,
 
     /// True until the first sync answers; the body says it is loading
     /// meanwhile.
@@ -113,7 +114,7 @@ pub struct State {
     pub oldest_completed: HashMap<String, CompletedWindow>,
     pub comments_by_task: HashMap<String, Vec<Comment>>,
     pub idle_timeout_secs: u64,
-    pub last_sync_at: Option<DateTime<Local>>,
+    pub last_sync_at: Option<Zoned>,
     pub collapsed_folders: HashSet<String>,
     /// The row the Projects tree focuses, when it is on one.
     pub tree_focus: Option<TreeItem>,
@@ -125,7 +126,7 @@ pub struct State {
     /// change again.
     pub rolled_back_projects: HashMap<String, Failure>,
     pub overdue_section_collapsed: bool,
-    pub last_activity: DateTime<Local>,
+    pub last_activity: Zoned,
     pub(crate) pending_ws_sync: bool,
     pub(crate) comments_fetch_seq: u64,
     pub(crate) websocket_url: Option<String>,
@@ -139,10 +140,10 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(now: DateTime<Local>) -> Self {
+    pub fn new(now: Zoned) -> Self {
         Self {
-            today: now.date_naive(),
-            now,
+            today: now.date(),
+            now: now.clone(),
             loading: true,
             load_error: None,
             token_source: None,
@@ -290,7 +291,7 @@ impl State {
                 alert: true,
             });
         }
-        let ago = age(self.now - self.last_sync_at?);
+        let ago = age(self.now.duration_since(self.last_sync_at.as_ref()?));
         let text = if self.is_idle() {
             format!("idle, synced {ago} ago")
         } else {
@@ -301,7 +302,8 @@ impl State {
 
     pub fn is_idle(&self) -> bool {
         let timeout = i64::try_from(self.idle_timeout_secs).unwrap_or(i64::MAX);
-        self.idle_timeout_secs > 0 && (self.now - self.last_activity).num_seconds() >= timeout
+        self.idle_timeout_secs > 0
+            && self.now.duration_since(&self.last_activity).as_secs() >= timeout
     }
 
     /// Whether `name` names one of the loaded themes, by its name or the
@@ -323,8 +325,8 @@ impl State {
 }
 
 /// `elapsed` in its largest whole unit, as `4s`, `3m`, `2h` or `5d`.
-fn age(elapsed: chrono::TimeDelta) -> String {
-    let seconds = elapsed.num_seconds().max(0);
+fn age(elapsed: SignedDuration) -> String {
+    let seconds = elapsed.as_secs().max(0);
     match seconds {
         0..60 => format!("{seconds}s"),
         60..3600 => format!("{}m", seconds / 60),

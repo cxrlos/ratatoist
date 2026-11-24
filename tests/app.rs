@@ -1,8 +1,10 @@
 #![cfg(test)]
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::civil::date;
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Zoned};
 use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::model::Task;
@@ -13,11 +15,11 @@ use ratatui::backend::TestBackend;
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
 
 /// 2026-11-22 09:00 local time, a Sunday.
-fn now() -> DateTime<Local> {
-    let naive = NaiveDate::from_ymd_opt(2026, 11, 22)
-        .and_then(|day| day.and_hms_opt(9, 0, 0))
-        .unwrap();
-    Local.from_local_datetime(&naive).earliest().unwrap()
+fn now() -> Zoned {
+    date(2026, 11, 22)
+        .at(9, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
 }
 
 fn full_sync() -> Box<SyncResponse> {
@@ -271,7 +273,7 @@ fn a_tick_that_changes_nothing_does_not_redraw() {
     send(
         &mut app,
         [Event::Tick {
-            now: now() + chrono::Duration::seconds(61),
+            now: now() + SignedDuration::from_secs(61),
         }],
     );
     let frames = app.frames_drawn();
@@ -279,7 +281,7 @@ fn a_tick_that_changes_nothing_does_not_redraw() {
     send(
         &mut app,
         [Event::Tick {
-            now: now() + chrono::Duration::seconds(62),
+            now: now() + SignedDuration::from_secs(62),
         }],
     );
 
@@ -541,7 +543,7 @@ fn a_live_change_while_idle_waits_for_the_next_key() {
     send(
         &mut app,
         [Event::Tick {
-            now: now() + chrono::Duration::minutes(6),
+            now: now() + SignedDuration::from_mins(6),
         }],
     );
     assert!(shows(&app, "idle, synced 6m ago"), "{:#?}", screen(&app));
@@ -608,7 +610,7 @@ fn the_completed_filter_asks_for_the_project_s_completed_tasks() {
     assert!(matches!(
         effects.as_slice(),
         [Effect::FetchCompletedTasks(query)] if query.project_id.as_deref() == Some("p-inbox")
-            && query.window == CompletedWindow::latest(now().date_naive())
+            && query.window == CompletedWindow::latest(now().date())
     ));
 }
 
@@ -632,7 +634,7 @@ fn run_from_palette(app: &mut App<TestBackend>, query: &str) -> Vec<Effect> {
 #[test]
 fn load_older_completed_walks_back_one_window_at_a_time() {
     let mut app = app();
-    let latest = CompletedWindow::latest(now().date_naive());
+    let latest = CompletedWindow::latest(now().date());
     let Effect::FetchCompletedTasks(first) = send(&mut app, [key('1'), key('f'), key('2')])
         .pop()
         .unwrap()

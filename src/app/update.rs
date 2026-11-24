@@ -71,10 +71,10 @@ pub fn update(state: &mut State, event: Event) -> Update {
             Update::redraw(effects)
         }
         Event::Tick { now } => {
-            effects.extend(release::tick(state, now.with_timezone(&chrono::Utc)));
+            effects.extend(release::tick(state, now.timestamp()));
             let before = (state.today, state.indicator());
+            state.today = now.date();
             state.now = now;
-            state.today = now.date_naive();
             Update {
                 redraw: before != (state.today, state.indicator()),
                 effects,
@@ -118,7 +118,7 @@ pub fn update(state: &mut State, event: Event) -> Update {
                             ErrorKind::Offline,
                             "keep the live connection open",
                             "the live-updates connection dropped",
-                            state.now,
+                            &state.now,
                         ));
                     }
                     state.live_dropped = true;
@@ -139,7 +139,7 @@ fn on_key(state: &mut State, key: KeyEvent) -> Update {
     let key = Key::from(key);
     let mut effects = Vec::new();
     let was_idle = state.is_idle();
-    state.last_activity = state.now;
+    state.last_activity = state.now.clone();
     if was_idle && state.pending_ws_sync {
         state.pending_ws_sync = false;
         effects.push(Effect::Sync(incremental_sync_request(&state.sync_token)));
@@ -1019,7 +1019,7 @@ impl State {
         // The one due string known without Todoist: Today's default, so the
         // row shows on Today at once.
         let due = due_string.eq_ignore_ascii_case(TODAY).then(|| Due {
-            date: self.today.format("%Y-%m-%d").to_string(),
+            date: self.today.to_string(),
             string: Some(due_string.clone()),
             ..Due::default()
         });
@@ -1062,7 +1062,7 @@ impl State {
         let optimistic = Comment {
             id: temp_id.clone(),
             content: content.clone(),
-            posted_at: Some(self.now.with_timezone(&chrono::Utc).to_rfc3339()),
+            posted_at: Some(self.now.timestamp().to_string()),
             posted_by_uid: self.current_user_id.clone(),
             task_id: Some(task_id.clone()),
             item_id: Some(task_id.clone()),

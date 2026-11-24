@@ -4,9 +4,10 @@
 
 #![cfg(test)]
 
-use chrono::{DateTime, Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::Zoned;
+use jiff::tz::TimeZone;
 use ratatoist::app::{
     App, Effect, Event, GroupKind, ListRow, Modal, Pane, PickerKind, PromptField, Screen, State,
 };
@@ -17,12 +18,12 @@ use ratatoist::todoist::sync::SyncResponse;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 
-fn now() -> DateTime<Local> {
-    Local.from_local_datetime(&demo::NOW).earliest().unwrap()
+fn now() -> Zoned {
+    demo::NOW.to_zoned(TimeZone::UTC).unwrap()
 }
 
 fn demo_sync() -> Box<SyncResponse> {
-    Box::new(serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap())
+    Box::new(serde_json::from_value(demo::account(&now()).sync).unwrap())
 }
 
 /// The demo account at `columns` x `rows`, told its size as the runtime's
@@ -269,7 +270,7 @@ fn today_s_header_counts_match_their_rows() {
 }
 
 /// A delta adding an open subtask due on `day` under `parent`.
-fn subtask_due(id: &str, parent: &ListRow, day: chrono::NaiveDate) -> Box<SyncResponse> {
+fn subtask_due(id: &str, parent: &ListRow, day: jiff::civil::Date) -> Box<SyncResponse> {
     let ListRow::Task { task, .. } = parent else {
         panic!("not a task row");
     };
@@ -312,7 +313,7 @@ fn today_leaves_subtasks_out_of_its_rows_and_its_header_counts() {
     let overdue = subtask_due(
         "t-overdue-subtask",
         &overdue_parent,
-        today.pred_opt().unwrap(),
+        today.yesterday().unwrap(),
     );
     let due_today = subtask_due("t-today-subtask", &today_parent, today);
 

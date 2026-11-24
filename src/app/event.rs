@@ -20,7 +20,7 @@ pub enum Event {
     },
     /// The clock moved on: the runtime sends the current time.
     Tick {
-        now: chrono::DateTime<chrono::Local>,
+        now: jiff::Zoned,
     },
     /// The answer to [`super::Effect::Sync`].
     Synced(Result<Box<SyncResponse>, ClientError>),

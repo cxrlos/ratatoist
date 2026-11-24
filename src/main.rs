@@ -42,13 +42,7 @@ async fn start(cli: Cli) -> Result<()> {
         let config = Config::default();
         let mut state = runtime::initial_state(&config, None);
         let releases = release_check(&cli, &config, &mut state);
-        return run_app(
-            demo::client(runtime::today()),
-            state,
-            None,
-            releases.as_ref(),
-        )
-        .await;
+        return run_app(demo::client(&state.now), state, None, releases.as_ref()).await;
     }
 
     let config_dir = paths::config_dir()?;

@@ -5,10 +5,10 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use chrono::{
-    Datelike, Days, Local, Months, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Weekday,
-};
 use futures_util::Stream;
+use jiff::civil::{self, Date, Time, Weekday};
+use jiff::tz::TimeZone;
+use jiff::{Span, Zoned};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
@@ -18,13 +18,7 @@ use super::{ClientError, CompletedQuery, FakeClient, LiveMessage, TodoistClient}
 
 /// The moment tests build and render the demo account at: Monday
 /// 2026-11-23, 09:00 local time.
-pub const NOW: NaiveDateTime = match (
-    NaiveDate::from_ymd_opt(2026, 11, 23),
-    NaiveTime::from_hms_opt(9, 0, 0),
-) {
-    (Some(date), Some(time)) => NaiveDateTime::new(date, time),
-    _ => panic!("NOW is a valid date and time"),
-};
+pub const NOW: civil::DateTime = civil::datetime(2026, 11, 23, 9, 0, 0, 0);
 
 const USER: &str = "u-mara";
 const TEO: &str = "u-teo";
@@ -40,9 +34,13 @@ pub struct Account {
     pub completed: Value,
 }
 
-/// The demo account with `today` as the current day.
-pub fn account(today: NaiveDate) -> Account {
-    let at = Dates(today);
+/// The demo account built at `now`: its day is the current day, and its
+/// zone the one its local times are in.
+pub fn account(now: &Zoned) -> Account {
+    let at = Dates {
+        today: now.date(),
+        zone: now.time_zone().clone(),
+    };
     let items = items(&at);
     let notes = notes(&at);
     let items = items
@@ -86,11 +84,11 @@ pub fn account(today: NaiveDate) -> Account {
     }
 }
 
-/// A client serving the demo account for `today`. Writes succeed and change
-/// the account for the session: a later full sync, comment load or
+/// A client serving the demo account built at `now`. Writes succeed and
+/// change the account for the session: a later full sync, comment load or
 /// completed-tasks load shows them. It never opens a connection.
-pub fn client(today: NaiveDate) -> DemoClient {
-    let account = account(today);
+pub fn client(now: &Zoned) -> DemoClient {
+    let account = account(now);
     let fake = FakeClient::new()
         .with_full_sync(account.sync.clone())
         .with_user(account.sync["user"].clone());
@@ -98,7 +96,8 @@ pub fn client(today: NaiveDate) -> DemoClient {
         fake,
         store: Arc::new(Mutex::new(Store {
             account,
-            today,
+            today: now.date(),
+            zone: now.time_zone().clone(),
             next_id: 0,
         })),
     }
@@ -115,7 +114,8 @@ pub struct DemoClient {
 #[derive(Debug)]
 struct Store {
     account: Account,
-    today: NaiveDate,
+    today: Date,
+    zone: TimeZone,
     next_id: u64,
 }
 
@@ -357,7 +357,7 @@ impl Store {
     /// When a write happened, as far as the demo account knows: its day at
     /// the time of [`NOW`]. The clock is read only by the runtime.
     fn timestamp(&self) -> String {
-        utc_stamp(self.today, NOW.time())
+        utc_stamp(self.today, NOW.time(), &self.zone)
     }
 
     fn list(&mut self, key: &str) -> &mut Vec<Value> {
@@ -398,19 +398,19 @@ fn merge(list: &mut [Value], id: &str, args: &Value, skip: &[&str]) {
 /// reads: `today`, `tomorrow`, a weekday name (its next one after today),
 /// `YYYY-MM-DD`, and `no date` or nothing to clear it. `None` for any other
 /// string, which leaves the due as it was.
-fn due(string: &str, today: NaiveDate) -> Option<Value> {
+fn due(string: &str, today: Date) -> Option<Value> {
     let string = string.trim().to_lowercase();
     let date = match string.as_str() {
         "" | "no date" => return Some(Value::Null),
         "today" => today,
-        "tomorrow" => today.checked_add_days(Days::new(1))?,
-        other => match other.parse::<Weekday>() {
-            Ok(weekday) => Step::Weekdays(vec![weekday]).after(today)?,
-            Err(_) => NaiveDate::parse_from_str(other, "%Y-%m-%d").ok()?,
+        "tomorrow" => today.tomorrow().ok()?,
+        other => match weekday(other) {
+            Some(weekday) => Step::Weekdays(vec![weekday]).after(today)?,
+            None => Date::strptime("%Y-%m-%d", other).ok()?,
         },
     };
     Some(json!({
-        "date": date.format("%Y-%m-%d").to_string(),
+        "date": date.to_string(),
         "is_recurring": false,
         "string": string,
         "lang": "en",
@@ -419,9 +419,26 @@ fn due(string: &str, today: NaiveDate) -> Option<Value> {
 
 /// How far apart a recurring task's dates are.
 enum Step {
-    Days(u64),
-    Months(u32),
+    Days(i64),
+    Months(i64),
     Weekdays(Vec<Weekday>),
+}
+
+/// The weekday `word` names, as `mon` or `monday`, in any case.
+fn weekday(word: &str) -> Option<Weekday> {
+    let word = word.to_lowercase();
+    [
+        ("monday", Weekday::Monday),
+        ("tuesday", Weekday::Tuesday),
+        ("wednesday", Weekday::Wednesday),
+        ("thursday", Weekday::Thursday),
+        ("friday", Weekday::Friday),
+        ("saturday", Weekday::Saturday),
+        ("sunday", Weekday::Sunday),
+    ]
+    .into_iter()
+    .find(|(name, _)| word == *name || name.get(..3) == Some(word.as_str()))
+    .map(|(_, day)| day)
 }
 
 impl Step {
@@ -436,44 +453,47 @@ impl Step {
             .split([',', ' '])
             .filter(|word| !word.is_empty())
             .collect();
-        let weekdays: Vec<Weekday> = words.iter().filter_map(|w| w.parse().ok()).collect();
+        let weekdays: Vec<Weekday> = words.iter().filter_map(|w| weekday(w)).collect();
         if !weekdays.is_empty() && weekdays.len() == words.len() {
             return Self::Weekdays(weekdays);
         }
         let (count, unit) = match words.as_slice() {
-            [count, unit] => (count.parse().unwrap_or(1), *unit),
+            [count, unit] => (count.parse::<u32>().map_or(1, i64::from), *unit),
             [unit] => (1, *unit),
             _ => (1, "day"),
         };
         match unit.trim_end_matches('s') {
             "week" => Self::Days(7 * count),
-            "month" => Self::Months(u32::try_from(count).unwrap_or(1)),
-            "year" => Self::Months(12 * u32::try_from(count).unwrap_or(1)),
+            "month" => Self::Months(count),
+            "year" => Self::Months(12 * count),
             "day" => Self::Days(count),
             _ => Self::Days(1),
         }
     }
 
-    fn after(&self, date: NaiveDate) -> Option<NaiveDate> {
-        match self {
-            Self::Days(days) => date.checked_add_days(Days::new(*days)),
-            Self::Months(months) => date.checked_add_months(Months::new(*months)),
-            Self::Weekdays(weekdays) => (1..=7)
-                .filter_map(|n| date.checked_add_days(Days::new(n)))
-                .find(|next| weekdays.contains(&next.weekday())),
-        }
+    fn after(&self, date: Date) -> Option<Date> {
+        let span = match self {
+            Self::Days(days) => Span::new().try_days(*days),
+            Self::Months(months) => Span::new().try_months(*months),
+            Self::Weekdays(weekdays) => {
+                return (1..=7)
+                    .filter_map(|n| date.checked_add(Span::new().days(n)).ok())
+                    .find(|next| weekdays.contains(&next.weekday()));
+            }
+        };
+        date.checked_add(span.ok()?).ok()
     }
 }
 
 /// The first date of the series `rule` after both `date` (a due date, with
 /// or without a time, which the next one keeps) and `today`.
-fn next_occurrence(date: &str, rule: &str, today: NaiveDate) -> Option<String> {
+fn next_occurrence(date: &str, rule: &str, today: Date) -> Option<String> {
     let (day, time) = match date.split_once('T') {
         Some((day, time)) => (day, Some(time)),
         None => (date, None),
     };
     let step = Step::parse(rule);
-    let mut next = step.after(NaiveDate::parse_from_str(day, "%Y-%m-%d").ok()?)?;
+    let mut next = step.after(Date::strptime("%Y-%m-%d", day).ok()?)?;
     // Bounded so a step that cannot move forward cannot spin.
     for _ in 0..1000 {
         if next > today {
@@ -481,34 +501,35 @@ fn next_occurrence(date: &str, rule: &str, today: NaiveDate) -> Option<String> {
         }
         next = step.after(next)?;
     }
-    let next = next.format("%Y-%m-%d");
     Some(match time {
         Some(time) => format!("{next}T{time}"),
         None => next.to_string(),
     })
 }
 
-/// Dates as offsets in days from the day the account is built for.
-struct Dates(NaiveDate);
+/// Dates as offsets in days from the day the account is built for, with
+/// local times in its zone.
+struct Dates {
+    today: Date,
+    zone: TimeZone,
+}
 
 impl Dates {
-    fn date(&self, offset: i64) -> NaiveDate {
-        let days = Days::new(offset.unsigned_abs());
-        let date = if offset < 0 {
-            self.0.checked_sub_days(days)
-        } else {
-            self.0.checked_add_days(days)
-        };
-        date.unwrap_or(self.0)
+    fn date(&self, offset: i64) -> Date {
+        Span::new()
+            .try_days(offset)
+            .ok()
+            .and_then(|days| self.today.checked_add(days).ok())
+            .unwrap_or(self.today)
     }
 
     fn day(&self, offset: i64) -> String {
-        self.date(offset).format("%Y-%m-%d").to_string()
+        self.date(offset).to_string()
     }
 
     /// The weekday `offset` days away, as a due string names it: `mon`.
     fn weekday(&self, offset: i64) -> String {
-        self.date(offset).format("%a").to_string().to_lowercase()
+        self.date(offset).strftime("%a").to_string().to_lowercase()
     }
 
     /// An all-day due date.
@@ -534,23 +555,25 @@ impl Dates {
     }
 
     fn timestamp(&self, offset: i64, time: &str) -> String {
-        let time = NaiveTime::parse_from_str(time, "%H:%M").unwrap_or(NaiveTime::MIN);
-        utc_stamp(self.date(offset), time)
+        let time = Time::strptime("%H:%M", time).unwrap_or(Time::midnight());
+        utc_stamp(self.date(offset), time, &self.zone)
     }
 }
 
-/// `day` at `time` on this machine's clock, written as Todoist writes a
-/// moment: in UTC, ending in `Z`. The demo account's days are local days,
-/// and its "now" is a local time, so a comment's age reads the same in
-/// every timezone (labelling the local time as UTC made it shift by the
-/// offset, and put comments in the future east of UTC).
-fn utc_stamp(day: NaiveDate, time: NaiveTime) -> String {
-    let local = day.and_time(time);
-    let utc = Local
-        .from_local_datetime(&local)
-        .earliest()
-        .map_or(local, |moment| moment.naive_utc());
-    format!("{}Z", utc.format("%Y-%m-%dT%H:%M:%S"))
+/// `day` at `time` in `zone`, written as Todoist writes a moment: in UTC,
+/// ending in `Z`. The demo account's days are local days, and its "now" is
+/// a local time, so a comment's age reads the same in every timezone
+/// (labelling the local time as UTC made it shift by the offset, and put
+/// comments in the future east of UTC).
+fn utc_stamp(day: Date, time: Time, zone: &TimeZone) -> String {
+    let local = day.to_datetime(time);
+    let utc = zone
+        .to_ambiguous_zoned(local)
+        .earlier()
+        .map_or(local, |moment| {
+            TimeZone::UTC.to_datetime(moment.timestamp())
+        });
+    utc.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 fn projects() -> Vec<Value> {

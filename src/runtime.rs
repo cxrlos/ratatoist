@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Local, NaiveDate};
 use crossterm::event::Event as TerminalEvent;
 use futures_util::{Stream, StreamExt};
+use jiff::Zoned;
 use ratatui::backend::Backend;
 use serde::Deserialize;
 use tokio::sync::mpsc;
@@ -86,7 +86,7 @@ pub fn initial_state_from(
     config: &Config,
     ui: &UiSettings,
     sync_token: String,
-    now: DateTime<Local>,
+    now: Zoned,
     no_color: bool,
 ) -> State {
     let mut state = State::new(now);
@@ -253,15 +253,10 @@ pub fn is_missing_token(error: &anyhow::Error) -> bool {
     )
 }
 
-/// Today's date on the wall clock.
-pub fn today() -> NaiveDate {
-    clock().date_naive()
-}
-
 /// The wall clock: the one read the `disallowed_methods` lint lets through.
 #[allow(clippy::disallowed_methods)]
-fn clock() -> DateTime<Local> {
-    Local::now()
+fn clock() -> Zoned {
+    Zoned::now()
 }
 
 fn from_terminal(event: TerminalEvent) -> Option<Event> {
@@ -455,16 +450,17 @@ async fn check_release(releases: Option<&ReleaseCheck>) -> Event {
 mod tests {
     use std::time::Duration;
 
-    use chrono::TimeZone;
+    use jiff::civil::date;
+    use jiff::tz::TimeZone;
     use ratatui::backend::TestBackend;
 
     use super::*;
     use crate::todoist::FakeClient;
 
-    fn now() -> DateTime<Local> {
-        Local
-            .with_ymd_and_hms(2026, 11, 22, 9, 0, 0)
-            .earliest()
+    fn now() -> Zoned {
+        date(2026, 11, 22)
+            .at(9, 0, 0, 0)
+            .to_zoned(TimeZone::UTC)
             .unwrap()
     }
 

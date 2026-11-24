@@ -4,10 +4,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use futures_util::Stream;
 use insta::assert_snapshot;
+use jiff::Zoned;
+use jiff::civil::date;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, State};
 use ratatoist::todoist::model::{Comment, Task, UserInfo};
 use ratatoist::todoist::sync::{SyncRequest, SyncResponse};
@@ -16,11 +18,11 @@ use ratatui::backend::TestBackend;
 use serde_json::Value;
 
 /// 2026-11-22 09:00 local time, a Sunday.
-fn now() -> DateTime<Local> {
-    let naive = NaiveDate::from_ymd_opt(2026, 11, 22)
-        .and_then(|day| day.and_hms_opt(9, 0, 0))
-        .unwrap();
-    Local.from_local_datetime(&naive).earliest().unwrap()
+fn now() -> Zoned {
+    date(2026, 11, 22)
+        .at(9, 0, 0, 0)
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
 }
 
 /// A hypothetical full sync, not recorded from Todoist, with one workspace

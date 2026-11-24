@@ -3,9 +3,9 @@
 //! The one picker, driven through each of its openers on the demo account:
 //! typing filters, 1 to 9 choose, and `✓` marks the value in force.
 
-use chrono::{Local, TimeZone};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
+use jiff::tz::TimeZone;
 use ratatoist::app::{App, Choice, Effect, Event, ListFilter, Modal, Picker, Sort, State};
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::demo;
@@ -22,11 +22,13 @@ const THEME_ON_COMMA: &str = "[keys.global]\nchoose-theme = \",\"\n";
 /// The demo account at `columns` x `rows` with `config` as `config.toml`,
 /// on the Inbox's task list.
 fn demo_with(columns: u16, rows: u16, config: &str) -> App<TestBackend> {
-    let now = Local.from_local_datetime(&demo::NOW).earliest().unwrap();
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
     let config = ratatoist::config::parse(config, &[]);
     let state = initial_state_from(&config, &UiSettings::default(), "*".to_owned(), now, false);
     let mut app = App::new(TestBackend::new(columns, rows), state).unwrap();
-    let sync: SyncResponse = serde_json::from_value(demo::account(demo::NOW.date()).sync).unwrap();
+    let sync: SyncResponse =
+        serde_json::from_value(demo::account(&demo::NOW.to_zoned(TimeZone::UTC).unwrap()).sync)
+            .unwrap();
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     send(&mut app, [key('1')]);
     app

@@ -1,6 +1,8 @@
 allow-expect-in-tests = true
 allow-unwrap-in-tests = true
 disallowed-methods = [
-    { path = "chrono::Local::now", reason = "only src/runtime.rs reads the clock and hands it to the app, so rendering and update stay pure functions of State" },
-    { path = "chrono::Utc::now", reason = "only src/runtime.rs reads the clock and hands it to the app, so rendering and update stay pure functions of State" },
+    { path = "jiff::Zoned::now", reason = "only src/runtime.rs reads the clock and hands it to the app, so rendering and update stay pure functions of State" },
+    { path = "jiff::Timestamp::now", reason = "only src/runtime.rs reads the clock and hands it to the app, so rendering and update stay pure functions of State" },
+    { path = "jiff::tz::TimeZone::system", reason = "the zone comes with the time src/runtime.rs reads, as State::now's zone, so rendering and update stay pure functions of State" },
+    { path = "jiff::tz::TimeZone::try_system", reason = "the zone comes with the time src/runtime.rs reads, as State::now's zone, so rendering and update stay pure functions of State" },
 ]
