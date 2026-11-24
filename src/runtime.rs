@@ -6,6 +6,7 @@ use std::future::Future;
 use std::io;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Local, NaiveDate};
@@ -14,6 +15,7 @@ use futures_util::{Stream, StreamExt};
 use ratatui::backend::Backend;
 use serde::Deserialize;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tracing::{info, warn};
 
@@ -152,10 +154,55 @@ where
 pub async fn run_checking<B, C, I, S>(
     app: &mut App<B>,
     client: &C,
+    input: I,
+    shutdown: S,
+    files: Option<&Path>,
+    releases: Option<&ReleaseCheck>,
+) -> anyhow::Result<()>
+where
+    B: Backend,
+    B::Error: Send + Sync + 'static,
+    C: TodoistClient,
+    I: Stream<Item = io::Result<TerminalEvent>> + Unpin,
+    S: Future<Output = ()>,
+{
+    let writer = Writer::start(Save::write);
+    run_writing(app, client, input, shutdown, files, releases, writer).await
+}
+
+/// [`run_checking`] with files saved by `writer`. It returns once the writer
+/// has saved everything it was sent, so the last sync token is on disk.
+async fn run_writing<B, C, I, S>(
+    app: &mut App<B>,
+    client: &C,
+    input: I,
+    shutdown: S,
+    files: Option<&Path>,
+    releases: Option<&ReleaseCheck>,
+    writer: Writer,
+) -> anyhow::Result<()>
+where
+    B: Backend,
+    B::Error: Send + Sync + 'static,
+    C: TodoistClient,
+    I: Stream<Item = io::Result<TerminalEvent>> + Unpin,
+    S: Future<Output = ()>,
+{
+    let result = run_loop(app, client, input, shutdown, files, releases, writer.saves).await;
+    if let Err(error) = writer.done.await {
+        warn!("the file writer stopped: {error}");
+    }
+    result
+}
+
+async fn run_loop<B, C, I, S>(
+    app: &mut App<B>,
+    client: &C,
     mut input: I,
     shutdown: S,
     files: Option<&Path>,
     releases: Option<&ReleaseCheck>,
+    saves: mpsc::UnboundedSender<Save>,
 ) -> anyhow::Result<()>
 where
     B: Backend,
@@ -170,6 +217,7 @@ where
         client,
         answers: tx,
         files: files.map(Path::to_path_buf),
+        saves,
         releases,
     };
     let mut ticks = tokio::time::interval(TICK);
@@ -225,18 +273,63 @@ fn from_terminal(event: TerminalEvent) -> Option<Event> {
     }
 }
 
+/// A file for the [`Writer`] to save.
+enum Save {
+    SyncToken { dir: PathBuf, sync_token: String },
+}
+
+impl Save {
+    /// Writes the file. A failure is logged and never reaches the screen.
+    fn write(self) {
+        match self {
+            Self::SyncToken { dir, sync_token } => {
+                if let Err(error) = (SyncState { sync_token }).save(&dir) {
+                    warn!(error = %error, "failed to persist sync token");
+                }
+            }
+        }
+    }
+}
+
+/// The one writer of files: a task that runs each [`Save`] sent to `saves`
+/// on the blocking pool, one at a time and in the order sent, so a slow disk
+/// never holds up the loop and a later save never lands before an earlier
+/// one. `done` finishes once `saves` is dropped and everything sent is saved.
+struct Writer {
+    saves: mpsc::UnboundedSender<Save>,
+    done: JoinHandle<()>,
+}
+
+impl Writer {
+    fn start(write: impl Fn(Save) + Send + Sync + 'static) -> Self {
+        let write = Arc::new(write);
+        let (saves, mut queue) = mpsc::unbounded_channel();
+        let done = tokio::spawn(async move {
+            while let Some(save) = queue.recv().await {
+                let write = Arc::clone(&write);
+                if let Err(error) = tokio::task::spawn_blocking(move || write(save)).await {
+                    warn!("a file save stopped: {error}");
+                }
+            }
+        });
+        Self { saves, done }
+    }
+}
+
 /// What effects reach: the client, the way back for answers, the folder
-/// files are saved in, and GitHub's releases with their cache.
+/// files are saved in and the writer that saves them, and GitHub's releases
+/// with their cache.
 struct Outside<'a, C> {
     client: &'a C,
     answers: mpsc::UnboundedSender<Event>,
     files: Option<PathBuf>,
+    saves: mpsc::UnboundedSender<Save>,
     releases: Option<&'a ReleaseCheck>,
 }
 
 impl<C: TodoistClient> Outside<'_, C> {
     /// Carries out `effect`. A request runs in its own task and comes back
-    /// as an event; saving a file happens here, in order.
+    /// as an event; a sync token goes to the writer.
     fn execute(&self, state: &State, effect: Effect) -> ControlFlow<()> {
         match effect {
             Effect::Quit => return ControlFlow::Break(()),
@@ -286,10 +379,12 @@ impl<C: TodoistClient> Outside<'_, C> {
                 });
             }
             Effect::PersistSyncToken(sync_token) => {
-                if let Some(dir) = &self.files
-                    && let Err(error) = (SyncState { sync_token }).save(dir)
-                {
-                    warn!(error = %error, "failed to persist sync token");
+                if let Some(dir) = &self.files {
+                    // The writer outlives the loop, so this send cannot fail.
+                    let _ = self.saves.send(Save::SyncToken {
+                        dir: dir.clone(),
+                        sync_token,
+                    });
                 }
             }
             Effect::CheckRelease => {
@@ -563,6 +658,137 @@ mod tests {
 
         assert_eq!(resumed, "fake");
         assert_eq!(without_files, "*");
+    }
+
+    /// An empty folder for one test.
+    fn temp_dir(test: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("ratatoist-runtime-{test}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn two_sync_tokens_in_a_row_leave_the_second_on_disk() {
+        let dir = temp_dir("order");
+        let client = FakeClient::new();
+        let writer = Writer::start(|save| {
+            // Were saves run side by side, the first would land last.
+            if matches!(&save, Save::SyncToken { sync_token, .. } if sync_token == "first") {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            save.write();
+        });
+        let (answers, _) = mpsc::unbounded_channel();
+        let outside = Outside {
+            client: &client,
+            answers,
+            files: Some(dir.clone()),
+            saves: writer.saves,
+            releases: None,
+        };
+        let state = State::new(now());
+
+        for sync_token in ["first", "second"] {
+            let flow = outside.execute(&state, Effect::PersistSyncToken(sync_token.to_owned()));
+            assert!(flow.is_continue());
+        }
+        drop(outside);
+        writer.done.await.unwrap();
+
+        let saved = SyncState::load(&dir).sync_token;
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(saved, "second");
+    }
+
+    #[tokio::test]
+    async fn the_sync_token_sent_before_quit_is_on_disk_when_run_returns() {
+        let dir = temp_dir("quit");
+        let (started, first_started) = tokio::sync::oneshot::channel();
+        let started = std::sync::Mutex::new(Some(started));
+        let writer = Writer::start(move |save| {
+            if let Some(started) = started.lock().unwrap().take() {
+                let _ = started.send(());
+            }
+            std::thread::sleep(Duration::from_millis(100));
+            save.write();
+        });
+        let q = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('q'));
+        let input = futures_util::stream::once(async move {
+            first_started.await.unwrap();
+            Ok(TerminalEvent::Key(q))
+        })
+        .chain(futures_util::stream::pending());
+        let state = initial_state(&Config::default(), Some(&dir));
+        let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+
+        let files = Some(dir.as_path());
+        let client = FakeClient::new();
+        let shutdown = std::future::pending();
+        run_writing(
+            &mut app,
+            &client,
+            Box::pin(input),
+            shutdown,
+            files,
+            None,
+            writer,
+        )
+        .await
+        .unwrap();
+
+        let saved = SyncState::load(&dir).sync_token;
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(saved, "fake");
+    }
+
+    #[tokio::test]
+    async fn a_held_up_save_does_not_stop_keys_or_redraws() {
+        let dir = temp_dir("held");
+        let (started, first_started) = tokio::sync::oneshot::channel();
+        let started = std::sync::Mutex::new(Some(started));
+        let (open, gate) = std::sync::mpsc::channel::<()>();
+        let gate = std::sync::Mutex::new(gate);
+        let writer = Writer::start(move |save| {
+            if let Some(started) = started.lock().unwrap().take() {
+                let _ = started.send(());
+            }
+            let _ = gate.lock().unwrap().recv();
+            save.write();
+        });
+        let help = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('?'));
+        let saved = SyncState::path(&dir);
+        let key_while_held = futures_util::stream::once(async move {
+            first_started.await.unwrap();
+            Ok(TerminalEvent::Key(help))
+        });
+        // The loop asks for the next input only once it has handled and
+        // drawn the key, so the save must still be held here.
+        let then_open_the_gate = futures_util::stream::once(async move {
+            assert!(!saved.exists(), "the save finished before the key");
+            open.send(()).unwrap();
+        })
+        .filter_map(|()| std::future::ready(None::<io::Result<TerminalEvent>>));
+        let input = Box::pin(key_while_held.chain(then_open_the_gate));
+        let state = initial_state(&Config::default(), Some(&dir));
+        let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+
+        let files = Some(dir.as_path());
+        let client = FakeClient::new();
+        let shutdown = std::future::pending();
+        run_writing(&mut app, &client, input, shutdown, files, None, writer)
+            .await
+            .unwrap();
+
+        let token = SyncState::load(&dir).sync_token;
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(matches!(
+            app.state().top_modal(),
+            Some(crate::app::Modal::Cheatsheet { .. })
+        ));
+        assert!(app.frames_drawn() > 1);
+        assert_eq!(token, "fake");
     }
 
     #[test]

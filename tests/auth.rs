@@ -600,7 +600,7 @@ async fn run_auth(
         move || Ok(config_dir),
         |token| HttpClient::with_config(token, config),
         auth::Console {
-            input: input.as_bytes(),
+            input: std::io::Cursor::new(input.to_owned()),
             out: &mut out,
             notes: &mut notes,
         },

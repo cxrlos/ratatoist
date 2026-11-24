@@ -59,7 +59,7 @@ async fn start(cli: Cli) -> Result<()> {
     let _log_guard = logging::init(&paths::state_dir()?)?;
     let mut state = runtime::initial_state(&config, Some(&config_dir));
     let releases = release_check(&cli, &config, &mut state);
-    let resolved = match auth::resolve() {
+    let resolved = match tokio::task::spawn_blocking(auth::resolve).await? {
         Ok(resolved) => resolved,
         Err(error) if runtime::is_missing_token(&error) => {
             state.not_loaded(LoadError::NoToken);
