@@ -3,7 +3,7 @@
 //! Due dates read, count and filter the same way whether they carry a time
 //! or not, and every count matches the rows its list shows.
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use insta::assert_snapshot;
 use ratatoist::app::{App, Event, ListFilter, OverviewStats, Screen, State, update};
 use ratatoist::todoist::model::Priority;
@@ -183,4 +183,54 @@ fn the_today_counts_match_the_today_list() {
     let rows = app.state().visible_tasks().len();
     assert_eq!(rows, 4);
     assert!(shows(&app, "Overdue (3)"));
+}
+
+/// A hypothetical delta, not recorded from Todoist: two tasks with a fixed
+/// timezone, which Todoist sends as instants in UTC, one at 23:30 local
+/// time today and one at 00:30 local time tomorrow.
+fn near_midnight() -> Box<SyncResponse> {
+    let local = |day: u32, hour: u32, minute: u32| {
+        let naive = NaiveDate::from_ymd_opt(2026, 11, day)
+            .and_then(|day| day.and_hms_opt(hour, minute, 0))
+            .unwrap();
+        let instant = Local.from_local_datetime(&naive).earliest().unwrap();
+        instant
+            .with_timezone(&Utc)
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string()
+    };
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "due-dates-2",
+        "items": [
+            { "id": "t-tonight", "content": "Submit the form tonight", "child_order": 11,
+              "priority": 1, "project_id": "p-inbox",
+              "due": { "date": local(22, 23, 30), "timezone": "America/Mexico_City" } },
+            { "id": "t-after-midnight", "content": "Catch the night bus", "child_order": 12,
+              "priority": 1, "project_id": "p-inbox",
+              "due": { "date": local(23, 0, 30), "timezone": "America/Mexico_City" } }
+        ]
+    });
+    Box::new(serde_json::from_value(delta).unwrap())
+}
+
+#[test]
+fn a_fixed_timezone_task_late_tonight_shows_in_today_and_its_count() {
+    let mut state = synced();
+    update(&mut state, Event::Synced(Ok(near_midnight())));
+    state.screen = Screen::Today;
+
+    let app = App::new(TestBackend::new(120, 36), state).unwrap();
+
+    let today: Vec<&str> = app
+        .state()
+        .visible_tasks()
+        .iter()
+        .map(|t| t.id.as_str())
+        .collect();
+    assert!(today.contains(&"t-tonight"), "{today:?}");
+    assert!(!today.contains(&"t-after-midnight"), "{today:?}");
+    assert_eq!(app.state().overview_stats().due_today, 2);
+    assert!(shows(&app, "Submit the form tonight"));
+    assert!(!shows(&app, "Catch the night bus"));
 }

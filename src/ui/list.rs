@@ -385,7 +385,12 @@ fn due_span(state: &State, task: &Task) -> Option<Span<'static>> {
             style::muted(state.theme()),
         ));
     }
-    let due = dates::format_due(task.due.as_ref()?, state.today, state.theme());
+    let due = dates::format_due(
+        task.due.as_ref()?,
+        state.today,
+        &state.now.timezone(),
+        state.theme(),
+    );
     Some(Span::styled(due.text, due.style))
 }
 

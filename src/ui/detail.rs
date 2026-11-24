@@ -238,8 +238,9 @@ fn due_pieces(state: &State, task: &Task) -> Pieces {
     let Some(due) = &task.due else {
         return vec![("None".to_owned(), muted)];
     };
-    let formatted = dates::format_due(due, state.today, state.theme());
-    let spelled_out = State::due_day(task)
+    let formatted = dates::format_due(due, state.today, &state.now.timezone(), state.theme());
+    let spelled_out = state
+        .due_day(task)
         .map(|day| (day.format("%b %-d").to_string(), day))
         .filter(|(short, _)| !formatted.text.contains(short.as_str()));
     let mut pieces = vec![(formatted.text, formatted.style)];

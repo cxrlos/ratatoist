@@ -12,7 +12,7 @@ use crate::ui::dates::{self, DueBucket};
 impl State {
     /// Where `task`'s due date falls today.
     pub fn due_bucket(&self, task: &Task) -> DueBucket {
-        dates::due_bucket(task.due.as_ref(), self.today)
+        dates::due_bucket(task.due.as_ref(), self.today, &self.now.timezone())
     }
 
     /// Unchecked, not deleted, and unassigned or assigned to the user: the
@@ -205,7 +205,7 @@ impl State {
             })
             .collect();
         tasks.sort_by(|a, b| {
-            let day = |t: &Task| t.due.as_ref().map(|d| d.date.clone()).unwrap_or_default();
+            let day = |t: &Task| (self.due_day(t), t.due.as_ref().map(|d| d.date.clone()));
             day(a).cmp(&day(b)).then(a.child_order.cmp(&b.child_order))
         });
         tasks
@@ -217,10 +217,10 @@ impl State {
         let mut rows = Vec::with_capacity(tasks.len() + 7);
         let mut index = 0;
         while let Some(first) = tasks.get(index) {
-            let day = Self::due_day(first);
+            let day = self.due_day(first);
             let group: Vec<&Task> = tasks[index..]
                 .iter()
-                .take_while(|t| Self::due_day(t) == day)
+                .take_while(|t| self.due_day(t) == day)
                 .copied()
                 .collect();
             index += group.len();
@@ -250,10 +250,10 @@ impl State {
         filter != ListFilter::Completed && self.narrowed_to(task, filter)
     }
 
-    /// The day `task` is due, when it has a due date that parses.
-    pub fn due_day(task: &Task) -> Option<NaiveDate> {
-        let due = task.due.as_ref()?;
-        NaiveDate::parse_from_str(dates::date_part(&due.date), "%Y-%m-%d").ok()
+    /// The day `task` is due in the user's zone, when it has a due date
+    /// that parses.
+    pub fn due_day(&self, task: &Task) -> Option<NaiveDate> {
+        dates::due_day(task.due.as_ref()?, &self.now.timezone())
     }
 
     /// Today: the Overdue group, which folds, then the tasks due today.
@@ -269,17 +269,9 @@ impl State {
             })
             .collect();
         tasks.sort_by(|a, b| {
-            let a_date = a
-                .due
-                .as_ref()
-                .map(|d| dates::date_part(&d.date))
-                .unwrap_or("");
-            let b_date = b
-                .due
-                .as_ref()
-                .map(|d| dates::date_part(&d.date))
-                .unwrap_or("");
-            a_date.cmp(b_date).then(a.child_order.cmp(&b.child_order))
+            self.due_day(a)
+                .cmp(&self.due_day(b))
+                .then(a.child_order.cmp(&b.child_order))
         });
         let (overdue, today): (Vec<&Task>, Vec<&Task>) = tasks
             .into_iter()
