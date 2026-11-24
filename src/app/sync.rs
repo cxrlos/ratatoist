@@ -47,7 +47,7 @@ impl OptimisticOp {
 }
 
 /// What a full sync reads: at startup and on a forced re-sync.
-const FULL_SYNC_RESOURCES: [&str; 9] = [
+const FULL_SYNC_RESOURCES: [&str; 10] = [
     "items",
     "projects",
     "sections",
@@ -56,11 +56,19 @@ const FULL_SYNC_RESOURCES: [&str; 9] = [
     "collaborators",
     "workspaces",
     "folders",
+    "reminders",
     "user",
 ];
 
 /// What an incremental sync reads.
-const INCREMENTAL_SYNC_RESOURCES: [&str; 5] = ["items", "projects", "sections", "labels", "notes"];
+const INCREMENTAL_SYNC_RESOURCES: [&str; 6] = [
+    "items",
+    "projects",
+    "sections",
+    "labels",
+    "notes",
+    "reminders",
+];
 
 /// Everything, from sync token `*`.
 pub(crate) fn full_sync_request() -> SyncRequest {
@@ -650,7 +658,15 @@ fn collect_project_subtree(parent_id: Option<&str>, all: &[Project], out: &mut V
 
 #[cfg(test)]
 mod tests {
-    use super::new_uuid;
+    use super::{full_sync_request, incremental_sync_request, new_uuid};
+
+    #[test]
+    fn every_sync_reads_reminders() {
+        let reads = |types: Vec<String>| types.iter().any(|t| t == "reminders");
+
+        assert!(reads(full_sync_request().resource_types));
+        assert!(reads(incremental_sync_request("token").resource_types));
+    }
 
     #[test]
     fn uuids_are_version_4_and_differ() {

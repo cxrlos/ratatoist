@@ -1,10 +1,10 @@
 use jiff::Timestamp;
-use jiff::civil::{Date, Time};
+use jiff::civil::{Date, DateTime, Time};
 use jiff::tz::TimeZone;
 use ratatui::style::Style;
 
 use super::theme::Theme;
-use crate::todoist::model::Due;
+use crate::todoist::model::{Deadline, Due, Duration, DurationUnit, Reminder, ReminderKind};
 
 pub struct FormattedDue {
     pub text: String,
@@ -72,17 +72,86 @@ pub fn format_due(due: &Due, today: Date, zone: &TimeZone, theme: &Theme) -> For
 /// rather than the next date. The detail shows the rule beside the date.
 fn display_label(due: &Due, day: Option<Date>, today: Date) -> String {
     let day = match day {
-        Some(day) => match days_away(day, today) {
-            Some(0) => "today".to_string(),
-            Some(1) => "tomorrow".to_string(),
-            Some(-1) => "yesterday".to_string(),
-            _ => day.strftime("%b %-d").to_string(),
-        },
+        Some(day) => day_label(day, today),
         None => date_part(&due.date).to_string(),
     };
     match time_part(due) {
         Some(time) => format!("{day} {time}"),
         None => day,
+    }
+}
+
+/// `day` relative to `today` where that is near, else as `Nov 28`.
+fn day_label(day: Date, today: Date) -> String {
+    match days_away(day, today) {
+        Some(0) => "today".to_string(),
+        Some(1) => "tomorrow".to_string(),
+        Some(-1) => "yesterday".to_string(),
+        _ => day.strftime("%b %-d").to_string(),
+    }
+}
+
+/// When `deadline` is, as `tomorrow` or `Dec 1`, in the deadline style, or
+/// the missed one once its day has passed; `None` when its date does not
+/// parse.
+pub fn format_deadline(deadline: &Deadline, today: Date, theme: &Theme) -> Option<FormattedDue> {
+    let day = Date::strptime("%Y-%m-%d", &deadline.date).ok()?;
+    let style = if day < today {
+        theme.deadline_missed()
+    } else {
+        theme.deadline()
+    };
+    Some(FormattedDue {
+        text: day_label(day, today),
+        style,
+    })
+}
+
+/// How long `duration` is, as `45 min`, `1 h 30 min` or `2 days`.
+pub fn format_duration(duration: &Duration) -> String {
+    match duration.unit {
+        DurationUnit::Minute => minutes(i64::from(duration.amount)),
+        DurationUnit::Day => plural(i64::from(duration.amount), "day"),
+        DurationUnit::Other => duration.amount.to_string(),
+    }
+}
+
+/// `count` minutes in hours and minutes, as `1 h 30 min`.
+fn minutes(count: i64) -> String {
+    match (count / 60, count % 60) {
+        (0, minutes) => format!("{minutes} min"),
+        (hours, 0) => format!("{hours} h"),
+        (hours, minutes) => format!("{hours} h {minutes} min"),
+    }
+}
+
+fn plural(count: i64, unit: &str) -> String {
+    let s = if count == 1 { "" } else { "s" };
+    format!("{count} {unit}{s}")
+}
+
+/// When `reminder` goes off, as `30 min before` or `tomorrow 8:00` in
+/// `zone`; `None` for a location reminder or a kind this version does not
+/// know, which the detail leaves out.
+pub fn format_reminder(reminder: &Reminder, today: Date, zone: &TimeZone) -> Option<String> {
+    match reminder.kind {
+        ReminderKind::Relative => Some(match reminder.minute_offset.unwrap_or(0) {
+            0 => "at the due time".to_owned(),
+            offset => format!("{} before", minutes(offset)),
+        }),
+        ReminderKind::Absolute => {
+            let due = reminder.due.as_ref()?;
+            let at = match due.date.parse::<Timestamp>() {
+                Ok(instant) => zone.to_datetime(instant),
+                Err(_) => due.date.parse::<DateTime>().ok()?,
+            };
+            Some(format!(
+                "{} {}",
+                day_label(at.date(), today),
+                at.time().strftime("%-H:%M")
+            ))
+        }
+        ReminderKind::Location | ReminderKind::Other => None,
     }
 }
 
@@ -112,8 +181,11 @@ mod tests {
     use jiff::civil::{Date, date};
     use jiff::tz::{self, TimeZone};
 
-    use super::{DueBucket, date_part, due_bucket, format_due};
-    use crate::todoist::model::Due;
+    use super::{
+        DueBucket, date_part, due_bucket, format_deadline, format_due, format_duration,
+        format_reminder,
+    };
+    use crate::todoist::model::{Deadline, Due, Duration, DurationUnit, Reminder, ReminderKind};
     use crate::ui::theme::Theme;
 
     const UTC: TimeZone = TimeZone::UTC;
@@ -134,6 +206,70 @@ mod tests {
     /// UTC+9, as `Asia/Tokyo`.
     fn east() -> TimeZone {
         TimeZone::fixed(tz::offset(9))
+    }
+
+    fn deadline(date: &str) -> Deadline {
+        Deadline {
+            date: date.to_owned(),
+            lang: None,
+        }
+    }
+
+    #[test]
+    fn a_deadline_reads_relative_to_today_and_is_missed_once_past() {
+        let theme = Theme::built_in("nord").unwrap();
+        let on = |date: &str| format_deadline(&deadline(date), monday(), &theme).unwrap();
+
+        assert_eq!(on("2026-11-23").text, "today");
+        assert_eq!(on("2026-11-23").style, theme.deadline());
+        assert_eq!(on("2026-12-01").text, "Dec 1");
+        assert_eq!(on("2026-11-20").text, "Nov 20");
+        assert_eq!(on("2026-11-20").style, theme.deadline_missed());
+        assert!(format_deadline(&deadline(""), monday(), &theme).is_none());
+    }
+
+    #[test]
+    fn a_duration_reads_in_minutes_hours_or_days() {
+        let of = |amount, unit| format_duration(&Duration { amount, unit });
+
+        assert_eq!(of(45, DurationUnit::Minute), "45 min");
+        assert_eq!(of(60, DurationUnit::Minute), "1 h");
+        assert_eq!(of(90, DurationUnit::Minute), "1 h 30 min");
+        assert_eq!(of(1, DurationUnit::Day), "1 day");
+        assert_eq!(of(3, DurationUnit::Day), "3 days");
+        assert_eq!(of(2, DurationUnit::Other), "2");
+    }
+
+    #[test]
+    fn reminders_read_as_an_offset_or_a_local_time_and_location_ones_hide() {
+        let relative = |offset| Reminder {
+            kind: ReminderKind::Relative,
+            minute_offset: Some(offset),
+            ..Reminder::default()
+        };
+        let absolute = |date: &str| Reminder {
+            kind: ReminderKind::Absolute,
+            due: Some(due(date)),
+            ..Reminder::default()
+        };
+        let read = |reminder: &Reminder, zone: &TimeZone| format_reminder(reminder, monday(), zone);
+
+        assert_eq!(read(&relative(30), &UTC).unwrap(), "30 min before");
+        assert_eq!(read(&relative(0), &UTC).unwrap(), "at the due time");
+        let utc = absolute("2026-11-24T08:00:00.000000Z");
+        assert_eq!(read(&utc, &UTC).unwrap(), "tomorrow 8:00");
+        assert_eq!(read(&utc, &east()).unwrap(), "tomorrow 17:00");
+        assert_eq!(read(&utc, &west()).unwrap(), "tomorrow 2:00");
+        assert_eq!(
+            read(&absolute("2026-11-30T18:30:00"), &east()).unwrap(),
+            "Nov 30 18:30"
+        );
+        let location = Reminder {
+            kind: ReminderKind::Location,
+            ..Reminder::default()
+        };
+        assert!(read(&location, &UTC).is_none());
+        assert!(read(&Reminder::default(), &UTC).is_none());
     }
 
     fn due(date: &str) -> Due {

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
 
 use super::state::UserRecord;
-use crate::todoist::model::{Comment, Folder, Label, Project, Section, Task, Workspace};
+use crate::todoist::model::{Comment, Folder, Label, Project, Reminder, Section, Task, Workspace};
 use crate::todoist::sync::SyncResponse;
 
 /// A stamp no write has used yet. Stamps are unique across every table, so
@@ -33,7 +33,7 @@ macro_rules! keyed_by_id {
     };
 }
 
-keyed_by_id!(Task, Project, Section, Label, Workspace, Folder);
+keyed_by_id!(Task, Project, Section, Label, Workspace, Folder, Reminder);
 
 /// Entities in the order they arrived, found by id in constant time. Reads
 /// see a slice; every write goes through a method, which takes a new stamp.
@@ -235,6 +235,8 @@ pub struct Store {
     pub labels: Table<Label>,
     pub workspaces: Table<Workspace>,
     pub folders: Table<Folder>,
+    /// Every reminder on every task; [`Store::reminders_of`] finds a task's.
+    pub reminders: Table<Reminder>,
     /// The comments known for each task, by task id.
     pub comments_by_task: HashMap<String, Vec<Comment>>,
     /// The user and the collaborators, by id.
@@ -318,6 +320,10 @@ impl Store {
             self.folders
                 .replace_all(folders.into_iter().filter(|f| !f.is_deleted));
         }
+        if let Some(reminders) = resp.reminders {
+            self.reminders
+                .replace_all(reminders.into_iter().filter(|r| !r.is_deleted));
+        }
         self.merge_people(resp.collaborators, resp.user);
     }
 
@@ -355,6 +361,10 @@ impl Store {
             let deleted = folder.is_deleted;
             upsert_or_remove(&mut self.folders, folder, deleted);
         }
+        for reminder in resp.reminders.into_iter().flatten() {
+            let deleted = reminder.is_deleted;
+            upsert_or_remove(&mut self.reminders, reminder, deleted);
+        }
         for note in resp.notes.into_iter().flatten() {
             let task_id = comment_task(&note);
             if note.is_deleted {
@@ -371,6 +381,11 @@ impl Store {
             merged.comments.push(task_id);
         }
         self.merge_people(resp.collaborators, resp.user);
+    }
+
+    /// The reminders on the task `task_id`, in the order they arrived.
+    pub fn reminders_of<'a>(&'a self, task_id: &'a str) -> impl Iterator<Item = &'a Reminder> {
+        self.reminders.iter().filter(move |r| r.item_id == task_id)
     }
 
     /// Learns the names of collaborators and the user; a name already known
@@ -467,8 +482,8 @@ mod tests {
             .collect()
     }
 
-    fn ids(table: &Table<Task>) -> Vec<&str> {
-        table.iter().map(|t| t.id.as_str()).collect()
+    fn ids<T: Keyed>(table: &Table<T>) -> Vec<&str> {
+        table.iter().map(Keyed::key).collect()
     }
 
     #[test]
@@ -572,6 +587,59 @@ mod tests {
             store.tasks.by_id("a").map(|t| t.content.as_str()),
             Some("mine")
         );
+    }
+
+    fn reminder(id: &str, task_id: &str, deleted: bool) -> Reminder {
+        Reminder {
+            id: id.to_owned(),
+            item_id: task_id.to_owned(),
+            is_deleted: deleted,
+            ..Reminder::default()
+        }
+    }
+
+    fn reminders(full: bool, reminders: Vec<Reminder>) -> SyncResponse {
+        SyncResponse {
+            reminders: Some(reminders),
+            ..SyncResponse::empty(full)
+        }
+    }
+
+    #[test]
+    fn reminders_are_replaced_upserted_and_deleted_by_id() {
+        let mut store = Store::default();
+        store.merge(
+            reminders(
+                true,
+                vec![
+                    reminder("r1", "a", false),
+                    reminder("r2", "a", false),
+                    reminder("r3", "b", true),
+                ],
+            ),
+            |_| false,
+        );
+        assert_eq!(ids(&store.reminders), ["r1", "r2"]);
+
+        store.merge(
+            reminders(
+                false,
+                vec![
+                    reminder("r1", "b", false),
+                    reminder("r2", "a", true),
+                    reminder("r4", "a", false),
+                ],
+            ),
+            |_| false,
+        );
+        assert_eq!(ids(&store.reminders), ["r1", "r4"]);
+        assert_eq!(
+            store.reminders.by_id("r1").map(|r| r.item_id.as_str()),
+            Some("b")
+        );
+
+        store.merge(reminders(true, vec![reminder("r5", "a", false)]), |_| false);
+        assert_eq!(ids(&store.reminders), ["r5"]);
     }
 
     #[test]

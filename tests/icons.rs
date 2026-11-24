@@ -72,6 +72,7 @@ fn all(icons: &Icons) -> Vec<&'static str> {
         icons.fold_open,
         icons.fold_closed,
         icons.comments,
+        icons.deadline,
         icons.focus,
         icons.failed,
         icons.overdue,
@@ -152,6 +153,7 @@ fn the_views_draw_glyphs_from_the_set_chosen() {
         icons.priority(Priority::P1),
         icons.priority(Priority::P4),
         icons.comments,
+        icons.deadline,
     ] {
         assert!(
             nerd.contains(glyph),

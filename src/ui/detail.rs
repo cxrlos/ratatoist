@@ -169,6 +169,7 @@ fn build(
         }
         None => lines.extend(field(state, "Due", due_pieces(state, task), width)),
     }
+    lines.extend(plan_lines(state, task, width));
     let labels = if task.labels.is_empty() {
         vec![("None".to_owned(), muted)]
     } else {
@@ -262,6 +263,37 @@ fn due_pieces(state: &State, task: &Task) -> Pieces {
         ));
     }
     pieces
+}
+
+/// The Deadline, Duration and Reminders fields, each only when `task` has
+/// one: a reminder per row, location reminders left out.
+fn plan_lines(state: &State, task: &Task, width: u16) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let deadline = task
+        .deadline
+        .as_ref()
+        .and_then(|deadline| dates::format_deadline(deadline, state.today, state.theme()));
+    if let Some(deadline) = deadline {
+        let mark = format!("{} {}", state.icons().deadline, deadline.text);
+        lines.extend(field(
+            state,
+            "Deadline",
+            vec![(mark, deadline.style)],
+            width,
+        ));
+    }
+    if let Some(duration) = &task.duration {
+        let length = dates::format_duration(duration);
+        lines.extend(field(state, "Duration", plain(length), width));
+    }
+    let reminders = state.store.reminders_of(&task.id).filter_map(|reminder| {
+        dates::format_reminder(reminder, state.today, state.now.time_zone())
+    });
+    for (index, reminder) in reminders.enumerate() {
+        let name = if index == 0 { "Reminders" } else { "" };
+        lines.extend(field(state, name, plain(reminder), width));
+    }
+    lines
 }
 
 /// `Subtasks  1/3 done` and a row for each subtask, when `task` has any.

@@ -30,6 +30,7 @@ pub struct SyncResponse {
     pub collaborators: Option<Vec<super::model::Collaborator>>,
     pub workspaces: Option<Vec<super::model::Workspace>>,
     pub folders: Option<Vec<super::model::Folder>>,
+    pub reminders: Option<Vec<super::model::Reminder>>,
     pub collaborator_states: Option<Vec<CollaboratorState>>,
     pub user: Option<super::model::UserInfo>,
     #[serde(default)]
@@ -79,6 +80,7 @@ pub struct SyncCommandError {
 pub struct CollaboratorState {
     pub project_id: String,
     pub user_id: String,
+    #[serde(default)]
     pub state: String,
     #[serde(default)]
     pub is_deleted: bool,

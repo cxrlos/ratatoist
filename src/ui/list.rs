@@ -359,16 +359,26 @@ pub fn content_line(state: &State, task: &Task, depth: usize, icons: &Icons) -> 
             .iter()
             .map(|label| format!("@{label}"))
             .collect();
-        marks.push(labels.join(" "));
+        marks.push((labels.join(" "), muted));
     }
     if task.due.as_ref().is_some_and(|due| due.is_recurring) {
-        marks.push(icons.recurring.to_owned());
+        marks.push((icons.recurring.to_owned(), muted));
+    }
+    if let Some(deadline) = task
+        .deadline
+        .as_ref()
+        .and_then(|deadline| dates::format_deadline(deadline, state.today, theme))
+    {
+        marks.push((
+            format!("{} {}", icons.deadline, deadline.text),
+            deadline.style,
+        ));
     }
     if let Some(count) = task.note_count.filter(|count| *count > 0) {
-        marks.push(format!("{}{count}", icons.comments));
+        marks.push((format!("{}{count}", icons.comments), muted));
     }
-    for mark in marks {
-        spans.push(Span::styled(format!("  {mark}"), muted));
+    for (mark, style) in marks {
+        spans.push(Span::styled(format!("  {mark}"), style));
     }
     Line::from(spans)
 }

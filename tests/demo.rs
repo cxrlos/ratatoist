@@ -8,7 +8,7 @@ use jiff::tz::TimeZone;
 use jiff::{ToSpan, Zoned};
 use ratatoist::app::{App, Effect, Event, State};
 use ratatoist::todoist::demo::{self, DemoClient};
-use ratatoist::todoist::model::{CompletedTasksResponse, Task};
+use ratatoist::todoist::model::{CompletedTasksResponse, ReminderKind, Task};
 use ratatoist::todoist::sync::{SyncCommand, SyncRequest, SyncResponse};
 use ratatoist::todoist::{CompletedQuery, CompletedWindow, TodoistClient};
 use ratatui::backend::TestBackend;
@@ -79,6 +79,30 @@ fn the_account_for_now_has_fixed_dates() {
     let run = task("t-run").due.as_ref().unwrap();
     assert_eq!(run.date, "2026-11-23T07:30:00");
     assert_eq!(run.string.as_deref(), Some("every mon, wed, fri at 7:30"));
+}
+
+#[test]
+fn the_account_shows_deadlines_durations_and_reminders() {
+    let account = sync();
+    let tasks = account.items.unwrap();
+    let task = |id: &str| tasks.iter().find(|t| t.id == id).unwrap();
+    let reminders = account.reminders.unwrap();
+
+    assert_eq!(task("t-shopping").deadline.as_ref().unwrap().date, day(1));
+    assert_eq!(task("t-quotes").deadline.as_ref().unwrap().date, day(-2));
+    assert_eq!(task("t-plumber").duration.as_ref().unwrap().amount, 15);
+    let kinds: Vec<(&str, ReminderKind)> = reminders
+        .iter()
+        .map(|r| (r.item_id.as_str(), r.kind))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ("t-plumber", ReminderKind::Absolute),
+            ("t-cake", ReminderKind::Relative),
+            ("t-library", ReminderKind::Location),
+        ]
+    );
 }
 
 #[test]

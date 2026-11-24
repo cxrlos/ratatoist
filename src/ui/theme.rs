@@ -11,7 +11,8 @@
 //! `base05` until it reaches [`MUTED_MIN_CONTRAST`]), `base0C` accent,
 //! `base08` error. Priorities: p1 `base08`, p2 `base09`, p3 `base0D`, p4
 //! muted, as Todoist's red, orange, blue and none. Due dates: overdue error,
-//! today accent, the next six days text, later muted. Todoist's project
+//! today accent, the next six days text, later muted. Deadlines: p2, and
+//! error once their day has passed. Todoist's project
 //! colour names map to `base08`, `base09`, `base0B` to `base0E`, for project
 //! dots only.
 //!
@@ -421,6 +422,16 @@ impl Theme {
 
     pub fn due_future(&self) -> Style {
         Style::new().fg(self.due.later)
+    }
+
+    /// A task's deadline whose day has not passed.
+    pub fn deadline(&self) -> Style {
+        Style::new().fg(self.priorities.p2)
+    }
+
+    /// A task's deadline whose day has passed.
+    pub fn deadline_missed(&self) -> Style {
+        Style::new().fg(self.error)
     }
 
     pub fn mode_insert(&self) -> Style {

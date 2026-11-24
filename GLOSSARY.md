@@ -34,6 +34,14 @@ _Avoid_: deadline (a separate field), schedule
 The date a task must be finished by, separate from its due date; it has no time and never recurs.
 _Avoid_: due date, cutoff
 
+**Duration**:
+How long a task takes, in minutes or days.
+_Avoid_: estimate, length
+
+**Reminder**:
+A notification for a task: relative (minutes before its due time), absolute (at a date and time) or location (on entering or leaving a place). ratatoist shows the first two and reads the third without showing it.
+_Avoid_: alert, alarm
+
 **Recurring task**:
 A task whose due date repeats (`is_recurring`). Completing it moves the due date to the next occurrence instead of closing the task.
 _Avoid_: repeating task, routine

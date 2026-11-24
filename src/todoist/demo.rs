@@ -79,6 +79,7 @@ pub fn account(now: &Zoned) -> Account {
             "labels": labels(),
             "items": items,
             "notes": notes,
+            "reminders": reminders(&at),
         }),
         completed: json!({ "items": completed(&at) }),
     }
@@ -749,10 +750,57 @@ impl Item {
         self
     }
 
+    fn deadline(mut self, date: String) -> Self {
+        self.0["deadline"] = json!({ "date": date, "lang": "en" });
+        self
+    }
+
+    fn minutes(mut self, amount: u32) -> Self {
+        self.0["duration"] = json!({ "amount": amount, "unit": "minute" });
+        self
+    }
+
     fn added(mut self, at: String) -> Self {
         self.0["added_at"] = json!(at);
         self
     }
+}
+
+/// Time reminders on the plumber call and the cake, and a location one,
+/// which ratatoist reads but does not show.
+fn reminders(at: &Dates) -> Vec<Value> {
+    vec![
+        json!({
+            "id": "r-plumber",
+            "notify_uid": USER,
+            "item_id": "t-plumber",
+            "type": "absolute",
+            "due": { "date": at.timestamp(0, "14:00"), "is_recurring": false, "lang": "en" },
+            "is_deleted": false,
+            "is_urgent": false,
+        }),
+        json!({
+            "id": "r-cake",
+            "notify_uid": USER,
+            "item_id": "t-cake",
+            "type": "relative",
+            "minute_offset": 60,
+            "is_deleted": false,
+            "is_urgent": false,
+        }),
+        json!({
+            "id": "r-library",
+            "notify_uid": USER,
+            "item_id": "t-library",
+            "type": "location",
+            "name": "Library",
+            "loc_lat": "0.0",
+            "loc_long": "0.0",
+            "loc_trigger": "on_enter",
+            "radius": 100,
+            "is_deleted": false,
+        }),
+    ]
 }
 
 fn task(at: &Dates, id: &str, project_id: &str, content: &str) -> Item {
@@ -770,6 +818,7 @@ fn items(at: &Dates) -> Vec<Item> {
         )
         .p(2)
         .due(at.on(0))
+        .minutes(15)
         .labels(&["phone"])
         .describe("The kitchen tap drips all night.\nAsk whether Thursday morning works."),
         task(at, "t-library", INBOX, "Return the library books")
@@ -781,6 +830,7 @@ fn items(at: &Dates) -> Vec<Item> {
             .labels(&["computer"]),
         task(at, "t-shopping", INBOX, "買い物リストを作る")
             .due(at.on(0))
+            .deadline(at.day(1))
             .labels(&["quick"]),
         task(
             at,
@@ -802,6 +852,7 @@ fn items(at: &Dates) -> Vec<Item> {
         task(at, "t-cake", INBOX, "🎂 Order a cake for Saturday")
             .p(1)
             .due(at.at(4, "12:00"))
+            .minutes(45)
             .labels(&["errand"]),
         task(at, "t-weekend", INBOX, "Reply to Teo about the weekend")
             .p(3)
@@ -873,6 +924,7 @@ fn items(at: &Dates) -> Vec<Item> {
         )
         .p(1)
         .due(at.on(-3))
+        .deadline(at.day(-2))
         .labels(&["phone", "waiting"]),
         task(at, "t-handles", "p-kitchen", "Choose the cabinet handles")
             .p(3)

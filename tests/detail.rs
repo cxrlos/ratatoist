@@ -339,6 +339,75 @@ fn ctrl_d_scrolls_a_long_description_half_a_page() {
     assert_snapshot!(app.backend());
 }
 
+/// "Call the dentist" due today at 10:00, with a deadline on Tuesday, a
+/// 90-minute duration and a relative, an absolute and a location reminder.
+fn planned_call() -> Box<SyncResponse> {
+    let delta = serde_json::json!({
+        "full_sync": false,
+        "sync_token": "fixture-token-2",
+        "items": [{
+            "id": "t-call",
+            "content": "Call the dentist",
+            "checked": false,
+            "child_order": 2,
+            "priority": 3,
+            "project_id": "p-inbox",
+            "due": { "date": "2026-11-22T10:00:00", "is_recurring": false },
+            "deadline": { "date": "2026-11-24", "lang": "en" },
+            "duration": { "amount": 90, "unit": "minute" },
+            "added_at": "2026-11-19T08:30:00Z"
+        }],
+        "reminders": [
+            { "id": "r1", "item_id": "t-call", "type": "relative", "minute_offset": 30 },
+            {
+                "id": "r2",
+                "item_id": "t-call",
+                "type": "absolute",
+                "due": { "date": "2026-11-23T08:00:00.000000Z" }
+            },
+            { "id": "r3", "item_id": "t-call", "type": "location", "name": "Clinic" }
+        ]
+    });
+    response(&delta.to_string())
+}
+
+#[test]
+fn the_detail_shows_the_deadline_duration_and_time_reminders() {
+    let mut app = sized(120, 36);
+    app.handle(Event::Synced(Ok(planned_call()))).unwrap();
+    open_call_detail(&mut app);
+
+    assert!(shows(&app, "Deadline  ⚑ Nov 24"), "{:#?}", screen(&app));
+    assert!(shows(&app, "Duration  1 h 30 min"));
+    assert!(shows(&app, "Reminders 30 min before"));
+    assert!(shows(&app, "          tomorrow 8:00"));
+    assert!(!shows(&app, "Clinic"));
+}
+
+#[test]
+fn the_detail_leaves_out_the_plan_fields_a_task_does_not_have() {
+    let mut app = sized(120, 36);
+    open_call_detail(&mut app);
+
+    assert!(shows(&app, "Due"), "{:#?}", screen(&app));
+    for name in ["Deadline", "Duration", "Reminders"] {
+        assert!(!shows(&app, name), "{name}: {:#?}", screen(&app));
+    }
+}
+
+#[test]
+fn a_row_marks_its_deadline() {
+    let mut app = sized(120, 36);
+    app.handle(Event::Synced(Ok(planned_call()))).unwrap();
+    send(&mut app, [key('1')]);
+
+    let row = screen(&app)
+        .into_iter()
+        .find(|line| line.contains("Call the dentist"))
+        .unwrap();
+    assert!(row.contains("⚑ Nov 24"), "{row}");
+}
+
 #[test]
 fn scrolling_stops_at_the_end_of_the_detail() {
     let mut app = long_detail_at_80x24();

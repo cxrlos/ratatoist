@@ -60,6 +60,8 @@ pub struct Icons {
     pub fold_closed: &'static str,
     /// Before a task's comment count.
     pub comments: &'static str,
+    /// Before a task's deadline.
+    pub deadline: &'static str,
     /// The marker of the focused row.
     pub focus: &'static str,
     /// The marker of a row whose write Todoist refused.
@@ -114,6 +116,7 @@ const UNICODE: Icons = Icons {
     fold_open: "▿",
     fold_closed: "▹",
     comments: "✉",
+    deadline: "⚑",
     focus: "›",
     failed: "✘",
     overdue: "▲",
@@ -145,6 +148,8 @@ const NERD: Icons = Icons {
     fold_closed: "\u{f0da}",
     // nf-fa-comment_o
     comments: "\u{f0e5}",
+    // nf-fa-flag
+    deadline: "\u{f024}",
     // nf-fa-angle_right
     focus: "\u{f105}",
     // nf-fa-times

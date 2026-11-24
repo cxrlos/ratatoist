@@ -1,25 +1,47 @@
+//! The entities Todoist's v1 API sends. Every field but an entity's id has a
+//! default and every enum an `Other` variant, so a field Todoist drops,
+//! renames or extends never fails the sync that carries it.
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Project {
     pub id: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub color: String,
+    #[serde(default)]
     pub parent_id: Option<String>,
+    #[serde(default)]
     pub child_order: i32,
+    #[serde(default)]
     pub is_shared: bool,
+    #[serde(default)]
     pub is_favorite: bool,
+    #[serde(default)]
     pub inbox_project: Option<bool>,
+    #[serde(default)]
     pub is_archived: Option<bool>,
+    #[serde(default)]
     pub is_deleted: Option<bool>,
+    #[serde(default)]
     pub is_collapsed: Option<bool>,
+    #[serde(default)]
     pub view_style: Option<String>,
+    #[serde(default)]
     pub created_at: Option<String>,
+    #[serde(default)]
     pub updated_at: Option<String>,
+    #[serde(default)]
     pub creator_uid: Option<String>,
+    #[serde(default)]
     pub role: Option<String>,
+    #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
     pub workspace_id: Option<String>,
+    #[serde(default)]
     pub folder_id: Option<String>,
 }
 
@@ -44,24 +66,39 @@ pub struct Task {
     pub priority: u8,
     #[serde(default)]
     pub project_id: String,
+    #[serde(default)]
     pub section_id: Option<String>,
+    #[serde(default)]
     pub parent_id: Option<String>,
     #[serde(default)]
     pub labels: Vec<String>,
+    #[serde(default)]
     pub due: Option<Due>,
-    pub deadline: Option<serde_json::Value>,
-    pub duration: Option<serde_json::Value>,
+    #[serde(default)]
+    pub deadline: Option<Deadline>,
+    #[serde(default)]
+    pub duration: Option<Duration>,
+    #[serde(default)]
     pub added_by_uid: Option<String>,
+    #[serde(default)]
     pub added_at: Option<String>,
+    #[serde(default)]
     pub responsible_uid: Option<String>,
+    #[serde(default)]
     pub assigned_by_uid: Option<String>,
+    #[serde(default)]
     pub note_count: Option<i32>,
+    #[serde(default)]
     pub user_id: Option<String>,
+    #[serde(default)]
     pub updated_at: Option<String>,
     #[serde(default)]
     pub is_deleted: bool,
+    #[serde(default)]
     pub completed_at: Option<String>,
+    #[serde(default)]
     pub completed_by_uid: Option<String>,
+    #[serde(default)]
     pub day_order: Option<i32>,
     #[serde(default)]
     pub is_collapsed: bool,
@@ -69,35 +106,125 @@ pub struct Task {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Due {
+    #[serde(default)]
     pub date: String,
     #[serde(default)]
     pub is_recurring: bool,
+    #[serde(default)]
     pub timezone: Option<String>,
+    #[serde(default)]
     pub string: Option<String>,
+    #[serde(default)]
     pub datetime: Option<String>,
+    #[serde(default)]
     pub lang: Option<String>,
+}
+
+/// The day a task must be done by, apart from the day it is due.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Deadline {
+    /// `YYYY-MM-DD`, with no time.
+    #[serde(default)]
+    pub date: String,
+    #[serde(default)]
+    pub lang: Option<String>,
+}
+
+/// How long a task takes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Duration {
+    #[serde(default)]
+    pub amount: u32,
+    #[serde(default)]
+    pub unit: DurationUnit,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DurationUnit {
+    Minute,
+    Day,
+    /// A unit this version does not know.
+    #[default]
+    #[serde(other)]
+    Other,
+}
+
+/// A reminder on a task. Which fields mean something depends on its kind:
+/// `due` for an absolute one, `minute_offset` before the task's due time
+/// for a relative one, the `loc_` fields for a location one.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Reminder {
+    pub id: String,
+    #[serde(default)]
+    pub item_id: String,
+    #[serde(default, rename = "type")]
+    pub kind: ReminderKind,
+    #[serde(default)]
+    pub notify_uid: Option<String>,
+    #[serde(default)]
+    pub due: Option<Due>,
+    #[serde(default)]
+    pub minute_offset: Option<i64>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub loc_lat: Option<String>,
+    #[serde(default)]
+    pub loc_long: Option<String>,
+    #[serde(default)]
+    pub loc_trigger: Option<String>,
+    #[serde(default)]
+    pub radius: Option<i64>,
+    #[serde(default)]
+    pub is_urgent: bool,
+    #[serde(default)]
+    pub is_deleted: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReminderKind {
+    Relative,
+    Absolute,
+    Location,
+    /// A kind this version does not know.
+    #[default]
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Label {
     pub id: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub color: String,
+    #[serde(default)]
     pub item_order: Option<i32>,
     #[serde(default)]
     pub is_favorite: bool,
+    #[serde(default)]
     pub is_deleted: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Section {
     pub id: String,
+    #[serde(default)]
     pub project_id: String,
+    #[serde(default)]
     pub section_order: Option<i32>,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub is_archived: Option<bool>,
+    #[serde(default)]
     pub is_deleted: Option<bool>,
+    #[serde(default)]
     pub is_collapsed: Option<bool>,
+    #[serde(default)]
     pub added_at: Option<String>,
 }
 
@@ -106,40 +233,50 @@ pub struct Comment {
     pub id: String,
     #[serde(default)]
     pub content: String,
+    #[serde(default)]
     pub posted_at: Option<String>,
-    #[serde(alias = "posted_uid")]
+    #[serde(default, alias = "posted_uid")]
     pub posted_by_uid: Option<String>,
+    #[serde(default)]
     pub project_id: Option<String>,
+    #[serde(default)]
     pub task_id: Option<String>,
-    #[serde(alias = "item_id")]
+    #[serde(default)]
     pub item_id: Option<String>,
-    #[serde(alias = "file_attachment")]
+    #[serde(default, alias = "file_attachment")]
     pub attachment: Option<serde_json::Value>,
     #[serde(default)]
     pub is_deleted: bool,
+    #[serde(default)]
     pub reactions: Option<serde_json::Value>,
+    #[serde(default)]
     pub uids_to_notify: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct UserInfo {
     pub id: String,
+    #[serde(default)]
     pub full_name: Option<String>,
+    #[serde(default)]
     pub email: Option<String>,
+    #[serde(default)]
     pub websocket_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Collaborator {
     pub id: String,
-    #[serde(alias = "full_name")]
+    #[serde(default, alias = "full_name")]
     pub name: Option<String>,
+    #[serde(default)]
     pub email: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Workspace {
     pub id: String,
+    #[serde(default)]
     pub name: String,
     #[serde(default)]
     pub is_deleted: bool,
@@ -148,8 +285,11 @@ pub struct Workspace {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Folder {
     pub id: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub workspace_id: String,
+    #[serde(default)]
     pub child_order: i32,
     #[serde(default)]
     pub is_deleted: bool,

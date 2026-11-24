@@ -1,0 +1,36 @@
+{
+  "full_sync": true,
+  "sync_token": "hypothetical-sync-token-drifted",
+  "projects": [
+    {
+      "id": "6Jf8VQXxpwv56VQ7",
+      "name": "Inbox",
+      "inbox_project": true,
+      "icon": "lightbulb",
+      "order_key": "a0",
+      "access": { "visibility": "restricted" }
+    }
+  ],
+  "items": [
+    {
+      "id": "6Jf8VQXxpwv56VT1",
+      "content": "Renew library card",
+      "due": { "string": "someday" },
+      "deadline": { "lang": "en" },
+      "duration": { "amount": 2, "unit": "week" },
+      "goal_ids": ["g1"]
+    }
+  ],
+  "reminders": [
+    { "id": "6Jf8VQXxpwv56VM9", "type": "geofence", "trigger": "on_arrival" }
+  ],
+  "labels": [{ "id": "2156154810", "order_key": "a1" }],
+  "sections": [{ "id": "6Jf8VQXxpwv56VR1", "name": "Spring" }],
+  "workspaces": [{ "id": "9001", "plan": "ENTERPRISE" }],
+  "folders": [
+    { "id": "9101", "name": "Planning", "default_order": 1, "default_order_key": null }
+  ],
+  "collaborator_states": [{ "project_id": "6Jf8VQXxpwv56VQ7", "user_id": "1000002" }],
+  "sync_status": {},
+  "temp_id_mapping": {}
+}
