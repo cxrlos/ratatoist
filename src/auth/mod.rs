@@ -13,7 +13,7 @@ pub mod token;
 
 use std::fmt;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use keyring::{Keyring, KeyringError, MemoryKeyring, OsKeyring};
 pub use token::{ApiToken, InvalidApiToken};
@@ -272,22 +272,69 @@ pub fn logout(keyring: &impl Keyring, env_set: bool) -> Result<String, AuthError
 }
 
 /// Runs `ratatoist auth login | status | logout` against the real keyring
-/// and Todoist.
+/// and Todoist, reading a piped token from stdin and printing to stdout, with
+/// what the `config.toml` migration did on stderr.
 pub async fn run(command: AuthCommand) -> anyhow::Result<()> {
-    let env_set = std::env::var(TOKEN_VAR).is_ok_and(|raw| !raw.trim().is_empty());
+    run_with(
+        command,
+        &OsKeyring,
+        std::env::var(TOKEN_VAR).ok(),
+        || Ok(crate::config::dir_to_read(&crate::paths::config_dir()?)),
+        HttpClient::new,
+        Console {
+            input: io::stdin().lock(),
+            out: io::stdout(),
+            notes: io::stderr(),
+        },
+    )
+    .await
+}
+
+/// Where `ratatoist auth` reads a piped token and writes what it says.
+pub struct Console<R, O, E> {
+    /// The token for `auth login --stdin`.
+    pub input: R,
+    /// What the command prints.
+    pub out: O,
+    /// One line per thing the `config.toml` migration did.
+    pub notes: E,
+}
+
+/// [`run`] with its inputs given: `env` is the value of `TODOIST_API_TOKEN`,
+/// `config_dir` finds the folder holding `config.toml` (asked only by
+/// `status`), and `connect` builds the client that checks the token.
+pub async fn run_with<K, C, R, O, E>(
+    command: AuthCommand,
+    keyring: &K,
+    env: Option<String>,
+    config_dir: impl FnOnce() -> anyhow::Result<PathBuf>,
+    connect: impl FnOnce(&ApiToken) -> anyhow::Result<C>,
+    mut console: Console<R, O, E>,
+) -> anyhow::Result<()>
+where
+    K: Keyring,
+    C: TodoistClient,
+    R: io::BufRead,
+    O: Write,
+    E: Write,
+{
+    let env_set = env.as_deref().is_some_and(|raw| !raw.trim().is_empty());
     let output = match command {
         AuthCommand::Login { stdin } => {
             let token = if stdin {
-                read_token(io::stdin().lock())?
+                read_token(console.input)?
             } else {
                 prompt_token()?
             };
-            login(&OsKeyring, token, env_set, HttpClient::new).await?
+            login(keyring, token, env_set, connect).await?
         }
-        AuthCommand::Status => status(&resolve()?, HttpClient::new).await?,
-        AuthCommand::Logout => logout(&OsKeyring, env_set)?,
+        AuthCommand::Status => {
+            let resolved = resolve_from(env, keyring, &config_dir()?, &mut console.notes)?;
+            status(&resolved, connect).await?
+        }
+        AuthCommand::Logout => logout(keyring, env_set)?,
     };
-    println!("{output}");
+    writeln!(console.out, "{output}")?;
     Ok(())
 }
 
