@@ -391,7 +391,7 @@ pub fn content_line(
         .and_then(|deadline| dates::format_deadline(deadline, state.today, theme))
     {
         let full = format!("{} {}", icons.deadline, deadline.text);
-        let mark_width = |mark: &str| MARK_GAP.len() + text::width(mark);
+        let mark_width = |mark: &str| text::width(MARK_GAP) + text::width(mark);
         let before = spans
             .iter()
             .map(|span| text::width(&span.content))
