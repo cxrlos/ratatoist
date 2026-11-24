@@ -1376,3 +1376,85 @@ fn a_write_to_a_new_task_rejected_after_its_add_answers_rolls_back() {
     assert_eq!(rent.id, "t-rent");
     assert!(app.state().rollback_reason("t-rent").is_some());
 }
+
+/// The fixture's full sync with "Buy oat milk" renamed elsewhere.
+fn full_sync_with_milk_renamed() -> Event {
+    let mut full: serde_json::Value = serde_json::from_str(FULL_SYNC).unwrap();
+    let items = full["items"].as_array_mut().unwrap();
+    let milk = items.iter_mut().find(|t| t["id"] == "t-milk").unwrap();
+    milk["content"] = "Buy oat milk and bread".into();
+    full["sync_token"] = "full-token".into();
+    Event::Synced(Ok(Box::new(serde_json::from_value(full).unwrap())))
+}
+
+fn rejected(command: &SyncCommand) -> Event {
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"after-rejection",
+            "sync_status":{{"{}":{{"error_code":22,"error":"Item not found"}}}}}}"#,
+        command.uuid
+    );
+    Event::CommandsSent {
+        uuids: vec![command.uuid.clone()],
+        result: Ok(delta(&answer)),
+    }
+}
+
+#[test]
+fn a_full_sync_answer_keeps_a_write_in_flight() {
+    let mut app = from_cache("u1");
+    single_command(&send(&mut app, [key('1'), key('x')]));
+
+    send(&mut app, [full_sync_with_milk_renamed()]);
+
+    let milk = task(&app, "t-milk");
+    assert!(milk.checked, "the pending completion survives");
+    assert_eq!(milk.content, "Buy oat milk");
+}
+
+#[test]
+fn a_write_rejected_after_a_full_sync_restores_the_full_sync_s_task() {
+    let mut app = from_cache("u1");
+    let close = single_command(&send(&mut app, [key('1'), key('x')]));
+    send(&mut app, [full_sync_with_milk_renamed()]);
+
+    send(&mut app, [rejected(&close)]);
+
+    let milk = task(&app, "t-milk");
+    assert!(!milk.checked);
+    assert_eq!(milk.content, "Buy oat milk and bread");
+}
+
+#[test]
+fn a_write_to_a_task_a_full_sync_left_out_removes_it_when_rejected() {
+    let mut app = from_cache("u1");
+    let close = single_command(&send(&mut app, [key('1'), key('x')]));
+    let mut full: serde_json::Value = serde_json::from_str(FULL_SYNC).unwrap();
+    full["items"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|t| t["id"] != "t-milk");
+    send(
+        &mut app,
+        [Event::Synced(Ok(Box::new(
+            serde_json::from_value(full).unwrap(),
+        )))],
+    );
+    assert!(task(&app, "t-milk").checked, "kept while in flight");
+
+    send(&mut app, [rejected(&close)]);
+
+    assert!(app.state().store.tasks.iter().all(|t| t.id != "t-milk"));
+}
+
+#[test]
+fn a_full_sync_answer_keeps_a_task_being_added() {
+    let mut app = from_cache("u1");
+    let add = add_pay_rent(&mut app);
+
+    send(
+        &mut app,
+        [full_sync_with_milk_renamed(), add_answered(&add)],
+    );
+
+    assert_eq!(task(&app, "t-rent").content, "Pay rent");
+}

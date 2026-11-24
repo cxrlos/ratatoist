@@ -273,8 +273,9 @@ impl State {
         let ops = &self.temp_id_pending;
         let in_flight = |id: &str| !full && ops.values().any(|op| op.task() == Some(id));
         let mut merged = self.store.merge(resp, in_flight);
-        if full {
+        if let Some(before) = &merged.replaced_tasks {
             self.parked.clear();
+            self.keep_writes_in_flight(before);
         }
         for task in std::mem::take(&mut merged.parked) {
             self.parked.insert(task.id.clone(), task);
@@ -284,8 +285,11 @@ impl State {
         }
         if let Some(before) = &merged.replaced_tasks {
             self.keep_marks_of_unchanged_tasks(before);
-            // A full sync carries every due date as Todoist parsed it.
-            self.pending_due.clear();
+            // A full sync carries every due date as Todoist parsed it, but
+            // for a task still in flight.
+            let ops = &self.temp_id_pending;
+            self.pending_due
+                .retain(|id, _| ops.values().any(|op| op.task() == Some(id)));
         }
         for id in &merged.tasks {
             self.rolled_back.remove(id);
@@ -302,6 +306,37 @@ impl State {
         self.take_sync_token(token);
         self.last_sync_at = Some(self.now.clone());
         self.keep_focus_on(focused, effects);
+    }
+
+    /// A full sync replaced the tasks, `before` being the old ones: each
+    /// task with a write in flight keeps its local version, and what the
+    /// sync brought for it is parked as a delta's would be, so a rejection
+    /// lands the full sync's state rather than the older snapshot. A task
+    /// the sync left out parks as deleted, unless it is one being added,
+    /// which Todoist does not know yet.
+    fn keep_writes_in_flight(&mut self, before: &Table<Task>) {
+        let ops = &self.temp_id_pending;
+        let held: HashSet<&str> = ops.values().filter_map(OptimisticOp::task).collect();
+        for id in held {
+            let Some(local) = before.by_id(id) else {
+                continue;
+            };
+            let adding = ops
+                .values()
+                .any(|op| matches!(op, OptimisticOp::TaskAdded { temp_id } if temp_id == id));
+            match self.store.tasks.by_id(id) {
+                Some(incoming) => {
+                    self.parked.insert(id.to_owned(), incoming.clone());
+                }
+                None if !adding => {
+                    let mut gone = local.clone();
+                    gone.is_deleted = true;
+                    self.parked.insert(id.to_owned(), gone);
+                }
+                None => {}
+            }
+            self.store.apply_task(local.clone());
+        }
     }
 
     /// Logs each loop in the parents of the tasks or of the projects that
