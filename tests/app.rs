@@ -5,8 +5,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
 use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::runtime::{UiSettings, initial_state_from};
+use ratatoist::todoist::model::Task;
 use ratatoist::todoist::sync::{SyncCommand, SyncResponse};
-use ratatoist::todoist::{ClientError, LiveMessage};
+use ratatoist::todoist::{ClientError, CompletedWindow, LiveMessage};
 use ratatui::backend::TestBackend;
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
@@ -607,5 +608,77 @@ fn the_completed_filter_asks_for_the_project_s_completed_tasks() {
     assert!(matches!(
         effects.as_slice(),
         [Effect::FetchCompletedTasks(query)] if query.project_id.as_deref() == Some("p-inbox")
+            && query.window == CompletedWindow::latest(now().date_naive())
+    ));
+}
+
+fn completed(id: &str, content: &str) -> Task {
+    Task {
+        id: id.to_owned(),
+        content: content.to_owned(),
+        project_id: "p-inbox".to_owned(),
+        checked: true,
+        ..Task::default()
+    }
+}
+
+fn run_from_palette(app: &mut App<TestBackend>, query: &str) -> Vec<Effect> {
+    let mut events = vec![key(':')];
+    events.extend(query.chars().map(key));
+    events.push(press(KeyCode::Enter));
+    send(app, events)
+}
+
+#[test]
+fn load_older_completed_walks_back_one_window_at_a_time() {
+    let mut app = app();
+    let latest = CompletedWindow::latest(now().date_naive());
+    let Effect::FetchCompletedTasks(first) = send(&mut app, [key('1'), key('f'), key('2')])
+        .pop()
+        .unwrap()
+    else {
+        panic!("the completed filter asks for the completed tasks");
+    };
+    assert_eq!(run_from_palette(&mut app, "load older"), Vec::new());
+
+    send(
+        &mut app,
+        [Event::CompletedTasks {
+            query: first,
+            result: Ok(vec![completed("t-new", "Done this month")]),
+        }],
+    );
+    let effects = run_from_palette(&mut app, "load older");
+
+    let [Effect::FetchCompletedTasks(older)] = effects.as_slice() else {
+        panic!("{effects:?}");
+    };
+    assert_eq!(older.project_id.as_deref(), Some("p-inbox"));
+    assert_eq!(older.window, latest.before());
+    assert_eq!(older.window.until, latest.since);
+
+    send(
+        &mut app,
+        [Event::CompletedTasks {
+            query: older.clone(),
+            result: Ok(vec![
+                completed("t-old", "Done last summer"),
+                completed("t-new", "Done this month"),
+            ]),
+        }],
+    );
+
+    let cached = &app.state().completed_cache["p-inbox"];
+    let ids: Vec<&str> = cached.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["t-new", "t-old"]);
+    assert!(shows(&app, "Done last summer"));
+    assert!(shows(
+        &app,
+        &format!("Completed tasks loaded back to {}", older.window.since)
+    ));
+    let next = run_from_palette(&mut app, "load older");
+    assert!(matches!(
+        next.as_slice(),
+        [Effect::FetchCompletedTasks(query)] if query.window == older.window.before()
     ));
 }

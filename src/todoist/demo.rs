@@ -36,7 +36,7 @@ const INBOX: &str = "p-inbox";
 pub struct Account {
     /// The full sync (`sync_token` `*`) body.
     pub sync: Value,
-    /// The `GET /tasks/completed` body.
+    /// The `GET /tasks/completed/by_completion_date` body, for all time.
     pub completed: Value,
 }
 
@@ -82,7 +82,7 @@ pub fn account(today: NaiveDate) -> Account {
             "items": items,
             "notes": notes,
         }),
-        completed: json!({ "items": completed(&at), "next_cursor": null }),
+        completed: json!({ "items": completed(&at) }),
     }
 }
 
@@ -165,14 +165,20 @@ impl TodoistClient for DemoClient {
         let body = self.store().account.completed.clone();
         let response: CompletedTasksResponse = decode(body)?;
         Ok(response
-            .items
+            .into_tasks()
             .into_iter()
-            .map(|record| record.into_task())
             .filter(|task| {
                 query
                     .project_id
                     .as_ref()
                     .is_none_or(|id| *id == task.project_id)
+            })
+            .filter(|task| {
+                task.completed_at
+                    .as_deref()
+                    .and_then(|at| at.get(..10))
+                    .and_then(|day| day.parse().ok())
+                    .is_some_and(|day| query.window.contains(day))
             })
             .collect())
     }
@@ -321,16 +327,7 @@ impl Store {
             let mut item = items.remove(position);
             item["checked"] = json!(true);
             item["completed_at"] = json!(completed_at);
-            let record = json!({
-                "task_id": id,
-                "content": item["content"],
-                "completed_at": completed_at,
-                "project_id": item["project_id"],
-                "section_id": item["section_id"],
-                "user_id": USER,
-                "item_object": item,
-            });
-            self.completed().push(record);
+            self.completed().push(item);
         }
     }
 
@@ -341,10 +338,10 @@ impl Store {
         let mut next = Some(id.to_owned());
         while let Some(id) = next.take() {
             let completed = self.completed();
-            let Some(position) = completed.iter().position(|r| r["task_id"] == id.as_str()) else {
+            let Some(position) = completed.iter().position(|item| item["id"] == id.as_str()) else {
                 return;
             };
-            let mut item = completed.remove(position)["item_object"].take();
+            let mut item = completed.remove(position);
             item["checked"] = json!(false);
             item["completed_at"] = Value::Null;
             next = item["parent_id"].as_str().map(str::to_owned);
@@ -1114,16 +1111,8 @@ fn completed(at: &Dates) -> Vec<Value> {
         item["section_id"] = json!(section_id);
         item["checked"] = json!(true);
         item["completed_at"] = json!(completed_at);
-        json!({
-            "task_id": id,
-            "content": content,
-            "completed_at": completed_at,
-            "project_id": project_id,
-            "section_id": section_id,
-            "note_count": 0,
-            "user_id": USER,
-            "item_object": item,
-        })
+        item["completed_by_uid"] = json!(USER);
+        item
     };
     vec![
         done("t-dentist", INBOX, None, "Book the dentist check-up", 1),

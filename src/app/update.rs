@@ -19,7 +19,7 @@ use super::{Action, Editable, Effect, Event, State};
 use crate::keys::{self, Key, Resolution};
 use crate::todoist::model::{Comment, Due, Task};
 use crate::todoist::sync::SyncCommand;
-use crate::todoist::{CompletedQuery, LiveMessage};
+use crate::todoist::{CompletedQuery, CompletedWindow, LiveMessage};
 use crate::ui;
 use crate::ui::detail;
 
@@ -96,8 +96,8 @@ pub fn update(state: &mut State, event: Event) -> Update {
             state.comments_loaded(task_id, fetch_seq, result);
             Update::redraw(effects)
         }
-        Event::CompletedTasks { project_id, result } => {
-            state.completed_loaded(project_id, result);
+        Event::CompletedTasks { query, result } => {
+            state.completed_loaded(query, result);
             Update::redraw(effects)
         }
         Event::Live(message) => {
@@ -478,6 +478,7 @@ impl State {
                 true
             }
             Action::ToggleFavourite => self.toggle_favourite(effects),
+            Action::LoadOlderCompleted => self.load_older_completed(effects),
         }
     }
 
@@ -813,9 +814,33 @@ impl State {
         {
             effects.push(Effect::FetchCompletedTasks(CompletedQuery {
                 project_id: Some(pid),
-                since: None,
+                window: CompletedWindow::latest(self.today),
             }));
         }
+    }
+
+    /// The listed project and the oldest window of its completed tasks
+    /// loaded, while the list filter shows them.
+    pub(crate) fn listed_oldest_completed(&self) -> Option<(String, CompletedWindow)> {
+        if !matches!(self.list_filter, ListFilter::Completed | ListFilter::All) {
+            return None;
+        }
+        let pid = &self.list_project()?.id;
+        let oldest = self.oldest_completed.get(pid)?;
+        Some((pid.clone(), *oldest))
+    }
+
+    /// Asks for the listed project's completed tasks in the window before
+    /// the oldest one loaded.
+    fn load_older_completed(&mut self, effects: &mut Vec<Effect>) -> bool {
+        let Some((pid, oldest)) = self.listed_oldest_completed() else {
+            return false;
+        };
+        effects.push(Effect::FetchCompletedTasks(CompletedQuery {
+            project_id: Some(pid),
+            window: oldest.before(),
+        }));
+        false
     }
 
     fn open_detail(&mut self, effects: &mut Vec<Effect>) {

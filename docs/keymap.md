@@ -52,6 +52,7 @@ While the add-task form or a prompt has a text field, a character typed without 
 | `close-all-folds` | `zM` | `zM` | Fold every row |
 | `filter` | `f` | `f` | Pick what the list shows |
 | `sort` | `vs` | `vs` | Pick how the list is sorted |
+| `load-older-completed` |  |  | Load older completed tasks |
 
 ## Task detail (`[keys.detail]`)
 

@@ -137,36 +137,6 @@ pub struct Collaborator {
     pub email: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct CompletedRecord {
-    pub task_id: String,
-    pub content: String,
-    pub completed_at: String,
-    pub project_id: String,
-    pub section_id: Option<String>,
-    pub note_count: Option<i32>,
-    pub user_id: Option<String>,
-    pub item_object: Option<Task>,
-}
-
-impl CompletedRecord {
-    /// The full task when Todoist sent one, otherwise a checked task built
-    /// from the record.
-    pub fn into_task(self) -> Task {
-        self.item_object.unwrap_or_else(|| Task {
-            id: self.task_id,
-            content: self.content,
-            checked: true,
-            completed_at: Some(self.completed_at),
-            project_id: self.project_id,
-            section_id: self.section_id,
-            note_count: self.note_count,
-            user_id: self.user_id,
-            ..Default::default()
-        })
-    }
-}
-
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Workspace {
     pub id: String,
@@ -247,12 +217,26 @@ pub fn priority_label(p: u8) -> &'static str {
         .unwrap_or("P4  Normal")
 }
 
-// Completed tasks endpoint returns a wrapper.
+/// One page of `GET /tasks/completed/by_completion_date`.
 #[derive(Debug, Deserialize)]
 pub struct CompletedTasksResponse {
-    pub items: Vec<CompletedRecord>,
+    pub items: Vec<Task>,
     #[serde(default)]
     pub next_cursor: Option<String>,
+}
+
+impl CompletedTasksResponse {
+    /// Its tasks, each marked checked: the route lists only completed
+    /// tasks, whatever their `checked` field says.
+    pub fn into_tasks(self) -> Vec<Task> {
+        self.items
+            .into_iter()
+            .map(|task| Task {
+                checked: true,
+                ..task
+            })
+            .collect()
+    }
 }
 
 // One page of a cursor-paged REST list, as GET /comments returns it.
@@ -286,5 +270,12 @@ mod tests {
         let with_cursor: CompletedTasksResponse =
             serde_json::from_str(r#"{"items":[],"next_cursor":"abc"}"#).unwrap();
         assert_eq!(with_cursor.next_cursor.as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn completed_tasks_are_checked_whatever_the_item_says() {
+        let page: CompletedTasksResponse =
+            serde_json::from_str(r#"{"items":[{"id":"1","checked":false}]}"#).unwrap();
+        assert!(page.into_tasks()[0].checked);
     }
 }

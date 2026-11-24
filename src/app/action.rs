@@ -73,6 +73,9 @@ pub enum Action {
     ToggleFavourite,
     /// Pick the theme for this session.
     ChooseTheme,
+    /// Load the listed project's tasks completed in the window before the
+    /// oldest one loaded.
+    LoadOlderCompleted,
 }
 
 /// A field of a task that [`Action::Edit`] changes.

@@ -8,7 +8,7 @@ use ratatoist::app::{App, Effect, Event, State};
 use ratatoist::todoist::demo::{self, DemoClient};
 use ratatoist::todoist::model::{CompletedTasksResponse, Task};
 use ratatoist::todoist::sync::{SyncCommand, SyncRequest, SyncResponse};
-use ratatoist::todoist::{CompletedQuery, TodoistClient};
+use ratatoist::todoist::{CompletedQuery, CompletedWindow, TodoistClient};
 use ratatui::backend::TestBackend;
 use serde_json::json;
 
@@ -36,7 +36,7 @@ fn sync() -> SyncResponse {
 fn completed() -> Vec<Task> {
     let response: CompletedTasksResponse =
         serde_json::from_value(demo::account(today()).completed).unwrap();
-    response.items.into_iter().map(|r| r.into_task()).collect()
+    response.into_tasks()
 }
 
 fn tasks() -> Vec<Task> {
@@ -387,9 +387,8 @@ async fn drive(
                     }
                 }
                 Effect::FetchCompletedTasks(query) => {
-                    let project_id = query.project_id.clone();
-                    let result = client.completed_tasks(query).await;
-                    Event::CompletedTasks { project_id, result }
+                    let result = client.completed_tasks(query.clone()).await;
+                    Event::CompletedTasks { query, result }
                 }
                 _ => continue,
             };
@@ -519,13 +518,25 @@ async fn completed_tasks_are_served_per_project() {
     let served = client
         .completed_tasks(CompletedQuery {
             project_id: Some(project_id.clone()),
-            since: None,
+            window: CompletedWindow::latest(today()),
         })
         .await
         .unwrap();
 
     assert!(!served.is_empty());
     assert!(served.iter().all(|t| t.project_id == project_id));
+}
+
+#[tokio::test]
+async fn completed_tasks_are_served_per_window() {
+    let client = demo::client(today());
+    let older = CompletedQuery {
+        project_id: None,
+        window: CompletedWindow::latest(today()).before(),
+    };
+
+    assert_eq!(done(&client).await.len(), completed().len());
+    assert!(client.completed_tasks(older).await.unwrap().is_empty());
 }
 
 // Writes against the demo client, checked through the next full sync.
@@ -557,7 +568,7 @@ async fn full_sync(client: &DemoClient) -> Vec<Task> {
 async fn done(client: &DemoClient) -> Vec<Task> {
     let query = CompletedQuery {
         project_id: None,
-        since: None,
+        window: CompletedWindow::latest(today()),
     };
     client.completed_tasks(query).await.unwrap()
 }

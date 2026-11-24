@@ -3,7 +3,7 @@ use semver::Version;
 
 use crate::todoist::model::{Comment, Task};
 use crate::todoist::sync::SyncResponse;
-use crate::todoist::{ClientError, LiveMessage};
+use crate::todoist::{ClientError, CompletedQuery, LiveMessage};
 
 /// Everything that can change what ratatoist shows.
 #[derive(Debug)]
@@ -38,7 +38,7 @@ pub enum Event {
     },
     /// The answer to [`super::Effect::FetchCompletedTasks`].
     CompletedTasks {
-        project_id: Option<String>,
+        query: CompletedQuery,
         result: Result<Vec<Task>, ClientError>,
     },
     /// A message from the connection [`super::Effect::OpenLive`] opened.

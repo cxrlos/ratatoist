@@ -8,9 +8,9 @@ use tracing::error;
 use super::Effect;
 use super::failure::{ErrorKind, Failure, LoadError};
 use super::state::{Pane, State, SyncHealth, UserRecord};
-use crate::todoist::ClientError;
 use crate::todoist::model::{Folder, Project, Task};
 use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
+use crate::todoist::{ClientError, CompletedQuery};
 
 /// What local state looked like before an optimistic write, so it can be
 /// rolled back if Todoist rejects the command or it never arrives.
@@ -588,15 +588,30 @@ impl State {
         }
     }
 
+    /// Adds the tasks of one window to the project's completed tasks, and
+    /// says how far back they go when the window is an older one.
     pub(crate) fn completed_loaded(
         &mut self,
-        project_id: Option<String>,
+        query: CompletedQuery,
         result: Result<Vec<crate::todoist::model::Task>, ClientError>,
     ) {
         match result {
-            Ok(r) => {
-                self.completed_cache
-                    .insert(project_id.unwrap_or_default(), r);
+            Ok(loaded) => {
+                let pid = query.project_id.unwrap_or_default();
+                let tasks = self.completed_cache.entry(pid.clone()).or_default();
+                for task in loaded {
+                    if !tasks.iter().any(|t| t.id == task.id) {
+                        tasks.push(task);
+                    }
+                }
+                let oldest = self.oldest_completed.entry(pid).or_insert(query.window);
+                if query.window.since < oldest.since {
+                    *oldest = query.window;
+                    self.notice = Some(format!(
+                        "Completed tasks loaded back to {}",
+                        query.window.since
+                    ));
+                }
             }
             Err(e) => {
                 self.log_failure(Failure::from_client("load completed tasks", &e, self.now));

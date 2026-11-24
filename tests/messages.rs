@@ -12,7 +12,9 @@ use insta::assert_snapshot;
 use ratatoist::app::{App, Effect, ErrorKind, Event, Modal, State};
 use ratatoist::todoist::fake::CommandMatch;
 use ratatoist::todoist::sync::{SyncCommandError, SyncRequest, SyncResponse};
-use ratatoist::todoist::{ClientError, FakeClient, LiveMessage, TodoistClient, demo};
+use ratatoist::todoist::{
+    ClientError, CompletedQuery, CompletedWindow, FakeClient, LiveMessage, TodoistClient, demo,
+};
 use ratatui::backend::TestBackend;
 
 fn now() -> DateTime<Local> {
@@ -134,7 +136,10 @@ fn no_failure_pushes_a_modal() {
                 result: Err(offline()),
             },
             Event::CompletedTasks {
-                project_id: None,
+                query: CompletedQuery {
+                    project_id: None,
+                    window: CompletedWindow::latest(now().date_naive()),
+                },
                 result: Err(offline()),
             },
         ],

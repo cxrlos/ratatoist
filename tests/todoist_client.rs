@@ -7,13 +7,15 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use chrono::NaiveDate;
 use futures_util::{SinkExt, StreamExt};
 use ratatoist::auth::ApiToken;
 use ratatoist::todoist::fake::CommandMatch;
 use ratatoist::todoist::model::{CompletedTasksResponse, Paginated, UserInfo};
 use ratatoist::todoist::sync::{SyncCommand, SyncCommandError, SyncRequest, SyncResponse};
 use ratatoist::todoist::{
-    ClientConfig, ClientError, CompletedQuery, FakeClient, HttpClient, LiveMessage, TodoistClient,
+    ClientConfig, ClientError, CompletedQuery, CompletedWindow, FakeClient, HttpClient,
+    LiveMessage, TodoistClient,
 };
 use serde_json::{Value, json};
 use wiremock::matchers::{body_json, header, method, path, query_param, query_param_is_missing};
@@ -193,13 +195,26 @@ async fn paging_stops_after_fifty_pages() {
     assert_eq!(comments.len(), 50);
 }
 
+fn window() -> CompletedWindow {
+    CompletedWindow::latest(NaiveDate::from_ymd_opt(2026, 11, 23).unwrap())
+}
+
+fn query(project_id: Option<&str>) -> CompletedQuery {
+    CompletedQuery {
+        project_id: project_id.map(str::to_owned),
+        window: window(),
+    }
+}
+
 #[tokio::test]
-async fn completed_tasks_keep_the_full_task_or_build_one_from_the_record() {
+async fn completed_tasks_load_one_window_by_completion_date() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/tasks/completed"))
-        .and(query_param("annotate_items", "1"))
+        .and(path("/tasks/completed/by_completion_date"))
+        .and(query_param("since", "2026-09-02T00:00:00Z"))
+        .and(query_param("until", "2026-11-25T00:00:00Z"))
         .and(query_param("project_id", "6Jf8VQXxpwv56VQ8"))
+        .and(query_param_is_missing("annotate_items"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(fixture("HYPOTHETICAL_completed_tasks.json")),
         )
@@ -207,16 +222,106 @@ async fn completed_tasks_keep_the_full_task_or_build_one_from_the_record() {
         .mount(&server)
         .await;
 
-    let query = CompletedQuery {
-        project_id: Some("6Jf8VQXxpwv56VQ8".to_owned()),
-        since: None,
-    };
-    let tasks = client_for(&server).completed_tasks(query).await.unwrap();
+    let tasks = client_for(&server)
+        .completed_tasks(query(Some("6Jf8VQXxpwv56VQ8")))
+        .await
+        .unwrap();
 
     assert_eq!(tasks.len(), 2);
     assert_eq!(tasks[0].priority, 4);
     assert_eq!(tasks[1].content, "Sharpen the shears");
-    assert!(tasks[1].checked);
+    assert!(tasks.iter().all(|task| task.checked));
+}
+
+#[tokio::test]
+async fn an_older_window_ends_where_the_newer_one_starts() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tasks/completed/by_completion_date"))
+        .and(query_param("since", "2026-06-10T00:00:00Z"))
+        .and(query_param("until", "2026-09-02T00:00:00Z"))
+        .and(query_param_is_missing("project_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let older = CompletedQuery {
+        project_id: None,
+        window: window().before(),
+    };
+    let tasks = client_for(&server).completed_tasks(older).await.unwrap();
+
+    assert!(tasks.is_empty());
+}
+
+#[tokio::test]
+async fn completed_tasks_follow_the_cursor_with_the_same_window() {
+    // Todoist's cursors are `[0-9a-zA-Z_-]`; these characters prove the
+    // cursor is encoded, not pasted into the URL.
+    let cursor = "a+b/c=d&e";
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/tasks/completed/by_completion_date"))
+        .and(query_param_is_missing("cursor"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "items": [{ "id": "t1", "content": "first page" }],
+            "next_cursor": cursor,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/tasks/completed/by_completion_date"))
+        .and(query_param("cursor", cursor))
+        .and(query_param("since", "2026-09-02T00:00:00Z"))
+        .and(query_param("until", "2026-11-25T00:00:00Z"))
+        .and(query_param("project_id", "p 1&x=y"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "items": [{ "id": "t2", "content": "last page" }],
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let tasks = client_for(&server)
+        .completed_tasks(query(Some("p 1&x=y")))
+        .await
+        .unwrap();
+
+    let ids: Vec<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["t1", "t2"]);
+}
+
+#[tokio::test]
+async fn comments_encode_the_task_id_and_cursor() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/comments"))
+        .and(query_param("task_id", "t+1/2=3"))
+        .and(query_param_is_missing("cursor"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "results": [{ "id": "c1" }],
+            "next_cursor": "x+y/z=",
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/comments"))
+        .and(query_param("task_id", "t+1/2=3"))
+        .and(query_param("cursor", "x+y/z="))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "results": [{ "id": "c2" }],
+            "next_cursor": null,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let comments = client_for(&server).comments("t+1/2=3").await.unwrap();
+
+    assert_eq!(comments.len(), 2);
 }
 
 #[tokio::test]
@@ -389,7 +494,7 @@ async fn no_client_call_logs_the_token_even_at_trace_level() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/tasks/completed"))
+        .and(path("/tasks/completed/by_completion_date"))
         .respond_with(ResponseTemplate::new(401))
         .mount(&server)
         .await;
@@ -410,7 +515,7 @@ async fn no_client_call_logs_the_token_even_at_trace_level() {
 
     client.user().await.unwrap();
     client.comments("6Jf8VQXxpwv56VT2").await.unwrap();
-    let completed = client.completed_tasks(CompletedQuery::default()).await;
+    let completed = client.completed_tasks(query(None)).await;
     let synced = client
         .sync(write_request(vec![command("item_close", "6f3a9c4e")]))
         .await;
@@ -562,10 +667,7 @@ async fn the_fake_serves_its_fixtures() {
     assert!(!delta.full_sync);
     assert_eq!(fake.user().await.unwrap().id, "1000001");
     assert_eq!(fake.comments("6Jf8VQXxpwv56VT2").await.unwrap().len(), 1);
-    let completed = fake
-        .completed_tasks(CompletedQuery::default())
-        .await
-        .unwrap();
+    let completed = fake.completed_tasks(query(None)).await.unwrap();
     assert_eq!(completed.len(), 2);
 }
 

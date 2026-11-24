@@ -23,8 +23,8 @@ use crate::config::Config;
 use crate::keys::Keymap;
 use crate::release::ReleaseCheck;
 use crate::sync_state::SyncState;
+use crate::todoist::TodoistClient;
 use crate::todoist::sync::SyncRequest;
-use crate::todoist::{CompletedQuery, TodoistClient};
 use crate::ui::theme::{self, Theme};
 
 /// How often the clock moves on. Ticks redraw only when they change what
@@ -268,10 +268,9 @@ impl<C: TodoistClient> Outside<'_, C> {
                 });
             }
             Effect::FetchCompletedTasks(query) => {
-                let project_id = query.project_id.clone();
                 self.spawn(|client| async move {
-                    let result = client.completed_tasks(CompletedQuery { ..query }).await;
-                    Event::CompletedTasks { project_id, result }
+                    let result = client.completed_tasks(query.clone()).await;
+                    Event::CompletedTasks { query, result }
                 });
             }
             Effect::OpenLive { url } => {

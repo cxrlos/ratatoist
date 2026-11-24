@@ -67,7 +67,8 @@ impl FakeClient {
         self
     }
 
-    /// One `GET /tasks/completed` page, served for every query.
+    /// One `GET /tasks/completed/by_completion_date` page, served for every
+    /// query.
     pub fn with_completed_tasks(self, body: Value) -> Self {
         self.shared().completed_tasks = Some(body);
         self
@@ -150,11 +151,7 @@ impl TodoistClient for FakeClient {
 
     async fn completed_tasks(&self, _query: CompletedQuery) -> Result<Vec<Task>, ClientError> {
         match self.shared().completed_tasks.clone() {
-            Some(body) => Ok(decode::<CompletedTasksResponse>(body)?
-                .items
-                .into_iter()
-                .map(|record| record.into_task())
-                .collect()),
+            Some(body) => Ok(decode::<CompletedTasksResponse>(body)?.into_tasks()),
             None => Ok(Vec::new()),
         }
     }

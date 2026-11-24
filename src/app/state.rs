@@ -11,6 +11,7 @@ use super::sync::OptimisticOp;
 use super::text_field::TextField;
 use crate::auth::Source;
 use crate::keys::Keymap;
+use crate::todoist::CompletedWindow;
 use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
 use crate::ui::icons::{IconSet, Icons};
 use crate::ui::theme::{self, Theme};
@@ -108,6 +109,8 @@ pub struct State {
     pub live_dropped: bool,
     pub sync_token: String,
     pub completed_cache: HashMap<String, Vec<Task>>,
+    /// The oldest window loaded into `completed_cache`, by project.
+    pub oldest_completed: HashMap<String, CompletedWindow>,
     pub comments_by_task: HashMap<String, Vec<Comment>>,
     pub idle_timeout_secs: u64,
     pub last_sync_at: Option<DateTime<Local>>,
@@ -179,6 +182,7 @@ impl State {
             live_dropped: false,
             sync_token: "*".to_owned(),
             completed_cache: HashMap::new(),
+            oldest_completed: HashMap::new(),
             comments_by_task: HashMap::new(),
             idle_timeout_secs: DEFAULT_IDLE_TIMEOUT_SECS,
             last_sync_at: None,
