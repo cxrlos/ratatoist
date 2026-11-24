@@ -1305,3 +1305,74 @@ fn a_later_failed_sync_before_any_success_is_only_logged() {
     assert_eq!(app.state().failures.len(), 2);
     assert!(!shows(&app, "Could not load your tasks"));
 }
+
+/// Adds "Pay rent" to the Inbox and focuses it; the add's command.
+fn add_pay_rent(app: &mut App<TestBackend>) -> SyncCommand {
+    send(app, [key('1'), key('a')]);
+    send(app, "Pay rent".chars().map(key));
+    let add = single_command(&send(app, [press(KeyCode::Enter)]));
+    send(app, [key('g'), key('g')]);
+    for _ in 0..20 {
+        if app.state().selected_task().map(|t| t.content.as_str()) == Some("Pay rent") {
+            return add;
+        }
+        send(app, [key('j')]);
+    }
+    panic!("the new task is not in the list");
+}
+
+/// Todoist's answer to `add`, mapping its temp id to `t-rent`.
+fn add_answered(add: &SyncCommand) -> Event {
+    let temp_id = add.temp_id.clone().unwrap();
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":"ok"}},"temp_id_mapping":{{"{temp_id}":"t-rent"}}}}"#,
+        add.uuid
+    );
+    Event::CommandsSent {
+        uuids: vec![add.uuid.clone()],
+        result: Ok(delta(&answer)),
+    }
+}
+
+#[test]
+fn a_prompt_opened_while_a_new_task_s_add_is_in_flight_writes_to_its_real_id() {
+    let mut app = app();
+    let add = add_pay_rent(&mut app);
+    send(&mut app, [key('E')]);
+    send(&mut app, "On the 1st".chars().map(key));
+
+    send(&mut app, [add_answered(&add)]);
+    let edit = single_command(&send(&mut app, [press(KeyCode::Enter)]));
+
+    assert_eq!(edit.r#type, "item_update");
+    assert_eq!(edit.args["id"], "t-rent");
+    assert_eq!(edit.args["description"], "On the 1st");
+    assert_eq!(task(&app, "t-rent").description, "On the 1st");
+}
+
+#[test]
+fn a_write_to_a_new_task_rejected_after_its_add_answers_rolls_back() {
+    let mut app = app();
+    let add = add_pay_rent(&mut app);
+    let close = single_command(&send(&mut app, [key('x')]));
+
+    send(&mut app, [add_answered(&add)]);
+    let rejection = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-3",
+            "sync_status":{{"{}":{{"error_code":22,"error":"Item not found"}}}}}}"#,
+        close.uuid
+    );
+    send(
+        &mut app,
+        [Event::CommandsSent {
+            uuids: vec![close.uuid],
+            result: Ok(delta(&rejection)),
+        }],
+    );
+
+    let rent = task(&app, "t-rent");
+    assert!(!rent.checked);
+    assert_eq!(rent.id, "t-rent");
+    assert!(app.state().rollback_reason("t-rent").is_some());
+}

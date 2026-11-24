@@ -1,15 +1,15 @@
 //! Merging sync responses into [`State`], and optimistic writes with their
 //! rollback.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use tracing::{error, info};
 
-use super::Effect;
 use super::failure::{ErrorKind, Failure, LoadError};
 use super::state::{Pane, State, SyncHealth};
 use super::store::{Store, Table};
 use super::view::{cycles, parents};
+use super::{Effect, Modal};
 use crate::todoist::model::{Folder, Project, Task, UserInfo};
 use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
 use crate::todoist::{ClientError, CompletedQuery};
@@ -646,7 +646,10 @@ impl State {
     }
 
     /// Gives the task or comment under `temp_id` its real id; a task a sync
-    /// already brought under that id replaces the optimistic one.
+    /// already brought under that id replaces the optimistic one. Whatever
+    /// still names the task by its temp id follows: the prompt or picker
+    /// editing it, the writes to it still in flight with their snapshots,
+    /// and its typed due date, failed mark, parked state and comments.
     fn apply_temp_id_mapping(&mut self, temp_id: &str, real_id: &str) {
         let tasks = &mut self.store.tasks;
         if tasks.by_id(real_id).is_some() {
@@ -654,6 +657,32 @@ impl State {
         } else {
             tasks.rekey(temp_id, real_id, |task, id| task.id = id.to_owned());
         }
+        let rename = |id: &mut String| {
+            if id == temp_id {
+                real_id.clone_into(id);
+            }
+        };
+        if let Some(id) = &mut self.edit_task {
+            rename(id);
+        }
+        for modal in &mut self.modals {
+            if let Modal::Prompt(prompt) = modal {
+                rename(&mut prompt.task_id);
+            }
+        }
+        for op in self.temp_id_pending.values_mut() {
+            match op {
+                OptimisticOp::TaskUpdated { task_id, before } => {
+                    rename(task_id);
+                    rename(&mut before.id);
+                }
+                OptimisticOp::CommentAdded { task_id, .. } => rename(task_id),
+                OptimisticOp::TaskAdded { .. } | OptimisticOp::ProjectUpdated { .. } => {}
+            }
+        }
+        rekey(&mut self.pending_due, temp_id, real_id);
+        rekey(&mut self.rolled_back, temp_id, real_id);
+        rekey(&mut self.store.comments_by_task, temp_id, real_id);
         for c in &mut self.comments {
             if c.id == temp_id {
                 c.id = real_id.to_string();
@@ -861,6 +890,13 @@ impl State {
         {
             self.selected_project = pos;
         }
+    }
+}
+
+/// Moves the entry under `from` to `to`.
+fn rekey<V>(map: &mut HashMap<String, V>, from: &str, to: &str) {
+    if let Some(value) = map.remove(from) {
+        map.insert(to.to_owned(), value);
     }
 }
 
