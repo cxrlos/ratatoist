@@ -7,7 +7,9 @@ use tracing::error;
 
 use super::Effect;
 use super::failure::{ErrorKind, Failure, LoadError};
-use super::state::{Pane, State, SyncHealth, UserRecord};
+use super::state::{Pane, State, SyncHealth};
+use super::store::Table;
+use super::view::{cycles, parents};
 use crate::todoist::model::{Folder, Project, Task};
 use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
 use crate::todoist::{ClientError, CompletedQuery};
@@ -31,6 +33,17 @@ pub enum OptimisticOp {
         project_id: String,
         before: Box<Project>,
     },
+}
+
+impl OptimisticOp {
+    /// The task whose row a pending sync delta must not overwrite.
+    fn task(&self) -> Option<&str> {
+        match self {
+            OptimisticOp::TaskUpdated { task_id, .. } => Some(task_id),
+            OptimisticOp::TaskAdded { temp_id } => Some(temp_id),
+            OptimisticOp::CommentAdded { .. } | OptimisticOp::ProjectUpdated { .. } => None,
+        }
+    }
 }
 
 /// What a full sync reads: at startup and on a forced re-sync.
@@ -110,15 +123,6 @@ impl State {
         effects.push(Effect::SendCommands(vec![command]));
     }
 
-    /// True if an optimistic op for this task is still awaiting its command result.
-    pub(crate) fn task_has_pending_op(&self, task_id: &str) -> bool {
-        self.temp_id_pending.values().any(|op| match op {
-            OptimisticOp::TaskUpdated { task_id: id, .. } => id == task_id,
-            OptimisticOp::TaskAdded { temp_id } => temp_id == task_id,
-            OptimisticOp::CommentAdded { .. } | OptimisticOp::ProjectUpdated { .. } => false,
-        })
-    }
-
     /// Whether a command with `uuid` is still waiting for Todoist.
     pub fn is_pending(&self, uuid: &str) -> bool {
         self.temp_id_pending.contains_key(uuid)
@@ -155,158 +159,87 @@ impl State {
         }
     }
 
-    pub(crate) fn apply_sync_delta(&mut self, resp: SyncResponse, effects: &mut Vec<Effect>) {
+    pub(crate) fn apply_sync_delta(&mut self, mut resp: SyncResponse, effects: &mut Vec<Effect>) {
         let focused = self.selected_task().map(|task| task.id.clone());
-        if resp.full_sync {
-            if let Some(projects) = resp.projects {
-                self.projects = projects
-                    .into_iter()
-                    .filter(|p| !p.is_deleted.unwrap_or(false))
-                    .collect();
-                self.sort_projects();
-            }
-            if let Some(items) = resp.items {
-                let before = std::mem::take(&mut self.tasks);
-                self.tasks = items.into_iter().filter(|t| !t.is_deleted).collect();
-                self.keep_marks_of_unchanged_tasks(&before);
-                // A full sync carries every due date as Todoist parsed it.
-                self.pending_due.clear();
-            }
-            if let Some(labels) = resp.labels {
-                self.labels = labels
-                    .into_iter()
-                    .filter(|l| !l.is_deleted.unwrap_or(false))
-                    .collect();
-            }
-            if let Some(sections) = resp.sections {
-                self.sections = sections
-                    .into_iter()
-                    .filter(|s| !s.is_deleted.unwrap_or(false))
-                    .collect();
-            }
-            if let Some(notes) = resp.notes {
-                self.comments_by_task.clear();
-                for note in notes {
-                    if !note.is_deleted {
-                        let tid = note
-                            .item_id
-                            .clone()
-                            .or_else(|| note.task_id.clone())
-                            .unwrap_or_default();
-                        self.comments_by_task.entry(tid).or_default().push(note);
-                    }
-                }
-            }
-            if let Some(collabs) = resp.collaborators {
-                for c in collabs {
-                    self.user_names
-                        .entry(c.id.clone())
-                        .or_insert_with(|| UserRecord::new(c.id, c.name, c.email));
-                }
-            }
-            if let Some(workspaces) = resp.workspaces {
-                self.workspaces = workspaces.into_iter().filter(|w| !w.is_deleted).collect();
-            }
-            if let Some(folders) = resp.folders {
-                self.folders = folders.into_iter().filter(|f| !f.is_deleted).collect();
-            }
-            if let Some(user) = resp.user {
-                self.current_user_id = Some(user.id.clone());
-                self.websocket_url = user.websocket_url;
-                self.user_names
-                    .entry(user.id.clone())
-                    .or_insert_with(|| UserRecord::new(user.id, user.full_name, user.email));
-            }
-        } else {
-            if let Some(projects) = resp.projects {
-                for p in projects {
-                    if p.is_deleted.unwrap_or(false) {
-                        self.projects.retain(|e| e.id != p.id);
-                    } else if let Some(e) = self.projects.iter_mut().find(|e| e.id == p.id) {
-                        *e = p;
-                    } else {
-                        self.projects.push(p);
-                    }
-                }
-                self.sort_projects();
-            }
-            if let Some(items) = resp.items {
-                for item in items {
-                    // A racing server delta must not clobber a task the user is still
-                    // editing optimistically: skip it until the command resolves.
-                    if self.task_has_pending_op(&item.id) {
-                        continue;
-                    }
-                    self.rolled_back.remove(&item.id);
-                    self.pending_due.remove(&item.id);
-                    if item.is_deleted {
-                        self.tasks.retain(|t| t.id != item.id);
-                    } else if let Some(e) = self.tasks.iter_mut().find(|t| t.id == item.id) {
-                        *e = item;
-                    } else {
-                        self.tasks.push(item);
-                    }
-                }
-            }
-            if let Some(labels) = resp.labels {
-                for l in labels {
-                    if l.is_deleted.unwrap_or(false) {
-                        self.labels.retain(|e| e.id != l.id);
-                    } else if let Some(e) = self.labels.iter_mut().find(|e| e.id == l.id) {
-                        *e = l;
-                    } else {
-                        self.labels.push(l);
-                    }
-                }
-            }
-            if let Some(sections) = resp.sections {
-                for s in sections {
-                    if s.is_deleted.unwrap_or(false) {
-                        self.sections.retain(|e| e.id != s.id);
-                    } else if let Some(e) = self.sections.iter_mut().find(|e| e.id == s.id) {
-                        *e = s;
-                    } else {
-                        self.sections.push(s);
-                    }
-                }
-            }
-            if let Some(notes) = resp.notes {
-                let open_task_id = focused.clone();
-                let mut affected_task: Option<String> = None;
-                for note in notes {
-                    let tid = note
-                        .item_id
-                        .clone()
-                        .or_else(|| note.task_id.clone())
-                        .unwrap_or_default();
-                    if note.is_deleted {
-                        if let Some(list) = self.comments_by_task.get_mut(&tid) {
-                            list.retain(|c| c.id != note.id);
-                        }
-                    } else if let Some(list) = self.comments_by_task.get_mut(&tid) {
-                        if let Some(c) = list.iter_mut().find(|c| c.id == note.id) {
-                            *c = note;
-                        } else {
-                            list.push(note);
-                        }
-                    } else {
-                        self.comments_by_task.insert(tid.clone(), vec![note]);
-                    }
-                    if open_task_id.as_deref() == Some(&tid) {
-                        affected_task = Some(tid);
-                    }
-                }
-                if let Some(tid) = affected_task
-                    && let Some(updated) = self.comments_by_task.get(&tid)
-                {
-                    self.comments = updated.clone();
-                }
-            }
+        let full = resp.full_sync;
+        let token = std::mem::take(&mut resp.sync_token);
+        if let Some(user) = &resp.user {
+            self.websocket_url = user.websocket_url.clone();
         }
+        let ops = &self.temp_id_pending;
+        let in_flight = |id: &str| !full && ops.values().any(|op| op.task() == Some(id));
+        let merged = self.store.merge(resp, in_flight);
+        if merged.projects {
+            self.sort_projects();
+        }
+        if let Some(before) = &merged.replaced_tasks {
+            self.keep_marks_of_unchanged_tasks(before);
+            // A full sync carries every due date as Todoist parsed it.
+            self.pending_due.clear();
+        }
+        for id in &merged.tasks {
+            self.rolled_back.remove(id);
+            self.pending_due.remove(id);
+        }
+        if let Some(task_id) = focused.as_ref()
+            && merged.comments.contains(task_id)
+            && let Some(updated) = self.store.comments_by_task.get(task_id)
+        {
+            self.comments = updated.clone();
+        }
+        self.report_cycles();
 
-        self.take_sync_token(resp.sync_token, effects);
+        self.take_sync_token(token, effects);
         self.last_sync_at = Some(self.now.clone());
         self.keep_focus_on(focused, effects);
+    }
+
+    /// Logs each loop in the parents of the tasks or of the projects that
+    /// was not there after the last merge. The tasks and projects on it show
+    /// at top level.
+    fn report_cycles(&mut self) {
+        let tasks = &self.store.tasks;
+        let projects = &self.store.projects;
+        let mut found: Vec<(String, String)> = Vec::new();
+        for cycle in cycles(&parents(tasks, |task| task.parent_id.as_deref())) {
+            let members: Vec<&str> = cycle
+                .iter()
+                .filter_map(|&at| tasks.get(at))
+                .map(|task| task.id.as_str())
+                .collect();
+            if let Some(first) = cycle.first().and_then(|&at| tasks.get(at)) {
+                found.push((
+                    members.join(","),
+                    format!("show \"{}\" under its parent task", first.content),
+                ));
+            }
+        }
+        for cycle in cycles(&parents(projects, |project| project.parent_id.as_deref())) {
+            let members: Vec<&str> = cycle
+                .iter()
+                .filter_map(|&at| projects.get(at))
+                .map(|project| project.id.as_str())
+                .collect();
+            if let Some(first) = cycle.first().and_then(|&at| projects.get(at)) {
+                found.push((
+                    members.join(","),
+                    format!("show project \"{}\" under its parent", first.name),
+                ));
+            }
+        }
+        let now: HashSet<String> = found.iter().map(|(members, _)| members.clone()).collect();
+        for (members, action) in found {
+            if !self.reported_cycles.contains(&members) {
+                let message = format!("the parents of {members} loop back to each other");
+                self.log_failure(Failure::new(
+                    ErrorKind::ParentCycle,
+                    action,
+                    message,
+                    &self.now,
+                ));
+            }
+        }
+        self.reported_cycles = now;
     }
 
     /// Focuses the task `focused` again when it is still visible, else the
@@ -329,7 +262,7 @@ impl State {
             return;
         };
         self.detail_scroll = 0;
-        match self.comments_by_task.get(&task_id) {
+        match self.store.comments_by_task.get(&task_id) {
             Some(cached) => self.comments = cached.clone(),
             None => self.comments.clear(),
         }
@@ -452,7 +385,7 @@ impl State {
                 Some(OptimisticOp::ProjectUpdated { before, .. }) => Some(before.name.clone()),
                 _ => command.args["id"]
                     .as_str()
-                    .and_then(|id| self.projects.iter().find(|p| p.id == id))
+                    .and_then(|id| self.store.projects.by_id(id))
                     .map(|p| p.name.clone()),
             };
             return name.map_or_else(
@@ -472,7 +405,7 @@ impl State {
         let content = match op {
             Some(OptimisticOp::TaskUpdated { before, .. }) => Some(before.content.clone()),
             _ => command_task(command)
-                .and_then(|id| self.tasks.iter().find(|t| t.id == id))
+                .and_then(|id| self.store.tasks.by_id(id))
                 .map(|t| t.content.clone()),
         };
         match content {
@@ -482,9 +415,9 @@ impl State {
     }
 
     fn apply_temp_id_mapping(&mut self, temp_id: &str, real_id: &str) {
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == temp_id) {
-            t.id = real_id.to_string();
-        }
+        self.store
+            .tasks
+            .rekey(temp_id, real_id, |task, id| task.id = id.to_owned());
         for c in &mut self.comments {
             if c.id == temp_id {
                 c.id = real_id.to_string();
@@ -499,11 +432,11 @@ impl State {
     fn revert_optimistic(&mut self, op: OptimisticOp) -> Option<String> {
         match op {
             OptimisticOp::TaskAdded { temp_id } => {
-                self.tasks.retain(|t| t.id != temp_id);
+                self.store.tasks.retain(|t| t.id != temp_id);
                 None
             }
             OptimisticOp::TaskUpdated { task_id, before } => {
-                if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
                     *t = *before;
                 }
                 Some(task_id)
@@ -516,7 +449,7 @@ impl State {
                 Some(task_id)
             }
             OptimisticOp::ProjectUpdated { project_id, before } => {
-                if let Some(p) = self.projects.iter_mut().find(|p| p.id == project_id) {
+                if let Some(p) = self.store.projects.by_id_mut(&project_id) {
                     *p = *before;
                 }
                 self.sort_projects();
@@ -527,11 +460,11 @@ impl State {
 
     /// Drops the failed mark of every task a full sync changed or removed,
     /// comparing each task with its copy in `before`.
-    fn keep_marks_of_unchanged_tasks(&mut self, before: &[Task]) {
-        let tasks = &self.tasks;
+    fn keep_marks_of_unchanged_tasks(&mut self, before: &Table<Task>) {
+        let tasks = &self.store.tasks;
         self.rolled_back.retain(|id, _| {
-            let old = before.iter().find(|t| &t.id == id);
-            let new = tasks.iter().find(|t| &t.id == id);
+            let old = before.by_id(id);
+            let new = tasks.by_id(id);
             match (old, new) {
                 (Some(old), Some(new)) => {
                     serde_json::to_value(old).ok() == serde_json::to_value(new).ok()
@@ -571,10 +504,12 @@ impl State {
         match result {
             Ok(c) => {
                 let count = i32::try_from(c.len()).unwrap_or(i32::MAX);
-                if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
                     t.note_count = Some(count);
                 }
-                self.comments_by_task.insert(task_id.clone(), c.clone());
+                self.store
+                    .comments_by_task
+                    .insert(task_id.clone(), c.clone());
                 let current_tid = self.selected_task().map(|t| t.id.clone());
                 if current_tid.as_deref() == Some(&task_id) && fetch_seq == self.comments_fetch_seq
                 {
@@ -582,7 +517,7 @@ impl State {
                 }
             }
             Err(e) => {
-                let action = match self.tasks.iter().find(|t| t.id == task_id) {
+                let action = match self.store.tasks.by_id(&task_id) {
                     Some(task) => format!("load the comments on \"{}\"", task.content),
                     None => "load comments".to_owned(),
                 };
@@ -624,10 +559,11 @@ impl State {
 
     pub(crate) fn sort_projects(&mut self) {
         let selected_id = self
+            .store
             .projects
             .get(self.selected_project)
             .map(|p| p.id.clone());
-        let source = self.projects.clone();
+        let source = self.store.projects.to_vec();
         let mut ordered: Vec<Project> = Vec::with_capacity(source.len());
 
         let personal: Vec<Project> = source
@@ -637,7 +573,7 @@ impl State {
             .collect();
         collect_project_subtree(None, &personal, &mut ordered);
 
-        for ws in &self.workspaces {
+        for ws in &self.store.workspaces {
             let ws_projects: Vec<Project> = source
                 .iter()
                 .filter(|p| p.workspace_id.as_deref() == Some(ws.id.as_str()))
@@ -655,6 +591,7 @@ impl State {
             collect_project_subtree(None, &no_folder, &mut ordered);
 
             let mut ws_folders: Vec<&Folder> = self
+                .store
                 .folders
                 .iter()
                 .filter(|f| f.workspace_id == ws.id)
@@ -678,9 +615,9 @@ impl State {
             }
         }
 
-        self.projects = ordered;
+        self.store.projects.replace_all(ordered);
         if let Some(id) = selected_id
-            && let Some(pos) = self.projects.iter().position(|p| p.id == id)
+            && let Some(pos) = self.store.projects.iter().position(|p| p.id == id)
         {
             self.selected_project = pos;
         }

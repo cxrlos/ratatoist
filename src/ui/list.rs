@@ -396,9 +396,9 @@ fn due_span(state: &State, task: &Task) -> Option<Span<'static>> {
 
 fn project_name<'a>(state: &'a State, task: &'a Task) -> &'a str {
     state
+        .store
         .projects
-        .iter()
-        .find(|project| project.id == task.project_id)
+        .by_id(&task.project_id)
         .map_or(task.project_id.as_str(), |project| project.name.as_str())
 }
 

@@ -90,7 +90,7 @@ fn shows(app: &App<TestBackend>, text: &str) -> bool {
 }
 
 fn task<'a>(app: &'a App<TestBackend>, id: &str) -> &'a ratatoist::todoist::model::Task {
-    app.state().tasks.iter().find(|t| t.id == id).unwrap()
+    app.state().store.tasks.iter().find(|t| t.id == id).unwrap()
 }
 
 /// The one command in a flush; fails if a flush carries more or none.
@@ -166,7 +166,7 @@ fn main_layout_with_the_inbox_selected_at_120x36() {
     let app = sized(120, 36);
 
     assert_eq!(
-        app.state().projects[app.state().selected_project].name,
+        app.state().store.projects[app.state().selected_project].name,
         "Inbox"
     );
     assert_snapshot!(app.backend());
@@ -454,7 +454,13 @@ fn a_failed_add_removes_the_optimistic_task() {
     })
     .unwrap();
 
-    assert!(app.state().tasks.iter().all(|t| t.content != "Pay rent"));
+    assert!(
+        app.state()
+            .store
+            .tasks
+            .iter()
+            .all(|t| t.content != "Pay rent")
+    );
 }
 
 #[test]

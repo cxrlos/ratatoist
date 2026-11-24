@@ -703,7 +703,7 @@ impl State {
         };
         let task_id = task.id.clone();
         let wants_comments = task.note_count.unwrap_or(0) > 0;
-        match self.comments_by_task.get(&task_id) {
+        match self.store.comments_by_task.get(&task_id) {
             Some(cached) => self.comments = cached.clone(),
             None => {
                 self.comments.clear();
@@ -854,7 +854,7 @@ impl State {
         self.detail_scroll = 0;
 
         // Serve cached comments immediately, refresh in background.
-        if let Some(cached) = self.comments_by_task.get(&task_id) {
+        if let Some(cached) = self.store.comments_by_task.get(&task_id) {
             self.comments = cached.clone();
         } else {
             self.comments.clear();
@@ -875,8 +875,8 @@ impl State {
             )
         };
 
-        let before = self.tasks.iter().find(|t| t.id == task_id).cloned();
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+        let before = self.store.tasks.by_id(&task_id).cloned();
+        if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
             t.checked = !was_checked;
         }
 
@@ -912,7 +912,7 @@ impl State {
     fn open_form(&mut self) {
         let project_id = self
             .list_project()
-            .or_else(|| self.projects.iter().find(|p| p.is_inbox()))
+            .or_else(|| self.store.projects.iter().find(|p| p.is_inbox()))
             .map(|p| p.id.clone())
             .unwrap_or_default();
         let due_string = match self.screen {
@@ -1023,7 +1023,7 @@ impl State {
             string: Some(due_string.clone()),
             ..Due::default()
         });
-        self.tasks.push(Task {
+        self.store.tasks.upsert(Task {
             id: temp_id.clone(),
             content: content.clone(),
             project_id: form.project_id.clone(),
@@ -1063,7 +1063,7 @@ impl State {
             id: temp_id.clone(),
             content: content.clone(),
             posted_at: Some(self.now.timestamp().to_string()),
-            posted_by_uid: self.current_user_id.clone(),
+            posted_by_uid: self.store.current_user_id.clone(),
             task_id: Some(task_id.clone()),
             item_id: Some(task_id.clone()),
             ..Comment::default()
@@ -1076,6 +1076,7 @@ impl State {
             };
             if self.comments.iter().any(other_task) {
                 self.comments = self
+                    .store
                     .comments_by_task
                     .get(&task_id)
                     .cloned()
@@ -1103,7 +1104,7 @@ impl State {
 
         let args = match field {
             PromptField::Content => {
-                if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
                     t.content = value.clone();
                 }
                 serde_json::json!({ "id": task_id, "content": value })
@@ -1115,7 +1116,7 @@ impl State {
                 serde_json::json!({ "id": task_id, "due_string": value })
             }
             PromptField::Description => {
-                if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
                     t.description = value.clone();
                 }
                 serde_json::json!({ "id": task_id, "description": value })
@@ -1147,7 +1148,7 @@ impl State {
     /// now; `None` once it is gone.
     fn edit_target(&mut self) -> Option<Task> {
         let id = self.edit_task.take()?;
-        self.tasks.iter().find(|t| t.id == id).cloned()
+        self.store.tasks.by_id(&id).cloned()
     }
 
     fn apply_priority(&mut self, new_priority: u8, effects: &mut Vec<Effect>) {
@@ -1159,7 +1160,7 @@ impl State {
         }
         let task_id = before.id.clone();
 
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+        if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
             t.priority = new_priority;
         }
 
@@ -1228,11 +1229,12 @@ impl State {
 
     fn close_all_folds(&mut self) {
         let parent_ids: HashSet<String> = self
+            .store
             .tasks
             .iter()
             .filter_map(|t| t.parent_id.clone())
             .collect();
-        for task in &self.tasks {
+        for task in &self.store.tasks {
             if parent_ids.contains(&task.id) {
                 self.collapsed.insert(task.id.clone());
             }

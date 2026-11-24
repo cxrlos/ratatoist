@@ -39,6 +39,9 @@ pub enum ErrorKind {
     Validation,
     /// Todoist failed on its side (a 5xx).
     Server,
+    /// Tasks or projects whose parents loop back to them: they show at top
+    /// level instead.
+    ParentCycle,
     Other,
 }
 
@@ -73,6 +76,7 @@ impl ErrorKind {
             Self::TokenRejected => "token rejected",
             Self::Validation => "validation",
             Self::Server => "server error",
+            Self::ParentCycle => "parent cycle",
             Self::Other => "error",
         }
     }
@@ -89,6 +93,7 @@ impl ErrorKind {
             Self::TokenRejected => "Todoist rejected the API token".to_owned(),
             Self::Validation => "Todoist refused the change".to_owned(),
             Self::Server => "Todoist failed on its side".to_owned(),
+            Self::ParentCycle => "their parents loop back to each other".to_owned(),
             Self::Other => "Something failed".to_owned(),
         }
     }
@@ -101,6 +106,7 @@ impl ErrorKind {
             Self::TokenRejected => "Run `ratatoist auth login` with a new token.",
             Self::Validation => "The message says why; change it and try again.",
             Self::Server => "Try again in a moment.",
+            Self::ParentCycle => "They show at top level; give one another parent in Todoist.",
             Self::Other => "The message says what went wrong.",
         }
     }

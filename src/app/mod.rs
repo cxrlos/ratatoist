@@ -14,6 +14,7 @@ mod picker;
 mod prompt;
 mod release;
 mod state;
+mod store;
 mod sync;
 mod task_form;
 mod text_field;
@@ -38,6 +39,7 @@ pub use state::{
     COUNTED_FILTERS, DEFAULT_IDLE_TIMEOUT_SECS, DEFAULT_WIDE_LAYOUT_COLUMNS, Indicator, ListFilter,
     OverviewStats, Pane, Screen, Sort, State, SyncHealth, UserRecord,
 };
+pub use store::{Keyed, Merged, Stamped, Store, Table};
 pub use task_form::{FormField, TaskForm};
 pub use text_field::TextField;
 pub use update::{Update, perform, update};

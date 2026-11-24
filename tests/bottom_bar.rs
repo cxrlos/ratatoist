@@ -153,7 +153,7 @@ fn a_key_remapped_in_config_shows_its_new_key() {
 #[test]
 fn complete_is_muted_on_an_empty_list_and_accented_on_a_task() {
     let mut state: State = list(NARROW).state().clone();
-    state.tasks.clear();
+    state.store.tasks.clear();
     let empty = App::new(TestBackend::new(80, 24), state).unwrap();
     assert_eq!(fg_of(&empty, "x complete"), muted(&empty));
 

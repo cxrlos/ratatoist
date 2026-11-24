@@ -503,7 +503,13 @@ fn esc_in_a_prompt_or_the_form_sends_nothing() {
         assert!(commands(&comment).is_empty());
         assert!(commands(&form).is_empty());
         assert!(app.state().modals.is_empty());
-        assert!(app.state().tasks.iter().all(|t| t.content != "Pay rent"));
+        assert!(
+            app.state()
+                .store
+                .tasks
+                .iter()
+                .all(|t| t.content != "Pay rent")
+        );
     }
 }
 

@@ -140,6 +140,7 @@ pub(super) fn render_list(
 fn task_line(state: &State, task: &Task, width: usize) -> Line<'static> {
     let theme = state.theme();
     let project = state
+        .store
         .projects
         .iter()
         .find(|project| project.id == task.project_id)

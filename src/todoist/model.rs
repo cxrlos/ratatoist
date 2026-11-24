@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Project {
     pub id: String,
     pub name: String,
@@ -78,7 +78,7 @@ pub struct Due {
     pub lang: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Label {
     pub id: String,
     pub name: String,
@@ -89,7 +89,7 @@ pub struct Label {
     pub is_deleted: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Section {
     pub id: String,
     pub project_id: String,
@@ -101,7 +101,7 @@ pub struct Section {
     pub added_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Comment {
     pub id: String,
     #[serde(default)]
@@ -137,7 +137,7 @@ pub struct Collaborator {
     pub email: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Workspace {
     pub id: String,
     pub name: String,
@@ -145,7 +145,7 @@ pub struct Workspace {
     pub is_deleted: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Folder {
     pub id: String,
     pub name: String,

@@ -322,6 +322,7 @@ fn today_leaves_subtasks_out_of_its_rows_and_its_header_counts() {
 
     let subtasks = app
         .state()
+        .store
         .tasks
         .iter()
         .filter(|task| task.id.ends_with("-subtask"))
@@ -526,7 +527,7 @@ fn an_empty_list_says_so_in_one_muted_sentence() {
 #[test]
 fn today_with_nothing_due_says_so() {
     let mut state = sized(120, 36).state().clone();
-    state.tasks.retain(|task| task.due.is_none());
+    state.store.tasks.retain(|task| task.due.is_none());
     let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
     send(&mut app, [key('2')]);
 
@@ -536,7 +537,10 @@ fn today_with_nothing_due_says_so() {
 #[test]
 fn an_empty_project_says_so() {
     let mut state = sized(120, 36).state().clone();
-    state.tasks.retain(|task| task.project_id != "p-reading");
+    state
+        .store
+        .tasks
+        .retain(|task| task.project_id != "p-reading");
     let mut app = App::new(TestBackend::new(120, 36), state).unwrap();
     open_project(&mut app, "Reading");
 

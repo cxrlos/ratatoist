@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use jiff::civil::Date;
@@ -8,12 +9,14 @@ use super::browse::TreeItem;
 use super::failure::{ErrorLog, Failure, LoadError};
 use super::modal::Modal;
 use super::release::ReleaseState;
+use super::store::{Stamped, Store};
 use super::sync::OptimisticOp;
 use super::text_field::TextField;
+use super::view::Lists;
 use crate::auth::Source;
 use crate::keys::Keymap;
 use crate::todoist::CompletedWindow;
-use crate::todoist::model::{Comment, Folder, Label, Priority, Project, Section, Task, Workspace};
+use crate::todoist::model::{Comment, Priority, Task};
 use crate::ui::icons::{IconSet, Icons};
 use crate::ui::theme::{self, Theme};
 
@@ -42,12 +45,8 @@ pub struct State {
     /// Where the token in use came from, to say how to replace it when
     /// Todoist rejects it.
     pub token_source: Option<Source>,
-    pub projects: Vec<Project>,
-    pub workspaces: Vec<Workspace>,
-    pub folders: Vec<Folder>,
-    pub tasks: Vec<Task>,
-    pub labels: Vec<Label>,
-    pub sections: Vec<Section>,
+    /// Every synced entity, by id.
+    pub store: Store,
     pub selected_project: usize,
     pub selected_task: usize,
     /// The pane that takes keys: a task list, the focused task's detail, or
@@ -67,7 +66,8 @@ pub struct State {
     /// The task the open prompt or priority picker writes to, taken when it
     /// opened, so a sync that reorders the list cannot retarget it.
     pub edit_task: Option<String>,
-    pub collapsed: HashSet<String>,
+    /// The tasks whose subtasks are folded away.
+    pub collapsed: Stamped<HashSet<String>>,
     /// Rows the task detail is scrolled down by. Scroll keys keep it within
     /// the content at [`State::screen_size`].
     pub detail_scroll: u16,
@@ -94,9 +94,8 @@ pub struct State {
     pub release: ReleaseState,
     /// How the task list on screen is sorted.
     pub sort: Sort,
+    /// The comments the detail shows, of the task it shows.
     pub comments: Vec<Comment>,
-    pub current_user_id: Option<String>,
-    pub user_names: HashMap<String, UserRecord>,
     /// What the task list on screen narrows to.
     pub list_filter: ListFilter,
     /// The glyphs every view draws with, from `[ui] icons`.
@@ -109,10 +108,10 @@ pub struct State {
     /// The live connection dropped and has not come back yet.
     pub live_dropped: bool,
     pub sync_token: String,
-    pub completed_cache: HashMap<String, Vec<Task>>,
+    /// The completed tasks loaded for each project, by project id.
+    pub completed_cache: Stamped<HashMap<String, Vec<Task>>>,
     /// The oldest window loaded into `completed_cache`, by project.
     pub oldest_completed: HashMap<String, CompletedWindow>,
-    pub comments_by_task: HashMap<String, Vec<Comment>>,
     pub idle_timeout_secs: u64,
     pub last_sync_at: Option<Zoned>,
     pub collapsed_folders: HashSet<String>,
@@ -137,6 +136,12 @@ pub struct State {
     /// oat milk"`, keyed by its uuid, to name it if it fails.
     pub(crate) pending_actions: HashMap<String, String>,
     pub(crate) next_temp_id: u64,
+    /// The lists derived from the store and the list state, rebuilt on the
+    /// first read after either changes.
+    pub(crate) lists: RefCell<Option<Lists>>,
+    /// The tasks and projects last found in a parent cycle, so each cycle
+    /// is logged once.
+    pub(crate) reported_cycles: HashSet<String>,
 }
 
 impl State {
@@ -147,12 +152,7 @@ impl State {
             loading: true,
             load_error: None,
             token_source: None,
-            projects: Vec::new(),
-            workspaces: Vec::new(),
-            folders: Vec::new(),
-            tasks: Vec::new(),
-            labels: Vec::new(),
-            sections: Vec::new(),
+            store: Store::default(),
             selected_project: 0,
             selected_task: 0,
             active_pane: Pane::Tasks,
@@ -161,7 +161,7 @@ impl State {
             modals: Vec::new(),
             input: TextField::default(),
             edit_task: None,
-            collapsed: HashSet::new(),
+            collapsed: Stamped::default(),
             detail_scroll: 0,
             viewport: None,
             screen: Screen::Today,
@@ -173,8 +173,6 @@ impl State {
             release: ReleaseState::default(),
             sort: Sort::default(),
             comments: Vec::new(),
-            current_user_id: None,
-            user_names: HashMap::new(),
             list_filter: ListFilter::default(),
             icon_set: IconSet::default(),
             themes: Theme::built_ins(),
@@ -182,9 +180,8 @@ impl State {
             sync_health: SyncHealth::Fine,
             live_dropped: false,
             sync_token: "*".to_owned(),
-            completed_cache: HashMap::new(),
+            completed_cache: Stamped::default(),
             oldest_completed: HashMap::new(),
-            comments_by_task: HashMap::new(),
             idle_timeout_secs: DEFAULT_IDLE_TIMEOUT_SECS,
             last_sync_at: None,
             collapsed_folders: HashSet::new(),
@@ -201,6 +198,8 @@ impl State {
             temp_id_pending: HashMap::new(),
             pending_actions: HashMap::new(),
             next_temp_id: 0,
+            lists: RefCell::new(None),
+            reported_cycles: HashSet::new(),
         }
     }
 
@@ -488,7 +487,7 @@ pub struct OverviewStats {
     pub by_priority: [u32; 5],
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct UserRecord {
     pub id: String,
     /// What a comment names its author by: the full name, or else the

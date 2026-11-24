@@ -463,6 +463,7 @@ async fn an_added_task_stays_under_its_new_id_and_survives_a_full_sync() {
 
     let added = app
         .state()
+        .store
         .tasks
         .iter()
         .find(|t| t.content == "Feed the parrot")
@@ -602,7 +603,7 @@ async fn reopening_a_seeded_done_task_in_the_app_keeps_full_syncs_working() {
     drive(&mut app, &client, [key('x'), key('R')]).await;
 
     assert!(app.state().failures.is_empty());
-    let reopened = app.state().tasks.iter().find(|t| t.id == "t-dentist");
+    let reopened = app.state().store.tasks.iter().find(|t| t.id == "t-dentist");
     assert!(reopened.is_some_and(|t| !t.checked));
 }
 

@@ -174,7 +174,13 @@ async fn a_rejected_item_update_restores_the_task_marks_its_row_and_logs_it() {
 
     drive(&mut app, &client, [key('p'), key('1')]).await;
 
-    let restored = app.state().tasks.iter().find(|t| t.id == task.id).unwrap();
+    let restored = app
+        .state()
+        .store
+        .tasks
+        .iter()
+        .find(|t| t.id == task.id)
+        .unwrap();
     assert_eq!(restored.priority, task.priority);
     let row = row_with(&app, &task.content).unwrap();
     assert!(row.contains('✘'), "the row is marked");

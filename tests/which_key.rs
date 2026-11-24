@@ -164,7 +164,7 @@ fn a_continuation_that_cannot_run_now_is_muted() {
     )
     .keymap;
     let with_tasks = state.clone();
-    state.tasks.clear();
+    state.store.tasks.clear();
     let complete = "Complete the task, or reopen it";
 
     let mut empty = App::new(TestBackend::new(120, 36), state).unwrap();

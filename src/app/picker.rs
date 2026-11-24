@@ -183,6 +183,7 @@ pub fn open_picker(state: &mut State, kind: PickerKind) {
                 _ => String::new(),
             };
             let entries: Vec<Entry> = state
+                .store
                 .projects
                 .iter()
                 .filter(|project| {
@@ -235,7 +236,7 @@ fn priority_entries(state: &State) -> (String, Vec<Entry>, Option<usize>) {
             let task = state
                 .edit_task
                 .as_deref()
-                .and_then(|id| state.tasks.iter().find(|task| task.id == id));
+                .and_then(|id| state.store.tasks.iter().find(|task| task.id == id));
             (
                 task.map_or_else(String::new, |task| task.content.clone()),
                 task.map_or(1, |task| task.priority),

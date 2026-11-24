@@ -45,14 +45,19 @@ fn glyph(state: &State) -> impl Fn(&Choice) -> Option<Span<'static>> + '_ {
             Some(Span::styled(icons.overdue, theme.due_overdue()))
         }
         Choice::Filter(ListFilter::DueToday) => Some(Span::styled(icons.today, theme.due_today())),
-        Choice::Project(id) => state.projects.iter().find(|p| p.id == *id).map(|project| {
-            let icon = if project.is_inbox() {
-                icons.inbox
-            } else {
-                icons.project
-            };
-            Span::styled(icon, theme.project_dot(&project.color))
-        }),
+        Choice::Project(id) => state
+            .store
+            .projects
+            .iter()
+            .find(|p| p.id == *id)
+            .map(|project| {
+                let icon = if project.is_inbox() {
+                    icons.inbox
+                } else {
+                    icons.project
+                };
+                Span::styled(icon, theme.project_dot(&project.color))
+            }),
         Choice::Filter(_) | Choice::Sort(_) | Choice::Theme(_) => None,
     }
 }

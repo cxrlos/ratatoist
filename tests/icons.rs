@@ -184,7 +184,7 @@ fn trip_with_comments() -> State {
     app.handle(Event::Synced(Ok(Box::new(sync)))).unwrap();
     let mut state = app.state().clone();
     state.screen = Screen::Inbox;
-    let trip = state.tasks.iter_mut().find(|t| t.id == "t-trip").unwrap();
+    let trip = state.store.tasks.by_id_mut("t-trip").unwrap();
     trip.note_count = Some(3);
     state
 }
@@ -196,7 +196,7 @@ fn trip_row(icons: &Icons, folded: bool) -> String {
     if folded {
         state.collapsed.insert("t-trip".to_owned());
     }
-    let trip = state.tasks.iter().find(|t| t.id == "t-trip").unwrap();
+    let trip = state.store.tasks.iter().find(|t| t.id == "t-trip").unwrap();
     list::content_line(&state, trip, 0, icons)
         .to_string()
         .trim_end()
