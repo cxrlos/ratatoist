@@ -811,3 +811,87 @@ fn r_asks_for_the_cache_to_be_rewritten() {
     assert_eq!(app.state().sync_token, "*");
     assert_eq!(cache_saves(&effects), 1);
 }
+
+/// The app painted from a cache of the fixture's store for `user_id`.
+fn from_cache(user_id: &str) -> App<TestBackend> {
+    let cached = sized(80, 24).state().store.clone();
+    let mut state = State::new(now());
+    state.paint_from_cache(cached, "cached-token".to_owned(), user_id.to_owned());
+    App::new(TestBackend::new(120, 36), state).unwrap()
+}
+
+fn user(id: &str) -> ratatoist::todoist::model::UserInfo {
+    ratatoist::todoist::model::UserInfo {
+        id: id.to_owned(),
+        websocket_url: Some("wss://live.example.invalid/ws".to_owned()),
+        ..Default::default()
+    }
+}
+
+fn fetches_of_the_user(effects: &[Effect]) -> usize {
+    effects.iter().filter(|e| **e == Effect::FetchUser).count()
+}
+
+#[test]
+fn a_first_answer_without_the_user_asks_for_it_once_then_opens_live() {
+    let mut app = from_cache("u-1");
+
+    let mut effects = send(&mut app, [empty_delta("t2"), empty_delta("t3")]);
+    assert_eq!(fetches_of_the_user(&effects), 1);
+    assert!(!effects.iter().any(|e| matches!(e, Effect::OpenLive { .. })));
+
+    effects = send(&mut app, [Event::UserFetched(Ok(user("u-1")))]);
+
+    assert_eq!(
+        effects,
+        [Effect::OpenLive {
+            url: "wss://live.example.invalid/ws".to_owned()
+        }]
+    );
+    assert!(!app.state().store.tasks.is_empty(), "the cached tasks stay");
+}
+
+#[test]
+fn a_first_answer_with_the_user_does_not_ask_for_it() {
+    let mut app = from_cache("u-1");
+
+    let effects = app
+        .handle(Event::Synced(Ok(delta(
+            r#"{"full_sync": false, "sync_token": "t2", "user": {"id": "u-1"}}"#,
+        ))))
+        .unwrap();
+
+    assert_eq!(fetches_of_the_user(&effects), 0);
+}
+
+#[test]
+fn another_user_from_the_fetch_discards_the_cache() {
+    let mut app = from_cache("someone-else");
+    send(&mut app, [empty_delta("t2")]);
+
+    let effects = send(&mut app, [Event::UserFetched(Ok(user("u-1")))]);
+
+    assert!(app.state().store.tasks.is_empty());
+    assert!(shows(&app, "Loading your tasks"));
+    assert_eq!(syncs(&effects), ["*"]);
+}
+
+#[test]
+fn a_failed_fetch_of_the_user_is_logged_and_keeps_the_cached_tasks() {
+    let mut app = from_cache("u-1");
+    send(&mut app, [empty_delta("t2")]);
+
+    let effects = send(
+        &mut app,
+        [Event::UserFetched(Err(ClientError::Network(
+            "offline".to_owned(),
+        )))],
+    );
+
+    assert!(effects.is_empty());
+    assert_eq!(app.state().failures.len(), 1);
+    assert!(!app.state().store.tasks.is_empty());
+    let later = send(&mut app, [empty_delta("t3")]);
+    assert_eq!(fetches_of_the_user(&later), 0);
+    assert_eq!(app.state().sync_token, "t3");
+}

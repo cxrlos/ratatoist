@@ -29,6 +29,9 @@ pub enum Effect {
     /// Delete the sync token versions before 0.8.0 kept, which the cache
     /// supersedes. Nothing comes back.
     ForgetOldSyncState,
+    /// Ask Todoist who is signed in. Answered by
+    /// [`super::Event::UserFetched`].
+    FetchUser,
     /// Ask GitHub for the latest release. Answered by
     /// [`super::Event::ReleaseChecked`].
     CheckRelease,

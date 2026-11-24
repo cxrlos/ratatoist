@@ -1,7 +1,7 @@
 use crossterm::event::KeyEvent;
 use semver::Version;
 
-use crate::todoist::model::{Comment, Task};
+use crate::todoist::model::{Comment, Task, UserInfo};
 use crate::todoist::sync::SyncResponse;
 use crate::todoist::{ClientError, CompletedQuery, LiveMessage};
 
@@ -41,6 +41,8 @@ pub enum Event {
         query: CompletedQuery,
         result: Result<Vec<Task>, ClientError>,
     },
+    /// The answer to [`super::Effect::FetchUser`].
+    UserFetched(Result<UserInfo, ClientError>),
     /// A message from the connection [`super::Effect::OpenLive`] opened.
     Live(LiveMessage),
     /// The answer to [`super::Effect::CheckRelease`]: the latest stable

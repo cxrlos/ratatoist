@@ -133,6 +133,9 @@ pub struct State {
     /// The user the cache painted from belongs to, until the first sync
     /// answers and confirms it.
     pub(crate) cache_user_id: Option<String>,
+    /// The cached user to check against the user asked for, when the first
+    /// sync from the cache came back without one.
+    pub(crate) user_to_confirm: Option<String>,
     /// When a merge first changed the store since the cache was last
     /// written.
     pub(crate) cache_dirty_since: Option<jiff::Timestamp>,
@@ -202,6 +205,7 @@ impl State {
             websocket_url: None,
             live_opened: false,
             cache_user_id: None,
+            user_to_confirm: None,
             cache_dirty_since: None,
             temp_id_pending: HashMap::new(),
             pending_actions: HashMap::new(),

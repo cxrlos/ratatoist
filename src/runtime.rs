@@ -433,6 +433,9 @@ impl<C: TodoistClient> Outside<'_, C> {
                     Event::CompletedTasks { query, result }
                 });
             }
+            Effect::FetchUser => {
+                self.spawn(|client| async move { Event::UserFetched(client.user().await) });
+            }
             Effect::OpenLive { url } => {
                 let messages = self.client.live_events(&url);
                 let answers = self.answers.clone();
@@ -854,6 +857,27 @@ mod tests {
         assert!(screen(&app).contains("Cached errand"), "{}", screen(&app));
         assert_eq!(saved.sync_token, "resumed-token");
         assert!(saved.store.tasks.by_id("cached-task").is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_first_answer_without_the_user_asks_todoist_who_it_is() {
+        let files = files("no-user");
+        cached(&files, "1000001", "Cached errand");
+        let client = FakeClient::new()
+            .with_incremental_sync(serde_json::json!({
+                "full_sync": false,
+                "sync_token": "resumed-token",
+            }))
+            .with_user(serde_json::json!({
+                "id": "1000001",
+                "websocket_url": "wss://ws.example.com/ws",
+            }));
+
+        let app = run_for_a_while(started_with(&files), &client, Some(&files)).await;
+        remove(&files);
+
+        assert!(app.state().live_opened);
+        assert!(app.state().store.tasks.by_id("cached-task").is_some());
     }
 
     #[tokio::test(start_paused = true)]

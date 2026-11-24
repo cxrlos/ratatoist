@@ -10,7 +10,7 @@ use super::failure::{ErrorKind, Failure, LoadError};
 use super::state::{Pane, State, SyncHealth};
 use super::store::{Store, Table};
 use super::view::{cycles, parents};
-use crate::todoist::model::{Folder, Project, Task};
+use crate::todoist::model::{Folder, Project, Task, UserInfo};
 use crate::todoist::sync::{SyncCommand, SyncCommandResult, SyncRequest, SyncResponse};
 use crate::todoist::{ClientError, CompletedQuery};
 
@@ -160,12 +160,21 @@ impl State {
         };
         match result {
             Ok(resp) => {
-                if let Some(cached) = cached_user
-                    && resp.user.as_ref().is_some_and(|user| user.id != cached)
-                {
-                    info!("the cache belongs to another user; full sync starting");
-                    self.discard_cache(effects);
-                    return;
+                if let Some(cached) = cached_user {
+                    match &resp.user {
+                        Some(user) if user.id != cached => {
+                            info!("the cache belongs to another user; full sync starting");
+                            self.discard_cache(effects);
+                            return;
+                        }
+                        Some(_) => {}
+                        // Todoist does not promise the user in an
+                        // incremental answer: ask for it once.
+                        None => {
+                            self.user_to_confirm = Some(cached);
+                            effects.push(Effect::FetchUser);
+                        }
+                    }
                 }
                 // A big account's full sync may carry data generated a while
                 // before; one incremental sync catches up.
@@ -365,6 +374,41 @@ impl State {
     pub fn unsaved_cache(&self) -> Option<Effect> {
         (self.cache_dirty_since.is_some() && self.temp_id_pending.is_empty())
             .then_some(Effect::SaveCache)
+    }
+
+    /// The answer to [`Effect::FetchUser`], asked when the first sync from
+    /// the cache came back without the user: the same check as that answer
+    /// would have had, then the live connection from its URL. A failure is
+    /// only logged, and the cached data and syncing carry on.
+    pub(crate) fn user_fetched(
+        &mut self,
+        result: Result<UserInfo, ClientError>,
+        effects: &mut Vec<Effect>,
+    ) {
+        let cached = self.user_to_confirm.take();
+        let user = match result {
+            Ok(user) => user,
+            Err(e) => {
+                self.log_failure(Failure::from_client(
+                    "check who is signed in",
+                    &e,
+                    &self.now,
+                ));
+                return;
+            }
+        };
+        if cached.is_some_and(|cached| cached != user.id) {
+            info!("the cache belongs to another user; full sync starting");
+            self.discard_cache(effects);
+            return;
+        }
+        self.websocket_url = user.websocket_url;
+        if !self.live_opened
+            && let Some(url) = self.websocket_url.clone()
+        {
+            self.live_opened = true;
+            effects.push(Effect::OpenLive { url });
+        }
     }
 
     pub(crate) fn clamp_selected_task(&mut self) {

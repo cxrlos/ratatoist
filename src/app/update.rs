@@ -100,6 +100,10 @@ pub fn update(state: &mut State, event: Event) -> Update {
             state.comments_loaded(task_id, fetch_seq, result);
             Update::redraw(effects)
         }
+        Event::UserFetched(result) => {
+            state.user_fetched(result, &mut effects);
+            Update::redraw(effects)
+        }
         Event::CompletedTasks { query, result } => {
             state.completed_loaded(query, result);
             Update::redraw(effects)
