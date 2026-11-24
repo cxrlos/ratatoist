@@ -134,7 +134,7 @@ ratatoist still starts in every case, and never rewrites the file to fix it.
 
 ## The old macOS folder
 
-Before 0.6.0, ratatoist kept its files on macOS in `~/Library/Application Support/ratatoist/`. If `~/.config/ratatoist/` does not exist and that folder does, ratatoist reads the old folder and prints the command that moves it:
+Before 0.6.0, ratatoist kept its files on macOS in `~/Library/Application Support/ratatoist/`. If `~/.config/ratatoist/` does not exist and that folder does, ratatoist reads the old folder and prints the command that moves it. Until I move it, a theme I pick is kept in the old folder's `config.toml`, and `ui_settings.json` is read from there:
 
 ```bash
 mkdir -p ~/.config && mv ~/Library/Application\ Support/ratatoist ~/.config/ratatoist

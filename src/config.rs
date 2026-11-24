@@ -72,6 +72,9 @@ pub struct Config {
     pub user_themes: Vec<Theme>,
     /// One line per problem found while loading, for the user to read.
     pub warnings: Vec<String>,
+    /// The folder this config was read from, where the picked theme is
+    /// kept and the old settings are found.
+    pub dir: PathBuf,
 }
 
 /// `[updates]`: whether ratatoist asks GitHub once a day for a newer
@@ -99,7 +102,12 @@ pub struct Keys {
 /// Reads `config.toml` and the theme files under `dir`, or under the old
 /// macOS folder when `dir` does not exist and that one does.
 pub fn load(dir: &Path) -> Config {
-    let (dir, moved) = source_dir(dir, macos_legacy_dir().as_deref());
+    load_from(dir, macos_legacy_dir().as_deref())
+}
+
+/// [`load`] with the old macOS folder given, as [`source_dir`] takes it.
+pub fn load_from(xdg: &Path, legacy: Option<&Path>) -> Config {
+    let (dir, moved) = source_dir(xdg, legacy);
     let mut warnings: Vec<String> = moved.into_iter().collect();
 
     let (user_themes, theme_warnings) = load_user_themes(&dir.join("themes"));
@@ -117,6 +125,7 @@ pub fn load(dir: &Path) -> Config {
     warnings.extend(theme_warnings);
     config.warnings = warnings;
     config.user_themes = user_themes;
+    config.dir = dir;
     config
 }
 

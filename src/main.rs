@@ -50,7 +50,7 @@ async fn start(cli: Cli) -> Result<()> {
         eprintln!("{warning}");
     }
     let _log_guard = logging::init(&paths::state_dir()?)?;
-    let mut state = runtime::initial_state(&config, Some(&config_dir));
+    let mut state = runtime::initial_state(&config, Some(&config.dir));
     let releases = release_check(&cli, &config, &mut state);
     let resolved = match tokio::task::spawn_blocking(auth::resolve).await? {
         Ok(resolved) => resolved,
@@ -66,7 +66,7 @@ async fn start(cli: Cli) -> Result<()> {
     state.token_source = Some(resolved.source);
     let client = HttpClient::new(&resolved.token)?;
     let files = runtime::Files {
-        config: config_dir,
+        config: config.dir.clone(),
         cache: paths::cache_dir()?,
     };
     runtime::paint_from_cache(&mut state, &files.cache);
