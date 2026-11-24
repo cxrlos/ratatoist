@@ -288,7 +288,13 @@ pub fn render_row(
     };
     text::draw(
         frame,
-        content_line(state, task, depth, state.icons()),
+        content_line(
+            state,
+            task,
+            depth,
+            state.icons(),
+            usize::from(content.width),
+        ),
         content,
     );
 
@@ -324,9 +330,20 @@ pub fn render_row(
     }
 }
 
-/// The indent, the check or fold, the content and the muted marks after
-/// it (`@labels`, recurring and the comment count), drawn with `icons`.
-pub fn content_line(state: &State, task: &Task, depth: usize, icons: &Icons) -> Line<'static> {
+/// What separates the content and each mark after it.
+const MARK_GAP: &str = "  ";
+
+/// The indent, the check or fold, the content and the marks after it
+/// (`@labels`, recurring, the deadline and the comment count), drawn with
+/// `icons` into `room` cells. A deadline mark whose date would be cut
+/// shrinks to its glyph, so no date ever reads as a wrong one.
+pub fn content_line(
+    state: &State,
+    task: &Task,
+    depth: usize,
+    icons: &Icons,
+    room: usize,
+) -> Line<'static> {
     let theme = state.theme();
     let muted = style::muted(theme);
     let nests = matches!(state.screen, Screen::Inbox | Screen::Projects);
@@ -364,21 +381,40 @@ pub fn content_line(state: &State, task: &Task, depth: usize, icons: &Icons) -> 
     if task.due.as_ref().is_some_and(|due| due.is_recurring) {
         marks.push((icons.recurring.to_owned(), muted));
     }
+    let comments = task
+        .note_count
+        .filter(|count| *count > 0)
+        .map(|count| (format!("{}{count}", icons.comments), muted));
     if let Some(deadline) = task
         .deadline
         .as_ref()
         .and_then(|deadline| dates::format_deadline(deadline, state.today, theme))
     {
-        marks.push((
-            format!("{} {}", icons.deadline, deadline.text),
-            deadline.style,
-        ));
+        let full = format!("{} {}", icons.deadline, deadline.text);
+        let mark_width = |mark: &str| MARK_GAP.len() + text::width(mark);
+        let before = spans
+            .iter()
+            .map(|span| text::width(&span.content))
+            .sum::<usize>()
+            + marks
+                .iter()
+                .map(|(mark, _)| mark_width(mark))
+                .sum::<usize>();
+        let end = before + mark_width(&full);
+        let after = comments.as_ref().map_or(0, |(mark, _)| mark_width(mark));
+        // A line that overflows ends in `…` in its last cell, so the date
+        // stays whole only if the line fits or the date ends before that cell.
+        let whole = end + after <= room || end < room;
+        let mark = if whole {
+            full
+        } else {
+            icons.deadline.to_owned()
+        };
+        marks.push((mark, deadline.style));
     }
-    if let Some(count) = task.note_count.filter(|count| *count > 0) {
-        marks.push((format!("{}{count}", icons.comments), muted));
-    }
+    marks.extend(comments);
     for (mark, style) in marks {
-        spans.push(Span::styled(format!("  {mark}"), style));
+        spans.push(Span::styled(format!("{MARK_GAP}{mark}"), style));
     }
     Line::from(spans)
 }

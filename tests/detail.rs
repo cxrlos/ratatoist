@@ -8,6 +8,7 @@ use jiff::tz::TimeZone;
 use ratatoist::app::{App, Effect, Event, Modal, Pane, PickerKind, State, update};
 use ratatoist::keys::{Keymap, Preset};
 use ratatoist::todoist::sync::SyncResponse;
+use ratatoist::ui::list;
 use ratatui::backend::TestBackend;
 
 const FULL_SYNC: &str = include_str!("fixtures/app/HYPOTHETICAL_full_sync.json");
@@ -355,6 +356,7 @@ fn planned_call() -> Box<SyncResponse> {
             "due": { "date": "2026-11-22T10:00:00", "is_recurring": false },
             "deadline": { "date": "2026-11-24", "lang": "en" },
             "duration": { "amount": 90, "unit": "minute" },
+            "note_count": 2,
             "added_at": "2026-11-19T08:30:00Z"
         }],
         "reminders": [
@@ -406,6 +408,27 @@ fn a_row_marks_its_deadline() {
         .find(|line| line.contains("Call the dentist"))
         .unwrap();
     assert!(row.contains("⚑ Nov 24"), "{row}");
+}
+
+/// The "Call the dentist" row as drawn into `room` cells.
+fn planned_row(room: usize) -> String {
+    let mut app = sized(120, 36);
+    app.handle(Event::Synced(Ok(planned_call()))).unwrap();
+    let state = app.state();
+    let task = state.store.tasks.by_id("t-call").unwrap();
+    let line = list::content_line(state, task, 0, state.icons(), room);
+    ratatoist::ui::text::fit_line(line, room).to_string()
+}
+
+#[test]
+fn a_deadline_mark_shrinks_to_its_glyph_rather_than_cut_its_date() {
+    assert_eq!(
+        planned_row(40).trim_end(),
+        "○ Call the dentist  ⚑ Nov 24  ✉2"
+    );
+    assert_eq!(planned_row(26), "○ Call the dentist  ⚑  ✉2");
+    // The date fits to the last cell, where the overflow's `…` would go.
+    assert_eq!(planned_row(28).trim_end(), "○ Call the dentist  ⚑  ✉2");
 }
 
 #[test]

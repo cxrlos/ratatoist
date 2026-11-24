@@ -199,7 +199,7 @@ fn trip_row(icons: &Icons, folded: bool) -> String {
         state.collapsed.insert("t-trip".to_owned());
     }
     let trip = state.store.tasks.iter().find(|t| t.id == "t-trip").unwrap();
-    list::content_line(&state, trip, 0, icons)
+    list::content_line(&state, trip, 0, icons, usize::MAX)
         .to_string()
         .trim_end()
         .to_owned()
