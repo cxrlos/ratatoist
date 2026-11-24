@@ -7,6 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
 use jiff::tz::TimeZone;
 use ratatoist::app::{App, Choice, Effect, Event, ListFilter, Modal, Picker, Sort, State};
+use ratatoist::config_write::ThemeNotSaved;
 use ratatoist::runtime::{UiSettings, initial_state_from};
 use ratatoist::todoist::demo;
 use ratatoist::todoist::model::Priority;
@@ -395,26 +396,94 @@ fn the_add_forms_priority_field_opens_the_priority_picker_for_the_new_task() {
 }
 
 #[test]
-fn choose_theme_applies_the_theme_and_names_the_line_that_keeps_it() {
+fn choose_theme_applies_the_theme_and_asks_to_keep_it_in_config_toml() {
     let mut app = demo_with(80, 24, THEME_ON_COMMA);
     let before = app.state().theme().name.clone();
 
     send(&mut app, [key(',')]);
-    assert_eq!(picker(&app).title, "Theme for this session");
+    assert_eq!(picker(&app).title, "Theme");
     assert_eq!(current(&app), Some(before));
     assert!(marks_current(&app));
     send(&mut app, typed("nord"));
     assert_eq!(labels(&app), ["Nord"]);
+    let effects = send(&mut app, [enter()]);
+
+    assert_eq!(app.state().theme().name, "Nord");
+    assert_eq!(app.state().notice.as_deref(), Some("Nord is the theme"));
+    assert_eq!(effects, [Effect::SaveTheme("nord".to_owned())]);
+}
+
+#[test]
+fn with_no_color_a_theme_picked_is_not_kept() {
+    let now = demo::NOW.to_zoned(TimeZone::UTC).unwrap();
+    let config = ratatoist::config::parse(THEME_ON_COMMA, &[]);
+    let state = initial_state_from(&config, &UiSettings::default(), "*".to_owned(), now, true);
+    let mut app = App::new(TestBackend::new(80, 24), state).unwrap();
+
+    let effects = send(&mut app, [key(','), enter()]);
+
+    assert!(app.state().modals.is_empty());
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SaveTheme(_)))
+    );
+}
+
+#[test]
+fn a_config_toml_left_alone_says_why_in_a_notice() {
+    let mut app = demo_with(80, 24, THEME_ON_COMMA);
+    send(&mut app, [key(',')]);
+    send(&mut app, typed("nord"));
     send(&mut app, [enter()]);
+
+    send(
+        &mut app,
+        [Event::ThemeSaved {
+            slug: "nord".to_owned(),
+            result: Err(ThemeNotSaved::Refused {
+                path: "/home/me/.config/ratatoist/config.toml".to_owned(),
+                why: "does not parse",
+            }),
+        }],
+    );
 
     assert_eq!(app.state().theme().name, "Nord");
     assert_eq!(
         app.state().notice.as_deref(),
         Some(
-            "Nord is the theme for this session; to keep it, add to config.toml: \
-             [theme] name = \"nord\""
+            "The theme lasts this session only: \
+             /home/me/.config/ratatoist/config.toml does not parse, so it was left alone"
         )
     );
+    assert!(app.state().failures.is_empty());
+}
+
+#[test]
+fn a_failed_theme_write_is_logged_and_the_theme_stays() {
+    let mut app = demo_with(80, 24, THEME_ON_COMMA);
+    send(&mut app, [key(',')]);
+    send(&mut app, typed("nord"));
+    send(&mut app, [enter()]);
+
+    send(
+        &mut app,
+        [Event::ThemeSaved {
+            slug: "nord".to_owned(),
+            result: Err(ThemeNotSaved::Failed {
+                path: "/home/me/.config/ratatoist/config.toml".to_owned(),
+                error: "Permission denied (os error 13)".to_owned(),
+            }),
+        }],
+    );
+
+    assert_eq!(app.state().theme().name, "Nord");
+    let failure = app.state().failures.newest().unwrap();
+    assert_eq!(
+        failure.action,
+        "keep theme \"nord\" in /home/me/.config/ratatoist/config.toml"
+    );
+    assert_eq!(failure.message, "Permission denied (os error 13)");
 }
 
 #[test]

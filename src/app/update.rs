@@ -8,7 +8,7 @@ use super::confirm;
 use super::failure::{ErrorKind, Failure};
 use super::modal::Modal;
 use super::palette::{self, Palette};
-use super::picker::{self, Choice, PickerKind, open_picker};
+use super::picker::{Choice, PickerKind, open_picker};
 use super::prompt::{PromptField, open_prompt};
 use super::release;
 use super::state::{ListFilter, Pane, Screen};
@@ -16,12 +16,14 @@ use super::sync::{OptimisticOp, incremental_sync_request, new_uuid, startup_sync
 use super::task_form::{FormField, TODAY, TaskForm};
 use super::text_field::TextField;
 use super::{Action, Editable, Effect, Event, State};
+use crate::config_write::ThemeNotSaved;
 use crate::keys::{self, Key, Resolution};
 use crate::todoist::model::{Comment, Due, Task};
 use crate::todoist::sync::SyncCommand;
 use crate::todoist::{CompletedQuery, CompletedWindow, LiveMessage};
 use crate::ui;
 use crate::ui::detail;
+use crate::ui::theme;
 
 /// What one event did: whether the screen changed, and what to ask the
 /// outside world for.
@@ -47,6 +49,30 @@ impl Update {
     }
 }
 
+/// Answers a theme write: nothing to show when it was kept; a notice when
+/// `config.toml` was left alone; a failure, logged, when the write failed.
+/// The session keeps the theme either way.
+fn theme_saved(state: &mut State, slug: &str, result: Result<(), ThemeNotSaved>) -> bool {
+    match result {
+        Ok(()) => false,
+        Err(ThemeNotSaved::Refused { path, why }) => {
+            state.notice = Some(format!(
+                "The theme lasts this session only: {path} {why}, so it was left alone"
+            ));
+            true
+        }
+        Err(ThemeNotSaved::Failed { path, error }) => {
+            state.report(Failure::new(
+                ErrorKind::Other,
+                format!("keep theme \"{slug}\" in {path}"),
+                error,
+                &state.now,
+            ));
+            true
+        }
+    }
+}
+
 pub fn update(state: &mut State, event: Event) -> Update {
     let mut effects = Vec::new();
     match event {
@@ -66,6 +92,10 @@ pub fn update(state: &mut State, event: Event) -> Update {
         Event::Shutdown => Update::quit(),
         Event::ReleaseChecked(latest) => {
             let redraw = release::checked(state, latest, &mut effects);
+            Update { redraw, effects }
+        }
+        Event::ThemeSaved { slug, result } => {
+            let redraw = theme_saved(state, &slug, result);
             Update { redraw, effects }
         }
         Event::Resize { width, height } => {
@@ -653,7 +683,10 @@ impl State {
             }
             Choice::Theme(index) => {
                 if let Some(theme) = self.themes.get(index) {
-                    self.notice = Some(picker::theme_notice(&theme.name));
+                    self.notice = Some(format!("{} is the theme", theme.name));
+                    if !self.no_color {
+                        effects.push(Effect::SaveTheme(theme::slug(&theme.name)));
+                    }
                     self.theme_idx = index;
                 }
             }

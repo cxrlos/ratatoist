@@ -103,6 +103,9 @@ pub struct State {
     /// The themes the theme picker offers; `theme_idx` is the one drawn.
     pub themes: Vec<Theme>,
     pub theme_idx: usize,
+    /// `NO_COLOR` is set: the one theme is [`Theme::no_color`], and a theme
+    /// picked is not written to `config.toml`.
+    pub no_color: bool,
     /// How reading from Todoist went the last time, for the sync indicator.
     pub sync_health: SyncHealth,
     /// The live connection dropped and has not come back yet.
@@ -186,6 +189,7 @@ impl State {
             icon_set: IconSet::default(),
             themes: Theme::built_ins(),
             theme_idx: 0,
+            no_color: false,
             sync_health: SyncHealth::Fine,
             live_dropped: false,
             sync_token: "*".to_owned(),

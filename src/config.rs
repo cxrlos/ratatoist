@@ -1,4 +1,5 @@
-//! `config.toml` in the config folder. ratatoist never writes this file;
+//! `config.toml` in the config folder, read only: the one key ratatoist
+//! writes, `[theme] name`, goes through `crate::config_write`.
 //! `docs/config.md` documents every key.
 //!
 //! ```toml

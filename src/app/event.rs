@@ -1,6 +1,7 @@
 use crossterm::event::KeyEvent;
 use semver::Version;
 
+use crate::config_write::ThemeNotSaved;
 use crate::todoist::model::{Comment, Task, UserInfo};
 use crate::todoist::sync::SyncResponse;
 use crate::todoist::{ClientError, CompletedQuery, LiveMessage};
@@ -48,6 +49,11 @@ pub enum Event {
     /// The answer to [`super::Effect::CheckRelease`]: the latest stable
     /// release, or `None` when the check failed, which the runtime logged.
     ReleaseChecked(Option<Version>),
+    /// The answer to [`super::Effect::SaveTheme`] for the theme `slug`.
+    ThemeSaved {
+        slug: String,
+        result: Result<(), ThemeNotSaved>,
+    },
     /// SIGINT, SIGTERM or SIGHUP: quit through the normal path.
     Shutdown,
 }

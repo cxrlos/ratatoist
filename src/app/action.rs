@@ -71,7 +71,7 @@ pub enum Action {
     SortList,
     /// Mark the focused project as a favourite, or unmark it.
     ToggleFavourite,
-    /// Pick the theme for this session.
+    /// Pick the theme, kept in `config.toml`.
     ChooseTheme,
     /// Load the listed project's tasks completed in the window before the
     /// oldest one loaded.

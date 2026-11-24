@@ -23,6 +23,7 @@ use crate::app::{App, DEFAULT_IDLE_TIMEOUT_SECS, Effect, Event, State};
 use crate::browser;
 use crate::cache::{self, Cache};
 use crate::config::Config;
+use crate::config_write;
 use crate::keys::Keymap;
 use crate::release::{Record, ReleaseCache, ReleaseCheck};
 use crate::todoist::TodoistClient;
@@ -143,6 +144,7 @@ pub fn initial_state_from(
     if no_color {
         state.themes = vec![Theme::no_color()];
         state.theme_idx = 0;
+        state.no_color = true;
     }
     state
 }
@@ -325,10 +327,18 @@ enum Save {
         cache: ReleaseCache,
         record: Record,
     },
+    /// `[theme] name` to set in `config.toml` in the config folder `dir`;
+    /// the result goes back over `answers`.
+    Theme {
+        dir: PathBuf,
+        slug: String,
+        answers: mpsc::UnboundedSender<Event>,
+    },
 }
 
 impl Save {
-    /// Writes the file. A failure is logged and never reaches the screen.
+    /// Writes the file. A failure is logged, and reaches the screen only for
+    /// the theme, which the user asked to keep.
     fn write(self) {
         match self {
             Self::Cache {
@@ -353,6 +363,14 @@ impl Save {
                 if let Err(error) = cache.save(&record) {
                     warn!("could not save the release cache: {error:#}");
                 }
+            }
+            Self::Theme { dir, slug, answers } => {
+                let result = config_write::save_theme(&dir, &slug);
+                if let Err(error) = &result {
+                    warn!(?error, "could not keep the theme in config.toml");
+                }
+                // After a quit nothing is listening, and nothing needs to.
+                let _ = answers.send(Event::ThemeSaved { slug, result });
             }
         }
     }
@@ -476,6 +494,15 @@ impl<C: TodoistClient> Outside<'_, C> {
                     let _ = self.saves.send(Save::Release {
                         cache: releases.cache.clone(),
                         record,
+                    });
+                }
+            }
+            Effect::SaveTheme(slug) => {
+                if let Some(files) = &self.files {
+                    let _ = self.saves.send(Save::Theme {
+                        dir: files.config.clone(),
+                        slug,
+                        answers: self.answers.clone(),
                     });
                 }
             }
@@ -966,6 +993,59 @@ mod tests {
         let saved = Cache::load(&files.cache).map(|c| c.sync_token);
         remove(&files);
         assert_eq!(saved.as_deref(), Some("second"));
+    }
+
+    #[tokio::test]
+    async fn a_theme_picked_is_written_to_config_toml_and_answered() {
+        let files = files("theme");
+        let client = FakeClient::new();
+        let writer = Writer::start(Save::write);
+        let (answers, mut answered) = mpsc::unbounded_channel();
+        let outside = Outside {
+            client: &client,
+            answers,
+            files: Some(files.clone()),
+            saves: writer.saves,
+            releases: None,
+        };
+
+        let flow = outside.execute(&State::new(now()), Effect::SaveTheme("nord".to_owned()));
+        assert!(flow.is_continue());
+        drop(outside);
+        writer.done.await.unwrap();
+
+        let written = std::fs::read_to_string(files.config.join("config.toml"));
+        remove(&files);
+        assert_eq!(written.unwrap(), "[theme]\nname = \"nord\"\n");
+        assert!(matches!(
+            answered.recv().await,
+            Some(Event::ThemeSaved { result: Ok(()), .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn with_no_config_folder_a_theme_picked_writes_nothing() {
+        let files = files("theme-demo");
+        let client = FakeClient::new();
+        let writer = Writer::start(Save::write);
+        let (answers, mut answered) = mpsc::unbounded_channel();
+        let outside = Outside {
+            client: &client,
+            answers,
+            files: None,
+            saves: writer.saves,
+            releases: None,
+        };
+
+        let flow = outside.execute(&State::new(now()), Effect::SaveTheme("nord".to_owned()));
+        assert!(flow.is_continue());
+        drop(outside);
+        writer.done.await.unwrap();
+
+        let written = files.config.exists();
+        remove(&files);
+        assert!(!written);
+        assert!(answered.recv().await.is_none());
     }
 
     #[tokio::test]

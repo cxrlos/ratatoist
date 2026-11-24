@@ -7,7 +7,6 @@ use super::modal::Modal;
 use super::state::{ListFilter, Sort, State};
 use super::task_form::FormField;
 use crate::todoist::model::Priority;
-use crate::ui::theme;
 
 /// What a picker chooses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,7 +20,7 @@ pub enum PickerKind {
     Filter,
     /// The project of the task in the add-task form.
     Project,
-    /// The theme for this session.
+    /// The theme, kept in `config.toml`.
     Theme,
 }
 
@@ -208,7 +207,7 @@ pub fn open_picker(state: &mut State, kind: PickerKind) {
                 .map(|(index, theme)| entry(&theme.name, Choice::Theme(index)))
                 .collect();
             let current = (state.theme_idx < entries.len()).then_some(state.theme_idx);
-            ("Theme for this session".to_owned(), entries, current)
+            ("Theme".to_owned(), entries, current)
         }
     };
     state
@@ -263,15 +262,6 @@ fn form_subject(state: &State) -> String {
     } else {
         content
     }
-}
-
-/// The notice after choosing the theme `name`: the `config.toml` line that
-/// keeps it past this session.
-pub(super) fn theme_notice(name: &str) -> String {
-    format!(
-        "{name} is the theme for this session; to keep it, add to config.toml: [theme] name = \"{}\"",
-        theme::slug(name)
-    )
 }
 
 #[cfg(test)]

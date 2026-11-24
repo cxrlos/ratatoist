@@ -38,6 +38,10 @@ pub enum Effect {
     /// Write what the release checks found to the release cache. Nothing
     /// comes back.
     SaveRelease(Record),
+    /// Keep the theme with this slug as `[theme] name` in `config.toml`.
+    /// Answered by [`super::Event::ThemeSaved`], or by nothing when there is
+    /// no config folder (`--demo`).
+    SaveTheme(String),
     /// Open this page in the user's browser. Nothing comes back.
     OpenUrl(String),
     Quit,

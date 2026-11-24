@@ -898,7 +898,7 @@ pub static ACTIONS: &[ActionSpec] = &[
     ActionSpec {
         action: Action::ChooseTheme,
         id: "choose-theme",
-        description: "Choose a theme for this session",
+        description: "Choose a theme",
         label: "theme",
         group: Group::App,
         hint: None,

@@ -4,6 +4,7 @@ pub mod browser;
 pub mod cache;
 pub mod cli;
 pub mod config;
+pub mod config_write;
 pub mod keys;
 pub mod logging;
 pub mod paths;

@@ -1,6 +1,6 @@
 # Configuration
 
-ratatoist reads `config.toml` from `$XDG_CONFIG_HOME/ratatoist/`, which is `~/.config/ratatoist/config.toml` by default, on macOS too. The file is optional: without it every setting has its default. ratatoist never writes it. The one exception is the one-time move of an old `api_token` line into the OS keyring, described in [auth.md](auth.md).
+ratatoist reads `config.toml` from `$XDG_CONFIG_HOME/ratatoist/`, which is `~/.config/ratatoist/config.toml` by default, on macOS too. The file is optional: without it every setting has its default. ratatoist writes it in two cases only: picking a theme sets `[theme] name` (see [`[theme]`](#theme)), and the one-time move of an old `api_token` line into the OS keyring removes that line, described in [auth.md](auth.md). Both keep every other byte.
 
 ```toml
 [ui]
@@ -51,6 +51,8 @@ The Nerd set uses the Font Awesome glyphs of the same meaning, one cell each. Wi
 | Key | Values | Default | Effect |
 | --- | --- | --- | --- |
 | `name` | The name of a built-in theme, or the `name` inside a file in `themes/`. Case, spaces and hyphens do not matter, so `"rose-pine"` finds "Rose Pine". | `terminal` | The colours ratatoist draws with. |
+
+A theme I pick in the palette's theme picker applies at once and is kept: ratatoist sets `name` in `[theme]`, and nothing else. Comments, order and layout stay as I wrote them; a missing file or `[theme]` table is created with just that key. The file is replaced in one rename, and a symlinked `config.toml` keeps its link while the file it points to changes. A `config.toml` that does not parse is left alone: the theme lasts the session and a notice says why. A write that fails goes to the messages log (`!`), and the session keeps the theme. `--demo` and `NO_COLOR` write nothing.
 
 The built-in themes are `terminal`, `catppuccin-mocha`, `dracula`, `gruvbox-dark`, `material-dark`, `monokai`, `nord`, `one-dark`, `rose-pine`, `solarized-dark` and `tokyo-night`. `terminal`, the default, draws with my terminal's own colours and paints no background. Every other theme paints its background behind the whole screen, since its colours are only legible on it.
 
@@ -126,7 +128,7 @@ config.toml:5:16: `sync.idle-timeout` must be a whole number of seconds from 0 t
 - A `[theme] name` that matches no theme is reported, and the theme `ui_settings.json` names is used if that file names one, otherwise the default theme.
 - A theme file that fails to load is reported as `themes/FILE.json:LINE:COL: problem; the theme is skipped`, or `themes/FILE.json: baseNN: problem; the theme is skipped` for a colour that is not one.
 
-ratatoist still starts in every case, and the file is never rewritten.
+ratatoist still starts in every case, and never rewrites the file to fix it.
 
 `api_token` at the top of the file is the token setting of versions before 0.6.0. It is not reported as unknown, and the config loader never reads its value.
 

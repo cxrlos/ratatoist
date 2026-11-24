@@ -22,7 +22,7 @@ While the add-task form or a prompt has a text field, a character typed without 
 | `show-palette` | `:`, `<C-k>` | `<C-k>` | Find an action, task or project |
 | `show-messages` | `!` | `!` | Show the messages log |
 | `quit` | `q`, `<C-c>` | `q`, `<C-c>` | Quit ratatoist |
-| `choose-theme` |  |  | Choose a theme for this session |
+| `choose-theme` |  |  | Choose a theme |
 | `skip-release` |  |  | Skip this release |
 | `release-notes` |  |  | What's new in the latest release |
 

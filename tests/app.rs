@@ -587,13 +587,13 @@ fn the_standard_preset_completes_with_ctrl_x() {
 }
 
 #[test]
-fn choosing_a_theme_saves_nothing() {
+fn choosing_a_theme_saves_only_the_theme() {
     let mut app = configured(THEME_ON_COMMA);
     send(&mut app, [key(','), press(KeyCode::Down)]);
 
     let effects = send(&mut app, [press(KeyCode::Enter)]);
 
-    assert!(effects.is_empty());
+    assert!(matches!(effects.as_slice(), [Effect::SaveTheme(_)]));
     assert_ne!(app.state().theme_idx, 0);
 }
 
