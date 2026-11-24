@@ -14,7 +14,7 @@ expression: app.backend()
 "│  ○ Review the logo options from In… yesterday ▮▮▯ P2 Atlas redesign  │┃No description.                               ┃"
 "│◆ Today (11)                                                          │┃                                              ┃"
 "│  ○ Call the plumber about the leaking…  today ▮▮▯ P2 Inbox           │┃Comments (0)                                  ┃"
-"│  ○ 買い物リストを作る  @quick  ⚑ tomor… today ··· P4 Inbox           │┃No comments.                                  ┃" Hidden by multi-width symbols: [(6, "a"), (8, "l"), (10, "t"), (12, "e"), (14, "p"), (16, "u"), (18, "b"), (20, "r"), (22, "a")]
+"│  ○ 買い物リストを作る  @quick  ⚑        today ··· P4 Inbox           │┃No comments.                                  ┃" Hidden by multi-width symbols: [(6, "a"), (8, "l"), (10, "t"), (12, "e"), (14, "p"), (16, "u"), (18, "b"), (20, "r"), (22, "a")]
 "│  ○ Take out the recycling  @15min  ↻    today ··· P4 Home            │┃                                              ┃"
 "│  ○ Pay the electricity bill  @co… t┌ Quit with unsent changes? ─────────────────┐                                    ┃"
 "│  ○ Finish «La casa del faro», chapt│ Todoist has not answered every change yet. │Harbor app                          ┃"

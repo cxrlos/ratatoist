@@ -13,7 +13,7 @@ expression: app.backend()
 "│  ○ Review the logo options from In… yesterday ▮▮▯ P2 Atlas redesign  │┃Labels    phone, waiting                      ┃"
 "│◆ Today (11)                                                          │┃                                              ┃"
 "│  ○ Call the plumber about the leaking…  today ▮▮▯ P2 Inbox           │┃No description.                               ┃"
-"│  ○ 買い物リストを作る  @quick  ⚑ tomor… today ··· P4 Inbox           │┃                                              ┃" Hidden by multi-width symbols: [(6, "a"), (8, "l"), (10, "t"), (12, "e"), (14, "p"), (16, "u"), (18, "b"), (20, "r"), (22, "a")]
+"│  ○ 買い物リストを作る  @quick  ⚑        today ··· P4 Inbox           │┃                                              ┃" Hidden by multi-width symbols: [(6, "a"), (8, "l"), (10, "t"), (12, "e"), (14, "p"), (16, "u"), (18, "b"), (20, "r"), (22, "a")]
 "│  ○ Take out the recycling  @15min  ↻    today ··· P4 Home            │┃Comments (2)                                  ┃"
 "│  ○ Pay the electricity bill  @co… today 17:00 ▮▮▮ P1 Home            │┃Mara Quill (you) · 3 days ago                 ┃"
 "│  ○ Finish «La casa del faro», ch┌ Re-sync everything? ─────────────────────────────┐in, waiting on the third.        ┃"
