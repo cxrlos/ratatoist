@@ -62,23 +62,30 @@ impl Cache {
     }
 
     /// Writes the cache atomically, readable by the user alone, creating
-    /// `dir` first.
+    /// `dir` first. The temporary file carries the process id, so two runs
+    /// at once never share one, and is removed when the write fails.
     pub fn save(&self, dir: &Path) -> Result<()> {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("could not create {}", dir.display()))?;
-        let tmp = dir.join(format!("{FILE}.tmp"));
+        let tmp = dir.join(format!("{FILE}.ratatoist-{}.tmp", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
+        let written = self.write_then_rename(&tmp, &Self::path(dir));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        written
+    }
+
+    fn write_then_rename(&self, tmp: &Path, path: &Path) -> Result<()> {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(0o600)
-            .open(&tmp)
+            .open(tmp)
             .with_context(|| format!("could not create {}", tmp.display()))?;
         file.write_all(&serde_json::to_vec(self)?)?;
         file.sync_all()?;
-        std::fs::rename(&tmp, Self::path(dir))
-            .with_context(|| format!("could not replace {}", Self::path(dir).display()))?;
-        Ok(())
+        std::fs::rename(tmp, path).with_context(|| format!("could not replace {}", path.display()))
     }
 
     /// Deletes the cache in `dir`, if there is one.
@@ -180,6 +187,36 @@ mod tests {
             Some(Some(30))
         );
         assert_eq!(leftovers, 1, "only cache.json is left in the folder");
+    }
+
+    #[test]
+    fn saving_leaves_another_runs_temporary_file_alone() {
+        let dir = temp_dir("other-run");
+        let other = dir.join("cache.json.tmp");
+        std::fs::write(&other, "another run is writing").unwrap();
+
+        cache().save(&dir).unwrap();
+
+        let left = std::fs::read_to_string(&other);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(left.unwrap(), "another run is writing");
+    }
+
+    #[test]
+    fn a_failed_save_leaves_no_temporary_file() {
+        let dir = temp_dir("failed-save");
+        // A folder where cache.json goes makes the rename fail.
+        std::fs::create_dir_all(Cache::path(&dir).join("in-the-way")).unwrap();
+
+        let saved = cache().save(&dir);
+
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(saved.is_err());
+        assert_eq!(names, ["cache.json"]);
     }
 
     #[test]
