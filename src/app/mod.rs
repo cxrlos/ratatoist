@@ -42,6 +42,7 @@ pub use state::{
     OverviewStats, Pane, Screen, Sort, State, SyncHealth, UserRecord,
 };
 pub use store::{Keyed, Merged, Stamped, Store, Table};
+pub use sync::command_request;
 pub use task_form::{FormField, TaskForm};
 pub use text_field::TextField;
 pub use update::{Update, perform, update};

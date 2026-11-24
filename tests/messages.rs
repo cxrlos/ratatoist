@@ -10,9 +10,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use insta::assert_snapshot;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Zoned};
-use ratatoist::app::{App, Effect, ErrorKind, Event, Modal, State};
+use ratatoist::app::{App, Effect, ErrorKind, Event, Modal, State, command_request};
 use ratatoist::todoist::fake::CommandMatch;
-use ratatoist::todoist::sync::{SyncCommandError, SyncRequest, SyncResponse};
+use ratatoist::todoist::sync::{SyncCommandError, SyncResponse};
 use ratatoist::todoist::{
     ClientError, CompletedQuery, CompletedWindow, FakeClient, LiveMessage, TodoistClient, demo,
 };
@@ -84,11 +84,7 @@ async fn drive(
                 Effect::Sync(request) => Event::Synced(client.sync(request).await.map(Box::new)),
                 Effect::SendCommands(commands) => {
                     let uuids = commands.iter().map(|c| c.uuid.clone()).collect();
-                    let request = SyncRequest {
-                        sync_token: app.state().sync_token.clone(),
-                        resource_types: vec![],
-                        commands,
-                    };
+                    let request = command_request(&app.state().sync_token, commands);
                     let result = client.sync(request).await.map(Box::new);
                     Event::CommandsSent { uuids, result }
                 }

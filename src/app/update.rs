@@ -887,21 +887,32 @@ impl State {
     }
 
     fn complete_selected_task(&mut self, effects: &mut Vec<Effect>) {
-        let (task_id, was_checked, is_recurring) = {
+        let (task_id, was_checked, recurring) = {
             let visible = self.visible_tasks();
             let Some(task) = visible.get(self.selected_task) else {
                 return;
             };
-            (
-                task.id.clone(),
-                task.checked,
-                task.due.as_ref().map(|d| d.is_recurring).unwrap_or(false),
-            )
+            let recurring = task
+                .due
+                .as_ref()
+                .filter(|due| due.is_recurring)
+                .map(|due| due.string.clone().unwrap_or_else(|| due.date.clone()));
+            (task.id.clone(), task.checked, recurring)
         };
+        let is_recurring = recurring.is_some();
 
         let before = self.store.tasks.by_id(&task_id).cloned();
-        if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
-            t.checked = !was_checked;
+        match recurring {
+            // The task stays open: its due shows pending until Todoist
+            // answers with the next date.
+            Some(rule) if !was_checked => {
+                self.pending_due.insert(task_id.clone(), rule);
+            }
+            _ => {
+                if let Some(t) = self.store.tasks.by_id_mut(&task_id) {
+                    t.checked = !was_checked;
+                }
+            }
         }
 
         let new_len = self.visible_tasks().len();

@@ -135,17 +135,38 @@ impl DemoClient {
 
 impl TodoistClient for DemoClient {
     async fn sync(&self, request: SyncRequest) -> Result<SyncResponse, ClientError> {
-        let (mapping, body) = {
+        let (mapping, body, touched) = {
             let mut store = self.store();
             let mapping: Vec<(String, String)> = request
                 .commands
                 .iter()
                 .filter_map(|command| store.apply(command))
                 .collect();
-            (mapping, store.account.sync.clone())
+            let ids: Vec<&str> = request
+                .commands
+                .iter()
+                .filter_map(|command| {
+                    let args = &command.args;
+                    args["id"].as_str().or_else(|| args["item_id"].as_str())
+                })
+                .chain(mapping.iter().map(|(_, real)| real.as_str()))
+                .collect();
+            let touched: Vec<Value> = store
+                .list("items")
+                .iter()
+                .filter(|item| ids.iter().any(|id| item["id"] == *id))
+                .cloned()
+                .collect();
+            (mapping, store.account.sync.clone(), touched)
         };
+        let incremental = request.sync_token != "*";
         let mut response = self.fake.clone().with_full_sync(body).sync(request).await?;
         response.temp_id_mapping.extend(mapping);
+        // A flush answers with the tasks it changed, as Todoist's delta
+        // since the flush's token would.
+        if incremental && !touched.is_empty() {
+            response.items = Some(decode(Value::Array(touched))?);
+        }
         Ok(response)
     }
 

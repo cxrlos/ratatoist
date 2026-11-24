@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use jiff::{ToSpan, Zoned};
-use ratatoist::app::{App, Effect, Event, State};
+use ratatoist::app::{App, Effect, Event, State, command_request};
 use ratatoist::todoist::demo::{self, DemoClient};
 use ratatoist::todoist::model::{CompletedTasksResponse, ReminderKind, Task};
 use ratatoist::todoist::sync::{SyncCommand, SyncRequest, SyncResponse};
@@ -398,11 +398,7 @@ async fn drive(
                 Effect::Sync(request) => Event::Synced(client.sync(request).await.map(Box::new)),
                 Effect::SendCommands(commands) => {
                     let uuids = commands.iter().map(|c| c.uuid.clone()).collect();
-                    let request = SyncRequest {
-                        sync_token: app.state().sync_token.clone(),
-                        resource_types: vec![],
-                        commands,
-                    };
+                    let request = command_request(&app.state().sync_token, commands);
                     let result = client.sync(request).await.map(Box::new);
                     Event::CommandsSent { uuids, result }
                 }
@@ -474,6 +470,37 @@ async fn completing_a_task_keeps_it_completed_and_lists_it_under_done() {
     assert!(!shows(&app, &first.content));
     drive(&mut app, &client, [key('f'), key('2')]).await;
     assert!(shows(&app, &first.content));
+}
+
+#[tokio::test]
+async fn completing_a_recurring_task_shows_its_next_date_after_one_flush() {
+    let client = demo::client(&now());
+    let (mut app, _) = started(&client).await;
+    drive(&mut app, &client, [key('2')]).await;
+    let (at, before) = app
+        .state()
+        .visible_tasks()
+        .iter()
+        .enumerate()
+        .find(|(_, t)| t.due.as_ref().is_some_and(|d| d.is_recurring))
+        .map(|(at, t)| (at, (*t).clone()))
+        .unwrap();
+
+    let moves = (0..at).map(|_| key('j'));
+    let effects = drive(&mut app, &client, moves.chain([key('x')])).await;
+
+    let syncs = effects
+        .iter()
+        .filter(|e| matches!(e, Effect::Sync(_)))
+        .count();
+    assert_eq!(syncs, 0, "the flush answer alone carries the next date");
+    let after = app.state().store.tasks.by_id(&before.id).unwrap();
+    assert!(!after.checked);
+    assert_ne!(
+        after.due.as_ref().unwrap().date,
+        before.due.as_ref().unwrap().date
+    );
+    assert_eq!(app.state().pending_due(&before.id), None);
 }
 
 #[tokio::test]

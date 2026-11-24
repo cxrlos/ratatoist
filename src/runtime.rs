@@ -19,7 +19,7 @@ use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tracing::{info, warn};
 
-use crate::app::{App, DEFAULT_IDLE_TIMEOUT_SECS, Effect, Event, State};
+use crate::app::{App, DEFAULT_IDLE_TIMEOUT_SECS, Effect, Event, State, command_request};
 use crate::browser;
 use crate::cache::{self, Cache};
 use crate::config::Config;
@@ -27,7 +27,6 @@ use crate::config_write;
 use crate::keys::Keymap;
 use crate::release::{Record, ReleaseCache, ReleaseCheck};
 use crate::todoist::TodoistClient;
-use crate::todoist::sync::SyncRequest;
 use crate::ui::theme::{self, Theme};
 
 /// How often the clock moves on. Ticks redraw only when they change what
@@ -425,11 +424,7 @@ impl<C: TodoistClient> Outside<'_, C> {
             }
             Effect::SendCommands(commands) => {
                 let uuids = commands.iter().map(|c| c.uuid.clone()).collect();
-                let request = SyncRequest {
-                    sync_token: state.sync_token.clone(),
-                    resource_types: vec![],
-                    commands,
-                };
+                let request = command_request(&state.sync_token, commands);
                 self.spawn(|client| async move {
                     let result = client.sync(request).await.map(Box::new);
                     Event::CommandsSent { uuids, result }

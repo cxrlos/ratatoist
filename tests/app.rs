@@ -333,6 +333,99 @@ fn completing_a_recurring_task_sends_item_complete() {
 }
 
 #[test]
+fn a_completed_recurring_task_stays_open_with_its_due_pending_until_the_answer() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('j'), key('j'), key('x')]));
+
+    assert!(!task(&app, "t-plants").checked);
+    assert_eq!(app.state().pending_due("t-plants"), Some("every 2 days"));
+    assert!(shows(&app, "every 2 days…"), "{:#?}", screen(&app));
+
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":"ok"}},
+            "items":[{{"id":"t-plants","content":"Water the plants","checked":false,
+              "priority":1,"project_id":"p-inbox","child_order":3,
+              "due":{{"date":"2026-11-26","is_recurring":true,"string":"every 2 days"}}}}]}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid.clone()],
+        result: Ok(delta(&answer)),
+    })
+    .unwrap();
+
+    let plants = task(&app, "t-plants");
+    assert_eq!(plants.due.as_ref().unwrap().date, "2026-11-26");
+    assert!(!plants.checked);
+    assert_eq!(app.state().pending_due("t-plants"), None);
+    assert!(!app.state().is_pending(&command.uuid));
+}
+
+#[test]
+fn a_rejected_recurring_completion_drops_the_pending_due() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('j'), key('j'), key('x')]));
+
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Err(ClientError::Network("offline".to_owned())),
+    })
+    .unwrap();
+
+    assert_eq!(app.state().pending_due("t-plants"), None);
+    assert!(!task(&app, "t-plants").checked);
+}
+
+#[test]
+fn a_flush_answer_merges_the_changes_it_carries_and_takes_its_token() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":"ok"}},
+            "items":[
+              {{"id":"t-milk","content":"Buy oat milk","checked":true,"priority":4,
+               "project_id":"p-inbox","child_order":1}},
+              {{"id":"t-read","content":"Read chapter two","checked":false,"priority":1,
+               "project_id":"p-inbox","child_order":5}}
+            ]}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid.clone()],
+        result: Ok(delta(&answer)),
+    })
+    .unwrap();
+
+    assert!(task(&app, "t-milk").checked);
+    assert_eq!(task(&app, "t-read").content, "Read chapter two");
+    assert_eq!(app.state().sync_token, "fixture-token-2");
+}
+
+#[test]
+fn a_flush_answer_lands_todoist_s_version_of_the_task_it_settles() {
+    let mut app = app();
+    let command = single_command(&send(&mut app, [key('1'), key('x')]));
+
+    let answer = format!(
+        r#"{{"full_sync":false,"sync_token":"fixture-token-2",
+            "sync_status":{{"{}":"ok"}},
+            "items":[{{"id":"t-milk","content":"Buy oat milk (normalised)","checked":true,
+              "priority":4,"project_id":"p-inbox","child_order":1}}]}}"#,
+        command.uuid
+    );
+    app.handle(Event::CommandsSent {
+        uuids: vec![command.uuid],
+        result: Ok(delta(&answer)),
+    })
+    .unwrap();
+
+    assert_eq!(task(&app, "t-milk").content, "Buy oat milk (normalised)");
+}
+
+#[test]
 fn a_failed_flush_restores_the_completed_task_and_says_so() {
     let mut app = app();
     let command = single_command(&send(&mut app, [key('1'), key('x')]));

@@ -98,6 +98,17 @@ pub(crate) fn incremental_sync_request(sync_token: &str) -> SyncRequest {
     }
 }
 
+/// A flush of `commands`, which also reads what changed since
+/// `sync_token`: the answer carries the changes made elsewhere and
+/// Todoist's own version of each command's result, and its token is taken
+/// as an incremental sync's is.
+pub fn command_request(sync_token: &str, commands: Vec<SyncCommand>) -> SyncRequest {
+    SyncRequest {
+        commands,
+        ..incremental_sync_request(sync_token)
+    }
+}
+
 /// A random version 4 uuid, so a command never repeats one Todoist has seen.
 pub(crate) fn new_uuid() -> String {
     let bits: u128 = rand::random();
@@ -432,10 +443,14 @@ impl State {
         }
     }
 
-    fn command_results(&mut self, resp: SyncResponse, effects: &mut Vec<Effect>) {
+    /// Settles each command in `resp` (a rejected one rolls back) and maps
+    /// the temp ids before merging the delta the answer carries, so the
+    /// delta lands on the tasks those commands no longer hold.
+    fn command_results(&mut self, mut resp: SyncResponse, effects: &mut Vec<Effect>) {
         let mut refresh_comments_for: Option<String> = None;
         let mut rejected = Vec::new();
-        for (uuid, status) in &resp.sync_status {
+        let statuses = std::mem::take(&mut resp.sync_status);
+        for (uuid, status) in &statuses {
             let action = self.pending_actions.remove(uuid);
             match status {
                 SyncCommandResult::Err(error) => {
@@ -461,10 +476,10 @@ impl State {
             self.roll_back(&uuid, &failure);
             self.report(failure);
         }
-        for (temp_id, real_id) in &resp.temp_id_mapping {
-            self.apply_temp_id_mapping(temp_id, real_id);
+        for (temp_id, real_id) in std::mem::take(&mut resp.temp_id_mapping) {
+            self.apply_temp_id_mapping(&temp_id, &real_id);
         }
-        self.take_sync_token(resp.sync_token);
+        self.apply_sync_delta(resp, effects);
         if let Some(tid) = refresh_comments_for {
             self.fetch_comments(tid, effects);
         }
@@ -787,7 +802,27 @@ fn collect_project_subtree(parent_id: Option<&str>, all: &[Project], out: &mut V
 
 #[cfg(test)]
 mod tests {
-    use super::{full_sync_request, incremental_sync_request, new_uuid};
+    use super::{command_request, full_sync_request, incremental_sync_request, new_uuid};
+    use crate::todoist::sync::SyncCommand;
+
+    #[test]
+    fn a_flush_reads_what_changed_since_the_token_with_its_commands() {
+        let command = SyncCommand {
+            r#type: "item_close".to_owned(),
+            temp_id: None,
+            uuid: new_uuid(),
+            args: serde_json::json!({ "id": "t-1" }),
+        };
+
+        let request = command_request("token-7", vec![command.clone()]);
+
+        assert_eq!(request.sync_token, "token-7");
+        assert_eq!(
+            request.resource_types,
+            incremental_sync_request("token-7").resource_types
+        );
+        assert_eq!(request.commands, [command]);
+    }
 
     #[test]
     fn every_sync_reads_reminders() {
